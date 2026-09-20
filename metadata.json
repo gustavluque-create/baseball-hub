@@ -1,0 +1,6 @@
+{
+  "name": "Baseball Hub",
+  "description": "Plataforma profesional de béisbol con resultados en vivo, estadísticas avanzadas, líderes, posiciones, perfiles de equipos y jugadores, y sistema de ingestión de datos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
