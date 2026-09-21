@@ -421,7 +421,7 @@ export const StatisticsTableSkeleton: React.FC<{
 /**
  * Skeleton specifically styled for Standings Table (with playoff line)
  */
-export const StandingsTableSkeleton: React.FC<{ rows?: number }> = ({ rows = 8 }) => {
+export const StandingsTableSkeleton: React.FC<{ rows?: number }> = ({ rows = 16 }) => {
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-xl overflow-hidden">
       <div className="overflow-x-auto">
@@ -451,30 +451,70 @@ export const StandingsTableSkeleton: React.FC<{ rows?: number }> = ({ rows = 8 }
                   key={idx}
                   className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
                     isPlayoffZone
-                      ? 'border-l-4 border-l-emerald-500/40'
+                      ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-l-4 border-l-emerald-500'
                       : 'border-l-4 border-l-transparent'
                   }`}
                 >
                   <td className="py-3 px-3 text-center">
-                    <Skeleton className="h-4 w-5 mx-auto rounded" />
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2.5">
-                      <Skeleton className="w-7 h-7 rounded-lg shrink-0" />
-                      <Skeleton
-                        className={`h-4 ${
-                          idx % 2 === 0 ? 'w-32' : 'w-24'
-                        } rounded`}
-                      />
+                    <div className="flex items-center justify-center gap-1">
+                      {isPlayoffZone && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+                      )}
+                      <Skeleton className="h-4 w-4 mx-auto rounded" />
                     </div>
                   </td>
-                  {Array.from({ length: 11 }).map((_, c) => (
-                    <td key={c} className="py-3 px-3 text-right">
-                      <Skeleton
-                        className={`h-4 ml-auto rounded ${c === 3 ? 'w-10' : 'w-6'}`}
-                      />
-                    </td>
-                  ))}
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="w-8 h-8 rounded-lg shrink-0" />
+                      <div className="space-y-1">
+                        <Skeleton
+                          className={`h-4 ${
+                            idx % 2 === 0 ? 'w-32' : 'w-24'
+                          } rounded`}
+                        />
+                        <Skeleton className="h-2.5 w-16 rounded" />
+                      </div>
+                    </div>
+                  </td>
+                  {/* JJ, G, P */}
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-6 ml-auto rounded" />
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-6 ml-auto rounded font-bold" />
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-6 ml-auto rounded" />
+                  </td>
+                  {/* PCT */}
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-10 ml-auto rounded bg-emerald-500/20" />
+                  </td>
+                  {/* DIF */}
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-6 ml-auto rounded" />
+                  </td>
+                  {/* L10 */}
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-8 ml-auto rounded" />
+                  </td>
+                  {/* RACHA */}
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-8 ml-auto rounded-full" />
+                  </td>
+                  {/* CASA, FUERA, CA, CP */}
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-8 ml-auto rounded" />
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-8 ml-auto rounded" />
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-6 ml-auto rounded" />
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <Skeleton className="h-4 w-6 ml-auto rounded" />
+                  </td>
                 </tr>
               );
             })}
@@ -552,18 +592,21 @@ export const PlayerCardSkeleton: React.FC = () => {
     <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
       <div className="relative shrink-0">
         <Skeleton className="w-14 h-14 rounded-full" variant="circular" />
-        <Skeleton className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full" />
+        <Skeleton className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full border border-slate-900" />
       </div>
-      <div className="space-y-2 flex-1 min-w-0">
+      <div className="space-y-1.5 flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1">
           <Skeleton className="h-4 w-28 rounded" />
-          <Skeleton className="h-3.5 w-7 rounded" />
+          <Skeleton className="h-3.5 w-8 rounded font-mono" />
         </div>
         <Skeleton className="h-3 w-20 rounded" />
-        <div className="flex items-center gap-2 pt-0.5">
-          <Skeleton className="h-2.5 w-12 rounded" />
-          <Skeleton className="h-2.5 w-2 rounded" />
-          <Skeleton className="h-2.5 w-10 rounded" />
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="flex items-center gap-1.5">
+            <Skeleton className="h-2.5 w-12 rounded" />
+            <Skeleton className="h-2 w-1 rounded-full" />
+            <Skeleton className="h-2.5 w-10 rounded" />
+          </div>
+          <Skeleton className="h-5 w-16 rounded-lg" />
         </div>
       </div>
     </div>
@@ -573,7 +616,7 @@ export const PlayerCardSkeleton: React.FC = () => {
 /**
  * Grid of Player Card Skeletons
  */
-export const PlayersGridSkeleton: React.FC<{ count?: number }> = ({ count = 8 }) => {
+export const PlayersGridSkeleton: React.FC<{ count?: number }> = ({ count = 12 }) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {Array.from({ length: count }).map((_, idx) => (
@@ -991,23 +1034,109 @@ export const ChartCardSkeleton: React.FC = () => {
 /**
  * Skeleton for News Article Card
  */
-export const NewsCardSkeleton: React.FC = () => {
+export const NewsCardSkeleton: React.FC<{
+  className?: string;
+  imageHeight?: string;
+  isFeatured?: boolean;
+}> = ({ className = '', imageHeight = 'h-52', isFeatured = false }) => {
   return (
-    <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between">
-      <Skeleton className="h-48 w-full rounded-none" variant="rectangular" />
-      <div className="p-5 space-y-3">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-3 w-20 rounded" />
-          <Skeleton className="h-3 w-12 rounded" />
+    <div
+      className={`rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between ${
+        isFeatured
+          ? 'border-emerald-500/30 ring-1 ring-emerald-500/20 shadow-md shadow-emerald-950/20'
+          : 'shadow-sm'
+      } ${className}`}
+    >
+      <div className={`relative ${imageHeight} w-full bg-slate-100 dark:bg-slate-950 overflow-hidden`}>
+        <Skeleton className="w-full h-full rounded-none" variant="rectangular" />
+
+        {/* Top Floating Badges */}
+        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-5 w-20 rounded-full" />
+            {isFeatured && <Skeleton className="h-5 w-24 rounded-full bg-amber-500/20" />}
+          </div>
+          <Skeleton className="w-7 h-7 rounded-full" variant="circular" />
         </div>
-        <Skeleton className="h-5 w-4/5 rounded" />
-        <Skeleton className="h-3.5 w-full rounded" />
-        <Skeleton className="h-3.5 w-3/4 rounded" />
+
+        {/* Bottom Floating Bar for Featured */}
+        {isFeatured && (
+          <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+            <Skeleton className="h-4 w-28 rounded-md" />
+            <Skeleton className="h-4 w-20 rounded-md" />
+          </div>
+        )}
+      </div>
+
+      <div className="p-5 space-y-3 flex-1 flex flex-col justify-between">
+        <div className="space-y-2.5">
+          {!isFeatured && (
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-3 w-24 rounded" />
+              <Skeleton className="h-3 w-16 rounded" />
+            </div>
+          )}
+          <Skeleton className={`font-bold ${isFeatured ? 'h-6 w-11/12' : 'h-5 w-4/5'} rounded`} />
+          {isFeatured && <Skeleton className="h-4 w-2/3 rounded" />}
+          <Skeleton className="h-3.5 w-full rounded" />
+          <Skeleton className="h-3.5 w-4/5 rounded" />
+
+          {/* Tags */}
+          <div className="flex items-center gap-1.5 pt-1">
+            <Skeleton className="h-4 w-14 rounded-md" />
+            <Skeleton className="h-4 w-16 rounded-md" />
+            <Skeleton className="h-4 w-12 rounded-md" />
+          </div>
+        </div>
+
         <div className="pt-3 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
-          <Skeleton className="h-3 w-20 rounded" />
-          <Skeleton className="h-3 w-16 rounded" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="w-4 h-4 rounded-full" />
+            <Skeleton className="h-3.5 w-28 rounded" />
+          </div>
+          <Skeleton className="h-3.5 w-14 rounded" />
         </div>
       </div>
+    </div>
+  );
+};
+
+/**
+ * Masonry grid of News Article Skeletons with variable heights
+ */
+export const NewsMasonrySkeleton: React.FC<{ count?: number }> = ({ count = 6 }) => {
+  const heights = [
+    'h-72 sm:h-84',
+    'h-80 sm:h-96',
+    'h-60 sm:h-72',
+    'h-44 sm:h-52',
+    'h-80 sm:h-92',
+    'h-52 sm:h-60',
+  ];
+
+  return (
+    <div className="columns-1 md:columns-2 lg:columns-3 gap-6 [column-fill:_balance]">
+      {Array.from({ length: count }).map((_, idx) => (
+        <div key={idx} className="break-inside-avoid inline-block w-full mb-6">
+          <NewsCardSkeleton
+            imageHeight={heights[idx % heights.length]}
+            isFeatured={idx === 0}
+          />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/**
+ * Uniform Grid of News Article Skeletons
+ */
+export const NewsGridSkeleton: React.FC<{ count?: number }> = ({ count = 6 }) => {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {Array.from({ length: count }).map((_, idx) => (
+        <NewsCardSkeleton key={idx} imageHeight="h-52" isFeatured={idx === 0} />
+      ))}
     </div>
   );
 };
@@ -1166,6 +1295,8 @@ export const LoadingSkeleton = {
   TeamProfile: TeamProfileSkeleton,
   MyTeamsSection: MyTeamsSectionSkeleton,
   NewsCard: NewsCardSkeleton,
+  NewsMasonry: NewsMasonrySkeleton,
+  NewsGrid: NewsGridSkeleton,
   ArticleModal: ArticleModalSkeleton,
   VideoCard: VideoCardSkeleton,
   ChartCard: ChartCardSkeleton,

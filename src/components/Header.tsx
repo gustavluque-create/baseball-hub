@@ -5,13 +5,9 @@ import {
   Sun,
   Globe,
   Settings,
-  ShieldAlert,
   ChevronDown,
-  Lock,
-  ShieldCheck,
 } from 'lucide-react';
 import { useApp, ActiveNavTab } from '../context/AppContext.tsx';
-import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { Competition, Season } from '../types/index.ts';
 import { NotificationCenterDropdown } from './NotificationCenterDropdown.tsx';
@@ -32,8 +28,6 @@ export const Header: React.FC = () => {
     setIsSettingsOpen,
     t,
   } = useApp();
-
-  const { isAdminAuthenticated, adminUser, openLoginModal } = useAdminAuth();
 
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -56,7 +50,6 @@ export const Header: React.FC = () => {
     { id: 'players', label: t('nav.players') },
     { id: 'news', label: t('nav.news') },
     { id: 'videos', label: t('nav.videos') },
-    ...(isAdminAuthenticated ? [{ id: 'admin' as ActiveNavTab, label: '🛡️ Admin' }] : []),
   ];
 
   return (
@@ -167,43 +160,6 @@ export const Header: React.FC = () => {
               {language === 'es' ? 'Ajustes' : 'Settings'}
             </span>
           </button>
-
-          {/* Admin Area Link with Login Protection */}
-          {isAdminAuthenticated ? (
-            <button
-              id="nav-admin-btn"
-              onClick={() => setActiveTab('admin')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-bold transition-all cursor-pointer text-xs ${
-                activeTab === 'admin'
-                  ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400'
-                  : 'bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/40'
-              }`}
-              title={`Administrador Activo: ${adminUser?.name} (@${adminUser?.username})`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-mono text-[11px] hidden sm:inline">
-                Admin: {adminUser?.username}
-              </span>
-              <span className="font-mono text-[11px] sm:hidden">Admin</span>
-            </button>
-          ) : (
-            <button
-              id="nav-admin-btn"
-              onClick={() => {
-                setActiveTab('admin');
-                openLoginModal();
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-medium transition-colors cursor-pointer text-xs ${
-                activeTab === 'admin'
-                  ? 'bg-slate-800 text-white border border-slate-700'
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
-              }`}
-              title="Área de administración restringida con usuario y contraseña"
-            >
-              <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span className="hidden sm:inline text-xs">Acceso Admin</span>
-            </button>
-          )}
         </div>
       </div>
 

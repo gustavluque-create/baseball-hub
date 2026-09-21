@@ -149,8 +149,12 @@ export const HomeView: React.FC = () => {
           <>
             {/* Left 2 Cols: Main Headline Article */}
             {featuredArticle && (
-              <div
-                onClick={() => navigateToNews(featuredArticle.slug)}
+              <a
+                href={`/${featuredArticle.slug}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigateToNews(featuredArticle.slug);
+                }}
                 className="lg:col-span-2 group relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 cursor-pointer shadow-lg hover:shadow-2xl hover:border-slate-700 transition-all flex flex-col justify-end min-h-[380px] sm:min-h-[440px]"
               >
                 {/* Background Image with Gradient Overlay */}
@@ -179,7 +183,7 @@ export const HomeView: React.FC = () => {
                     {featuredArticle.subtitle || featuredArticle.excerpt}
                   </p>
                 </div>
-              </div>
+              </a>
             )}
 
             {/* Right 1 Col: Secondary Breaking News */}
@@ -198,9 +202,13 @@ export const HomeView: React.FC = () => {
 
               <div className="space-y-3 flex-1 flex flex-col justify-between">
                 {secondaryArticles.map((article) => (
-                  <div
+                  <a
                     key={article.id}
-                    onClick={() => navigateToNews(article.slug)}
+                    href={`/${article.slug}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigateToNews(article.slug);
+                    }}
                     className="group flex gap-3 p-3 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition-all"
                   >
                     <img
@@ -220,7 +228,7 @@ export const HomeView: React.FC = () => {
                       </div>
                       <span className="text-[11px] text-slate-500">{article.publishedAt}</span>
                     </div>
-                  </div>
+                  </a>
                 ))}
               </div>
             </div>

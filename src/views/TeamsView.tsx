@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, MapPin, Users, Trophy, Star } from 'lucide-react';
+import { Shield, MapPin, Users, Trophy, Star, Camera } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { TeamsGridSkeleton } from '../components/LoadingSkeleton.tsx';
 import { Team } from '../types/index.ts';
+import { TeamLogo } from '../components/TeamLogo.tsx';
+import { TeamLogoEditorModal } from '../components/admin/TeamLogoEditorModal.tsx';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 
 export const TeamsView: React.FC = () => {
-  const { activeCompetitionId, navigateToTeam, favoriteTeamIds, toggleFavoriteTeam } = useApp();
+  const { activeCompetitionId, navigateToTeam, favoriteTeamIds, toggleFavoriteTeam, dataVersion, triggerDataRefresh } = useApp();
+  const { isAdminAuthenticated } = useAdminAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterFavoritesOnly, setFilterFavoritesOnly] = useState(false);
+  const [selectedLogoTeam, setSelectedLogoTeam] = useState<Team | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -22,7 +27,7 @@ export const TeamsView: React.FC = () => {
         console.error(err);
         setLoading(false);
       });
-  }, [activeCompetitionId]);
+  }, [activeCompetitionId, dataVersion]);
 
   const displayedTeams = filterFavoritesOnly
     ? teams.filter((t) => favoriteTeamIds.includes(t.id))
@@ -104,11 +109,26 @@ export const TeamsView: React.FC = () => {
                 {/* Header & Logo with Favorite Star */}
                 <div className="flex items-start justify-between gap-3 mb-4">
                   <div className="flex items-center gap-3.5 min-w-0">
-                    <div
-                      className="w-13 h-13 rounded-2xl flex items-center justify-center text-3xl shadow-lg border border-slate-700 shrink-0"
-                      style={{ backgroundColor: `${primaryColor}25` }}
-                    >
-                      {team.logo}
+                    <div className="relative group/logo shrink-0">
+                      <div
+                        className="w-13 h-13 rounded-2xl flex items-center justify-center text-3xl shadow-lg border border-slate-700 p-1 overflow-hidden"
+                        style={{ backgroundColor: `${primaryColor}25` }}
+                      >
+                        <TeamLogo logo={team.logo} name={team.name} className="w-full h-full" />
+                      </div>
+                      {isAdminAuthenticated && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLogoTeam(team);
+                          }}
+                          className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow border border-slate-900 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                          title="Editar logo del equipo (Admin)"
+                        >
+                          <Camera className="w-2.5 h-2.5" />
+                        </button>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-base font-black text-white group-hover:text-emerald-400 transition-colors truncate">
@@ -117,9 +137,23 @@ export const TeamsView: React.FC = () => {
                       <p className="text-xs text-slate-400 font-medium truncate">
                         {team.nickname} • {team.city}
                       </p>
-                      <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-slate-300">
-                        {team.shortName}
-                      </span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-slate-300">
+                          {team.shortName}
+                        </span>
+                        {isAdminAuthenticated && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedLogoTeam(team);
+                            }}
+                            className="text-[10px] text-emerald-400 hover:text-emerald-300 hover:underline font-semibold cursor-pointer"
+                          >
+                            Editar Logo
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -171,6 +205,29 @@ export const TeamsView: React.FC = () => {
             );
           })}
         </div>
+      )}
+
+      {/* Team Logo Editor Modal */}
+      {selectedLogoTeam && (
+        <TeamLogoEditorModal
+          team={selectedLogoTeam}
+          isOpen={Boolean(selectedLogoTeam)}
+          onClose={() => setSelectedLogoTeam(null)}
+          onSaveLogo={(newLogo, updatedTeam) => {
+            if (updatedTeam) {
+              setTeams((prev) =>
+                prev.map((t) => (t.id === updatedTeam.id ? updatedTeam : t))
+              );
+            } else {
+              setTeams((prev) =>
+                prev.map((t) =>
+                  t.id === selectedLogoTeam.id ? { ...t, logo: newLogo } : t
+                )
+              );
+            }
+            triggerDataRefresh();
+          }}
+        />
       )}
     </div>
   );

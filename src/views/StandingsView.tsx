@@ -4,9 +4,10 @@ import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { StandingsTableSkeleton } from '../components/LoadingSkeleton.tsx';
 import { Standing } from '../types/index.ts';
+import { TeamLogo } from '../components/TeamLogo.tsx';
 
 export const StandingsView: React.FC = () => {
-  const { activeCompetitionId, navigateToTeam } = useApp();
+  const { activeCompetitionId, navigateToTeam, dataVersion } = useApp();
   const [standings, setStandings] = useState<Standing[]>([]);
   const [division, setDivision] = useState<string>('General');
   const [loading, setLoading] = useState(true);
@@ -25,7 +26,7 @@ export const StandingsView: React.FC = () => {
         console.error(err);
         setLoading(false);
       });
-  }, [activeCompetitionId, division]);
+  }, [activeCompetitionId, division, dataVersion]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -69,7 +70,7 @@ export const StandingsView: React.FC = () => {
 
       {/* Table */}
       {loading ? (
-        <StandingsTableSkeleton rows={8} />
+        <StandingsTableSkeleton rows={division === 'General' ? 16 : 8} />
       ) : (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/90 shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
@@ -116,7 +117,9 @@ export const StandingsView: React.FC = () => {
 
                       {/* Team Name and Logo */}
                       <td className="py-3 px-4 font-sans font-bold text-slate-200 flex items-center gap-3">
-                        <span className="text-2xl">{s.teamLogo || s.logo}</span>
+                        <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                          <TeamLogo logo={s.teamLogo || s.logo} name={s.teamName} className="w-full h-full text-2xl" />
+                        </div>
                         <div>
                           <p className="hover:text-emerald-400 transition-colors">{s.teamName}</p>
                           <span className="text-[10px] text-slate-500 font-normal">

@@ -16,6 +16,7 @@ import {
   AdminAuthResponse,
   AdminAuditLog,
   AdminSystemOverview,
+  ArticleComment,
 } from '../types/index.ts';
 
 const API_BASE = '/api';
@@ -85,6 +86,13 @@ export class ApiClient {
     return this.request<{ team: Team; roster: Player[]; games: Game[] }>(`/teams/${id}`);
   }
 
+  static updateTeamLogo(id: string, logo: string, primaryColor?: string): Promise<{ success: boolean; message: string; team: Team; logo: string }> {
+    return this.request<{ success: boolean; message: string; team: Team; logo: string }>(`/teams/${id}/logo`, {
+      method: 'PUT',
+      body: JSON.stringify({ logo, primaryColor }),
+    });
+  }
+
   // Players
   static getPlayers(params?: {
     teamId?: string;
@@ -105,6 +113,13 @@ export class ApiClient {
 
   static getPlayerDetail(id: string): Promise<{ player: Player; batting?: BattingStats; pitching?: PitchingStats }> {
     return this.request<{ player: Player; batting?: BattingStats; pitching?: PitchingStats }>(`/players/${id}`);
+  }
+
+  static updatePlayerPhoto(id: string, photo: string): Promise<{ success: boolean; message: string; player: Player; photo: string }> {
+    return this.request<{ success: boolean; message: string; player: Player; photo: string }>(`/players/${id}/photo`, {
+      method: 'PUT',
+      body: JSON.stringify({ photo }),
+    });
   }
 
   // Games
@@ -186,6 +201,27 @@ export class ApiClient {
 
   static getNewsArticle(slug: string): Promise<NewsArticle> {
     return this.request<NewsArticle>(`/news/${slug}`);
+  }
+
+  // Article Comments (Community interactions for public consumers)
+  static getArticleComments(slug: string): Promise<ArticleComment[]> {
+    return this.request<ArticleComment[]>(`/news/${encodeURIComponent(slug)}/comments`);
+  }
+
+  static addArticleComment(
+    slug: string,
+    payload: { authorName?: string; favoriteTeam?: string; content: string }
+  ): Promise<ArticleComment> {
+    return this.request<ArticleComment>(`/news/${encodeURIComponent(slug)}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static deleteArticleComment(commentId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(`/news/comments/${commentId}`, {
+      method: 'DELETE',
+    });
   }
 
   // Videos
@@ -345,6 +381,20 @@ export class ApiClient {
   static deleteAdminPlayer(id: string): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>(`/admin/players/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  static importAdminPlayers(players: any[]): Promise<{
+    success: boolean;
+    importedCount: number;
+    createdCount: number;
+    updatedCount: number;
+    message: string;
+    players: Player[];
+  }> {
+    return this.request('/admin/players/import', {
+      method: 'POST',
+      body: JSON.stringify({ players }),
     });
   }
 

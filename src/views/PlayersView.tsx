@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Filter, Shield, Swords, ArrowLeftRight, X, Check, Sparkles } from 'lucide-react';
+import { Users, Search, Filter, Shield, Swords, ArrowLeftRight, X, Check, Sparkles, Camera } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
-import { PlayersGridSkeleton } from '../components/LoadingSkeleton.tsx';
+import { PlayersGridSkeleton, Skeleton } from '../components/LoadingSkeleton.tsx';
 import { Player, Team } from '../types/index.ts';
 import { PlayerComparisonView } from '../components/PlayerComparisonView.tsx';
+import { PlayerImageEditorModal } from '../components/admin/PlayerImageEditorModal.tsx';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 
 export const PlayersView: React.FC = () => {
-  const { navigateToPlayer, activeCompetitionId } = useApp();
+  const { navigateToPlayer, activeCompetitionId, dataVersion, triggerDataRefresh } = useApp();
+  const { isAdminAuthenticated } = useAdminAuth();
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedPosition, setSelectedPosition] = useState('ALL');
   const [selectedTeamId, setSelectedTeamId] = useState('ALL');
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
 
   // Player comparison state
   const [showComparison, setShowComparison] = useState(false);
@@ -40,7 +44,7 @@ export const PlayersView: React.FC = () => {
         console.error(err);
         setLoading(false);
       });
-  }, [search, selectedPosition, selectedTeamId]);
+  }, [search, selectedPosition, selectedTeamId, dataVersion]);
 
   // Handle player selection for comparison
   const handleToggleComparePlayer = (e: React.MouseEvent, playerId: string) => {
@@ -95,9 +99,18 @@ export const PlayersView: React.FC = () => {
             <Users className="w-6 h-6 text-emerald-400" />
             Directorio Oficial de Jugadores
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Busca y explora fichas biométricas, posiciones y trayectorias de todos los atletas de la liga.
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <p className="text-sm text-slate-400">
+              Busca y explora fichas biométricas, posiciones y trayectorias de todos los atletas de la liga.
+            </p>
+            {loading && players.length === 0 ? (
+              <Skeleton className="h-4 w-20 rounded-md inline-block" />
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-emerald-400 border border-slate-700">
+                {players.length} {players.length === 1 ? 'atleta' : 'atletas'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Toggle Compare Button */}
@@ -187,7 +200,7 @@ export const PlayersView: React.FC = () => {
 
       {/* Players Grid */}
       {loading ? (
-        <PlayersGridSkeleton count={8} />
+        <PlayersGridSkeleton count={12} />
       ) : players.length === 0 ? (
         <div className="py-16 text-center text-slate-400 bg-slate-900/50 rounded-2xl border border-slate-800">
           <p className="text-base font-semibold text-slate-300">No se encontraron jugadores.</p>
@@ -212,7 +225,7 @@ export const PlayersView: React.FC = () => {
                     : 'bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <div className="relative">
+                <div className="relative group/avatar shrink-0">
                   <img
                     src={player.photo}
                     alt={player.fullName}
@@ -225,6 +238,19 @@ export const PlayersView: React.FC = () => {
                     }`}
                     referrerPolicy="no-referrer"
                   />
+                  {isAdminAuthenticated && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingPlayer(player);
+                      }}
+                      className="absolute -bottom-1 -left-1 p-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow border border-slate-900 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                      title="Editar foto del jugador (Admin)"
+                    >
+                      <Camera className="w-2.5 h-2.5" />
+                    </button>
+                  )}
                   {isSelected && (
                     <span
                       className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center text-slate-950 shadow-md ${
@@ -347,6 +373,29 @@ export const PlayersView: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Player Photo Editor Modal (Restricted to authenticated admin) */}
+      {isAdminAuthenticated && editingPlayer && (
+        <PlayerImageEditorModal
+          player={editingPlayer}
+          isOpen={Boolean(editingPlayer)}
+          onClose={() => setEditingPlayer(null)}
+          onSavePhoto={(newPhoto, updatedPlayer) => {
+            if (updatedPlayer) {
+              setPlayers((prev) =>
+                prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p))
+              );
+            } else {
+              setPlayers((prev) =>
+                prev.map((p) =>
+                  p.id === editingPlayer.id ? { ...p, photo: newPhoto } : p
+                )
+              );
+            }
+            triggerDataRefresh();
+          }}
+        />
       )}
     </div>
   );

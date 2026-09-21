@@ -7,17 +7,18 @@ import { PlayerProfileModal } from '../components/PlayerProfileModal.tsx';
 import { TeamProfileModal } from '../components/TeamProfileModal.tsx';
 import { NewsArticleModal } from '../components/NewsArticleModal.tsx';
 import { SettingsMenuModal } from '../components/SettingsMenuModal.tsx';
-import { AdminLoginModal } from '../components/AdminLoginModal.tsx';
 import { GameMatchupModal } from '../components/GameMatchupModal.tsx';
 import { LiveTicker } from '../components/LiveTicker.tsx';
 import { ScoreChangeToastContainer } from '../components/ScoreChangeToast.tsx';
 import { PlayByPlayQuickViewModal } from '../components/PlayByPlayQuickViewModal.tsx';
 import { useApp } from '../context/AppContext.tsx';
 import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
-import { Shield, Trophy, BarChart3, Database, Sliders } from 'lucide-react';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
+import { Shield, Trophy, BarChart3, Sliders, Lock, ShieldCheck } from 'lucide-react';
 
 export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const {
+    activeTab,
     selectedGameId,
     setSelectedGameId,
     selectedComparisonGameId,
@@ -32,6 +33,7 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
     setIsSettingsOpen,
     theme,
   } = useApp();
+  const { isAdminAuthenticated } = useAdminAuth();
 
   const {
     toasts,
@@ -130,16 +132,10 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
               </ul>
             </div>
 
-            {/* Col 4: Platform & Data Ingestion */}
+            {/* Col 4: Platform & Architecture */}
             <div className="space-y-2">
               <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[11px]">Arquitectura</h4>
               <ul className="space-y-1.5">
-                <li>
-                  <button onClick={() => setActiveTab('admin')} className="hover:text-emerald-400 transition-colors flex items-center gap-1">
-                    <Database className="w-3 h-3 text-emerald-400" />
-                    <span>Data Ingestion &amp; Auditoría</span>
-                  </button>
-                </li>
                 <li>
                   <button onClick={() => setIsSettingsOpen(true)} className="hover:text-emerald-400 transition-colors flex items-center gap-1 cursor-pointer">
                     <Sliders className="w-3 h-3 text-emerald-400" />
@@ -154,6 +150,25 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
                 </li>
                 <li>
                   <span className="text-slate-500">PWA &amp; Mobile Ready</span>
+                </li>
+                <li className="pt-1 border-t border-slate-900">
+                  <button
+                    onClick={() => setActiveTab('admin')}
+                    className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-400 cursor-pointer text-xs"
+                    title="Acceso exclusivo para administradores de la plataforma"
+                  >
+                    {isAdminAuthenticated ? (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-semibold">Panel Admin (Activo)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Consola Admin (/admin)</span>
+                      </>
+                    )}
+                  </button>
                 </li>
               </ul>
             </div>
@@ -172,7 +187,6 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
       {/* Global Interactive Modals */}
       <GlobalSearchModal />
       <SettingsMenuModal />
-      <AdminLoginModal />
       <GameMatchupModal
         gameId={selectedComparisonGameId}
         onClose={() => setSelectedComparisonGameId(null)}
@@ -184,7 +198,9 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
       <BoxScoreModal gameId={selectedGameId} onClose={() => setSelectedGameId(null)} />
       <PlayerProfileModal playerId={selectedPlayerId} onClose={() => setSelectedPlayerId(null)} />
       <TeamProfileModal teamId={selectedTeamId} onClose={() => setSelectedTeamId(null)} />
-      <NewsArticleModal slug={selectedNewsSlug} onClose={() => setSelectedNewsSlug(null)} />
+      {activeTab !== 'article' && (
+        <NewsArticleModal slug={selectedNewsSlug} onClose={() => setSelectedNewsSlug(null)} />
+      )}
 
       {/* Floating Real-Time Score Change Toasts */}
       <ScoreChangeToastContainer

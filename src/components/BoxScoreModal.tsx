@@ -265,44 +265,46 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                           <span>{game.awayTeam.logo}</span>
                           <span>{game.awayTeam.name}</span>
                         </div>
-                        <table className="w-full text-xs font-mono">
-                          <thead>
-                            <tr className="text-slate-400 text-right">
-                              <th className="text-left font-sans font-semibold">Bateador</th>
-                              <th className="px-1.5">VB</th>
-                              <th className="px-1.5">C</th>
-                              <th className="px-1.5">H</th>
-                              <th className="px-1.5">CI</th>
-                              <th className="px-1.5">BB</th>
-                              <th className="px-1.5">K</th>
-                              <th className="px-1.5">AVG</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-800/40">
-                            {game.battingBoxScore?.away.map((b) => (
-                              <tr key={b.playerId} className="hover:bg-slate-900/60">
-                                <td className="text-left py-1.5 font-sans">
-                                  <button
-                                    onClick={() => {
-                                      onClose();
-                                      navigateToPlayer(b.playerId);
-                                    }}
-                                    className="font-medium text-slate-200 hover:text-emerald-400 transition-colors"
-                                  >
-                                    {b.name} <span className="text-slate-500 text-[10px]">{b.position}</span>
-                                  </button>
-                                </td>
-                                <td className="px-1.5 py-1.5 text-right">{b.ab}</td>
-                                <td className="px-1.5 py-1.5 text-right">{b.r}</td>
-                                <td className="px-1.5 py-1.5 text-right font-bold text-white">{b.h}</td>
-                                <td className="px-1.5 py-1.5 text-right text-emerald-400 font-bold">{b.rbi}</td>
-                                <td className="px-1.5 py-1.5 text-right">{b.bb}</td>
-                                <td className="px-1.5 py-1.5 text-right">{b.so}</td>
-                                <td className="px-1.5 py-1.5 text-right text-slate-400">{b.avg}</td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs font-mono min-w-[320px]">
+                            <thead>
+                              <tr className="text-slate-400 text-right">
+                                <th className="text-left font-sans font-semibold">Bateador</th>
+                                <th className="px-1.5">VB</th>
+                                <th className="px-1.5">C</th>
+                                <th className="px-1.5">H</th>
+                                <th className="px-1.5">CI</th>
+                                <th className="px-1.5">BB</th>
+                                <th className="px-1.5">K</th>
+                                <th className="px-1.5">AVG</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/40">
+                              {game.battingBoxScore?.away.map((b) => (
+                                <tr key={b.playerId} className="hover:bg-slate-900/60">
+                                  <td className="text-left py-1.5 font-sans">
+                                    <button
+                                      onClick={() => {
+                                        onClose();
+                                        navigateToPlayer(b.playerId);
+                                      }}
+                                      className="font-medium text-slate-200 hover:text-emerald-400 transition-colors"
+                                    >
+                                      {b.name} <span className="text-slate-500 text-[10px]">{b.position}</span>
+                                    </button>
+                                  </td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.ab}</td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.r}</td>
+                                  <td className="px-1.5 py-1.5 text-right font-bold text-white">{b.h}</td>
+                                  <td className="px-1.5 py-1.5 text-right text-emerald-400 font-bold">{b.rbi}</td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.bb}</td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.so}</td>
+                                  <td className="px-1.5 py-1.5 text-right text-slate-400">{b.avg}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
 
                       {/* Home Batters */}
@@ -311,44 +313,46 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                           <span>{game.homeTeam.logo}</span>
                           <span>{game.homeTeam.name}</span>
                         </div>
-                        <table className="w-full text-xs font-mono">
-                          <thead>
-                            <tr className="text-slate-400 text-right">
-                              <th className="text-left font-sans font-semibold">Bateador</th>
-                              <th className="px-1.5">VB</th>
-                              <th className="px-1.5">C</th>
-                              <th className="px-1.5">H</th>
-                              <th className="px-1.5">CI</th>
-                              <th className="px-1.5">BB</th>
-                              <th className="px-1.5">K</th>
-                              <th className="px-1.5">AVG</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-800/40">
-                            {game.battingBoxScore?.home.map((b) => (
-                              <tr key={b.playerId} className="hover:bg-slate-900/60">
-                                <td className="text-left py-1.5 font-sans">
-                                  <button
-                                    onClick={() => {
-                                      onClose();
-                                      navigateToPlayer(b.playerId);
-                                    }}
-                                    className="font-medium text-slate-200 hover:text-emerald-400 transition-colors"
-                                  >
-                                    {b.name} <span className="text-slate-500 text-[10px]">{b.position}</span>
-                                  </button>
-                                </td>
-                                <td className="px-1.5 py-1.5 text-right">{b.ab}</td>
-                                <td className="px-1.5 py-1.5 text-right">{b.r}</td>
-                                <td className="px-1.5 py-1.5 text-right font-bold text-white">{b.h}</td>
-                                <td className="px-1.5 py-1.5 text-right text-emerald-400 font-bold">{b.rbi}</td>
-                                <td className="px-1.5 py-1.5 text-right">{b.bb}</td>
-                                <td className="px-1.5 py-1.5 text-right">{b.so}</td>
-                                <td className="px-1.5 py-1.5 text-right text-slate-400">{b.avg}</td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs font-mono min-w-[320px]">
+                            <thead>
+                              <tr className="text-slate-400 text-right">
+                                <th className="text-left font-sans font-semibold">Bateador</th>
+                                <th className="px-1.5">VB</th>
+                                <th className="px-1.5">C</th>
+                                <th className="px-1.5">H</th>
+                                <th className="px-1.5">CI</th>
+                                <th className="px-1.5">BB</th>
+                                <th className="px-1.5">K</th>
+                                <th className="px-1.5">AVG</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/40">
+                              {game.battingBoxScore?.home.map((b) => (
+                                <tr key={b.playerId} className="hover:bg-slate-900/60">
+                                  <td className="text-left py-1.5 font-sans">
+                                    <button
+                                      onClick={() => {
+                                        onClose();
+                                        navigateToPlayer(b.playerId);
+                                      }}
+                                      className="font-medium text-slate-200 hover:text-emerald-400 transition-colors"
+                                    >
+                                      {b.name} <span className="text-slate-500 text-[10px]">{b.position}</span>
+                                    </button>
+                                  </td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.ab}</td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.r}</td>
+                                  <td className="px-1.5 py-1.5 text-right font-bold text-white">{b.h}</td>
+                                  <td className="px-1.5 py-1.5 text-right text-emerald-400 font-bold">{b.rbi}</td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.bb}</td>
+                                  <td className="px-1.5 py-1.5 text-right">{b.so}</td>
+                                  <td className="px-1.5 py-1.5 text-right text-slate-400">{b.avg}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -365,36 +369,38 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                           <div className="font-bold text-xs text-slate-200 pb-2 mb-2 border-b border-slate-800">
                             Pitcheo: {game.awayTeam.name}
                           </div>
-                          <table className="w-full text-xs font-mono">
-                            <thead>
-                              <tr className="text-slate-400 text-right">
-                                <th className="text-left font-sans font-semibold">Lanzador</th>
-                                <th className="px-1.5">INN</th>
-                                <th className="px-1.5">H</th>
-                                <th className="px-1.5">C</th>
-                                <th className="px-1.5">CL</th>
-                                <th className="px-1.5">BB</th>
-                                <th className="px-1.5">K</th>
-                                <th className="px-1.5">PCL</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/40">
-                              {game.pitchingBoxScore.away.map((p) => (
-                                <tr key={p.playerId} className="hover:bg-slate-900/60">
-                                  <td className="text-left py-1.5 font-sans font-medium text-slate-200">
-                                    {p.name}
-                                  </td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.ip}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.h}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.r}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.er}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.bb}</td>
-                                  <td className="px-1.5 py-1.5 text-right font-bold text-sky-400">{p.so}</td>
-                                  <td className="px-1.5 py-1.5 text-right text-slate-400">{p.era}</td>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs font-mono min-w-[320px]">
+                              <thead>
+                                <tr className="text-slate-400 text-right">
+                                  <th className="text-left font-sans font-semibold">Lanzador</th>
+                                  <th className="px-1.5">INN</th>
+                                  <th className="px-1.5">H</th>
+                                  <th className="px-1.5">C</th>
+                                  <th className="px-1.5">CL</th>
+                                  <th className="px-1.5">BB</th>
+                                  <th className="px-1.5">K</th>
+                                  <th className="px-1.5">PCL</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/40">
+                                {game.pitchingBoxScore.away.map((p) => (
+                                  <tr key={p.playerId} className="hover:bg-slate-900/60">
+                                    <td className="text-left py-1.5 font-sans font-medium text-slate-200">
+                                      {p.name}
+                                    </td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.ip}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.h}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.r}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.er}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.bb}</td>
+                                    <td className="px-1.5 py-1.5 text-right font-bold text-sky-400">{p.so}</td>
+                                    <td className="px-1.5 py-1.5 text-right text-slate-400">{p.era}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
 
                         {/* Home Pitchers */}
@@ -402,36 +408,38 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                           <div className="font-bold text-xs text-slate-200 pb-2 mb-2 border-b border-slate-800">
                             Pitcheo: {game.homeTeam.name}
                           </div>
-                          <table className="w-full text-xs font-mono">
-                            <thead>
-                              <tr className="text-slate-400 text-right">
-                                <th className="text-left font-sans font-semibold">Lanzador</th>
-                                <th className="px-1.5">INN</th>
-                                <th className="px-1.5">H</th>
-                                <th className="px-1.5">C</th>
-                                <th className="px-1.5">CL</th>
-                                <th className="px-1.5">BB</th>
-                                <th className="px-1.5">K</th>
-                                <th className="px-1.5">PCL</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/40">
-                              {game.pitchingBoxScore.home.map((p) => (
-                                <tr key={p.playerId} className="hover:bg-slate-900/60">
-                                  <td className="text-left py-1.5 font-sans font-medium text-slate-200">
-                                    {p.name}
-                                  </td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.ip}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.h}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.r}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.er}</td>
-                                  <td className="px-1.5 py-1.5 text-right">{p.bb}</td>
-                                  <td className="px-1.5 py-1.5 text-right font-bold text-sky-400">{p.so}</td>
-                                  <td className="px-1.5 py-1.5 text-right text-slate-400">{p.era}</td>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs font-mono min-w-[320px]">
+                              <thead>
+                                <tr className="text-slate-400 text-right">
+                                  <th className="text-left font-sans font-semibold">Lanzador</th>
+                                  <th className="px-1.5">INN</th>
+                                  <th className="px-1.5">H</th>
+                                  <th className="px-1.5">C</th>
+                                  <th className="px-1.5">CL</th>
+                                  <th className="px-1.5">BB</th>
+                                  <th className="px-1.5">K</th>
+                                  <th className="px-1.5">PCL</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/40">
+                                {game.pitchingBoxScore.home.map((p) => (
+                                  <tr key={p.playerId} className="hover:bg-slate-900/60">
+                                    <td className="text-left py-1.5 font-sans font-medium text-slate-200">
+                                      {p.name}
+                                    </td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.ip}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.h}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.r}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.er}</td>
+                                    <td className="px-1.5 py-1.5 text-right">{p.bb}</td>
+                                    <td className="px-1.5 py-1.5 text-right font-bold text-sky-400">{p.so}</td>
+                                    <td className="px-1.5 py-1.5 text-right text-slate-400">{p.era}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
                     </div>

@@ -8,7 +8,6 @@ import {
   ShieldCheck,
   AlertCircle,
   X,
-  Sparkles,
   ArrowRight,
   ShieldAlert,
 } from 'lucide-react';
@@ -52,12 +51,6 @@ export const AdminLoginForm: React.FC<AdminLoginProps> = ({ isModal = false, onS
     }
   };
 
-  const fillCredentials = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setError(null);
-  };
-
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="p-6 sm:p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl space-y-6">
@@ -98,7 +91,7 @@ export const AdminLoginForm: React.FC<AdminLoginProps> = ({ isModal = false, onS
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="ej. admin o anotador"
+                placeholder="Ingrese su usuario"
                 disabled={isSubmitting}
                 className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all font-mono"
               />
@@ -158,43 +151,8 @@ export const AdminLoginForm: React.FC<AdminLoginProps> = ({ isModal = false, onS
           </button>
         </form>
 
-        {/* Demo Quick-Fill Helpers */}
-        <div className="pt-4 border-t border-slate-800/80 space-y-2.5">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span className="flex items-center gap-1 font-semibold text-slate-300">
-              <Sparkles className="w-3 h-3 text-emerald-400" />
-              <span>Credenciales Demo de Prueba:</span>
-            </span>
-            <span className="text-[10px] font-mono text-slate-500">Haz clic para autocompletar</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => fillCredentials('admin', 'baseball2026')}
-              className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 hover:border-emerald-500/50 text-left transition-all cursor-pointer group"
-            >
-              <div className="text-[11px] font-bold text-slate-200 group-hover:text-emerald-400">
-                Super Administrador
-              </div>
-              <div className="text-[10px] font-mono text-slate-500">admin / baseball2026</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => fillCredentials('anotador', 'anotador2026')}
-              className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 hover:border-emerald-500/50 text-left transition-all cursor-pointer group"
-            >
-              <div className="text-[11px] font-bold text-slate-200 group-hover:text-emerald-400">
-                Anotador Oficial
-              </div>
-              <div className="text-[10px] font-mono text-slate-500">anotador / anotador2026</div>
-            </button>
-          </div>
-        </div>
-
         {/* Security Badge */}
-        <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500 font-mono">
+        <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500 font-mono pt-2">
           <ShieldAlert className="w-3 h-3 text-emerald-500" />
           <span>Acceso cifrado con token de sesión de 24 horas</span>
         </div>

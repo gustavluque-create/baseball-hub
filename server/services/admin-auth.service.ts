@@ -169,7 +169,7 @@ export class AdminAuthService {
     username: string,
     action: string,
     details: string,
-    category: 'auth' | 'games' | 'players' | 'etl' | 'system'
+    category: 'auth' | 'games' | 'players' | 'teams' | 'etl' | 'system'
   ): void {
     const log: AdminAuditLog = {
       id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),

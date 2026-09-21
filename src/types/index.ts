@@ -291,6 +291,8 @@ export interface NewsArticle {
   playerId?: string;
   relatedTeams?: string[];
   relatedPlayers?: string[];
+  isFeatured?: boolean;
+  imageHeight?: 'tall' | 'medium' | 'wide' | 'panoramic';
 }
 
 export interface VideoItem {
@@ -313,6 +315,7 @@ export interface IngestionValidationSummary {
   warnings: Array<{ row: number; field: string; message: string }>;
   errors: Array<{ row: number; field: string; message: string }>;
   preview: any[];
+  records?: any[];
 }
 
 export interface TeamAggregatedStats {
@@ -413,7 +416,7 @@ export interface AdminAuditLog {
   username: string;
   action: string;
   details: string;
-  category: 'auth' | 'games' | 'players' | 'etl' | 'system';
+  category: 'auth' | 'games' | 'players' | 'teams' | 'etl' | 'system';
 }
 
 export interface AdminSystemOverview {
@@ -425,3 +428,14 @@ export interface AdminSystemOverview {
   uptimeSeconds: number;
   lastIngestionDate?: string;
 }
+
+export interface ArticleComment {
+  id: string;
+  articleSlug: string;
+  authorName: string;
+  favoriteTeam?: string;
+  content: string;
+  createdAt: string;
+  likes?: number;
+}
+

@@ -17,6 +17,7 @@ import {
 import { Team, Game } from '../types/index.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { MyTeamsSectionSkeleton } from './LoadingSkeleton.tsx';
+import { TeamLogo } from './TeamLogo.tsx';
 
 interface MyTeamsSectionProps {
   teams: Team[];
@@ -155,7 +156,9 @@ export const MyTeamsSection: React.FC<MyTeamsSectionProps> = ({
                       : 'bg-slate-800/80 border-slate-700/80 text-slate-400 hover:text-slate-200 hover:bg-slate-750'
                   }`}
                 >
-                  <span className="text-base">{t.logo}</span>
+                  <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                    <TeamLogo logo={t.logo} name={t.name} className="w-full h-full text-base" />
+                  </div>
                   <span>{t.name}</span>
                   {isFav ? (
                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 ml-0.5" />
@@ -284,10 +287,10 @@ export const MyTeamsSection: React.FC<MyTeamsSectionProps> = ({
                       className="flex items-center gap-3.5 cursor-pointer group/title min-w-0"
                     >
                       <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border border-slate-700 shadow-md shrink-0 transition-transform group-hover/title:scale-105"
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border border-slate-700 shadow-md shrink-0 transition-transform group-hover/title:scale-105 p-1 overflow-hidden"
                         style={{ backgroundColor: `${primaryColor}20` }}
                       >
-                        {team.logo}
+                        <TeamLogo logo={team.logo} name={team.name} className="w-full h-full" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">

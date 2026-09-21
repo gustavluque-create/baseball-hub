@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import esTranslations from '../locales/es.json';
 import enTranslations from '../locales/en.json';
+import { isPotentialArticleSlug } from '../utils/slug.ts';
 
 export type ActiveNavTab =
   | 'home'
@@ -12,7 +13,8 @@ export type ActiveNavTab =
   | 'players'
   | 'news'
   | 'videos'
-  | 'admin';
+  | 'admin'
+  | 'article';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type TableDensity = 'comfortable' | 'compact';
@@ -57,19 +59,135 @@ interface AppContextType {
   navigateToTeam: (id: string) => void;
   navigateToPlayer: (id: string) => void;
   navigateToNews: (slug: string) => void;
+  dataVersion: number;
+  triggerDataRefresh: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const getInitialRoute = (): { tab: ActiveNavTab; slug: string | null } => {
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    const hash = window.location.hash;
+
+    // 1. Admin route
+    if (
+      path === '/admin' ||
+      path.startsWith('/admin/') ||
+      hash === '#/admin' ||
+      hash === '#admin'
+    ) {
+      return { tab: 'admin', slug: null };
+    }
+
+    // 2. Explicit article prefix: /noticias/:slug, /articulo/:slug, /news/:slug
+    const matchArticlePrefix = path.match(/^\/(?:noticias|articulo|news)\/([^/]+)/i);
+    if (matchArticlePrefix && matchArticlePrefix[1]) {
+      return { tab: 'article', slug: decodeURIComponent(matchArticlePrefix[1]) };
+    }
+
+    // 3. Hash article: #/articulo/:slug or #/:slug
+    const hashArticleMatch = hash.match(/^#\/?(?:noticias|articulo|news)?\/?([^/]+)/i);
+    if (hashArticleMatch && hashArticleMatch[1] && isPotentialArticleSlug(hashArticleMatch[1])) {
+      return { tab: 'article', slug: decodeURIComponent(hashArticleMatch[1]) };
+    }
+
+    // 4. Clean root path: /cocodrilos-matanzas-liderato-ofensiva-implacable
+    const singleSegment = path.replace(/^\/+|\/+$/g, '');
+    if (singleSegment && isPotentialArticleSlug(singleSegment)) {
+      return { tab: 'article', slug: decodeURIComponent(singleSegment) };
+    }
+
+    // 5. Standard tab routes
+    const cleanHash = hash.replace(/^#\/?/, '').toLowerCase();
+    const cleanPath = singleSegment.toLowerCase();
+    const target = cleanHash || cleanPath;
+
+    if (target === 'noticias') return { tab: 'news', slug: null };
+    if (target === 'partidos') return { tab: 'games', slug: null };
+    if (target === 'posiciones') return { tab: 'standings', slug: null };
+    if (target === 'estadisticas') return { tab: 'statistics', slug: null };
+    if (target === 'lideres') return { tab: 'leaders', slug: null };
+    if (target === 'equipos') return { tab: 'teams', slug: null };
+    if (target === 'jugadores') return { tab: 'players', slug: null };
+
+    if (
+      [
+        'games',
+        'standings',
+        'statistics',
+        'leaders',
+        'teams',
+        'players',
+        'news',
+        'videos',
+      ].includes(target)
+    ) {
+      return { tab: target as ActiveNavTab, slug: null };
+    }
+  }
+  return { tab: 'home', slug: null };
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<ActiveNavTab>('home');
+  const initialRoute = getInitialRoute();
+  const [activeTab, setActiveTabState] = useState<ActiveNavTab>(initialRoute.tab);
+  const [selectedNewsSlug, setSelectedNewsSlug] = useState<string | null>(initialRoute.slug);
+
+  const setActiveTab = (tab: ActiveNavTab) => {
+    setActiveTabState(tab);
+    if (tab !== 'article') {
+      setSelectedNewsSlug(null);
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        if (tab === 'admin') {
+          if (window.location.pathname !== '/admin') {
+            window.history.pushState(null, '', '/admin');
+          }
+        } else if (tab === 'home') {
+          if (window.location.pathname !== '/') {
+            window.history.pushState(null, '', '/');
+          }
+        } else if (tab === 'news') {
+          if (window.location.pathname !== '/noticias') {
+            window.history.pushState(null, '', '/noticias');
+          }
+        } else if (tab === 'article') {
+          // Handled via navigateToNews
+        } else {
+          if (window.location.pathname !== `/${tab}`) {
+            window.history.pushState(null, '', `/${tab}`);
+          }
+        }
+      } catch (e) {
+        console.warn('History pushState error:', e);
+      }
+    }
+  };
+
+  // Synchronize browser history and hash navigation
+  useEffect(() => {
+    const handleUrlNavigation = () => {
+      if (typeof window === 'undefined') return;
+      const route = getInitialRoute();
+      setActiveTabState(route.tab);
+      setSelectedNewsSlug(route.slug);
+    };
+
+    window.addEventListener('popstate', handleUrlNavigation);
+    window.addEventListener('hashchange', handleUrlNavigation);
+    return () => {
+      window.removeEventListener('popstate', handleUrlNavigation);
+      window.removeEventListener('hashchange', handleUrlNavigation);
+    };
+  }, []);
   const [activeCompetitionId, setActiveCompetitionId] = useState<string>('snb');
   const [activeSeasonId, setActiveSeasonId] = useState<string>('snb-2026');
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [selectedComparisonGameId, setSelectedComparisonGameId] = useState<string | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
-  const [selectedNewsSlug, setSelectedNewsSlug] = useState<string | null>(null);
   const [language, setLanguage] = useState<'es' | 'en'>('es');
 
   // Initialize theme mode from localStorage
@@ -265,10 +383,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const [dataVersion, setDataVersion] = useState<number>(1);
+  const triggerDataRefresh = () => {
+    setDataVersion((v) => v + 1);
+  };
+
   const navigateToNews = (slug: string) => {
-    setSelectedNewsSlug(slug);
-    setActiveTab('news');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const cleanSlug = (slug || '').trim();
+    setSelectedNewsSlug(cleanSlug);
+    setActiveTabState('article');
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.location.pathname !== `/${cleanSlug}`) {
+          window.history.pushState(null, '', `/${cleanSlug}`);
+        }
+      } catch (e) {
+        console.warn('History pushState error:', e);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   return (
@@ -313,6 +446,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         navigateToTeam,
         navigateToPlayer,
         navigateToNews,
+        dataVersion,
+        triggerDataRefresh,
       }}
     >
       <div className={theme === 'dark' ? 'dark' : 'light'}>{children}</div>

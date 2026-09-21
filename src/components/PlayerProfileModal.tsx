@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, MapPin, Award, Activity, TrendingUp, Shield } from 'lucide-react';
+import { X, Calendar, MapPin, Award, Activity, TrendingUp, Shield, Camera } from 'lucide-react';
 import { Player, BattingStats, PitchingStats } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { PlayerProfileSkeleton } from './LoadingSkeleton.tsx';
+import { PlayerImageEditorModal } from './admin/PlayerImageEditorModal.tsx';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import {
   LineChart,
   Line,
@@ -20,13 +22,15 @@ interface PlayerProfileModalProps {
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId, onClose }) => {
-  const { navigateToTeam } = useApp();
+  const { navigateToTeam, dataVersion, triggerDataRefresh } = useApp();
+  const { isAdminAuthenticated } = useAdminAuth();
   const [data, setData] = useState<{
     player: Player;
     batting?: BattingStats;
     pitching?: PitchingStats;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
 
   useEffect(() => {
     if (!playerId) return;
@@ -40,7 +44,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
         console.error(err);
         setLoading(false);
       });
-  }, [playerId]);
+  }, [playerId, dataVersion]);
 
   if (!playerId) return null;
 
@@ -86,12 +90,35 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
             <>
               {/* Player Hero Section */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-5 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-slate-800">
-                <img
-                  src={data.player.photo}
-                  alt={data.player.fullName}
-                  className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-xl"
-                  referrerPolicy="no-referrer"
-                />
+                <div className="relative group shrink-0">
+                  <img
+                    src={data.player.photo}
+                    alt={data.player.fullName}
+                    className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-xl"
+                    referrerPolicy="no-referrer"
+                  />
+                  {isAdminAuthenticated && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsImageEditorOpen(true)}
+                        className="absolute -bottom-2 -right-2 p-2 sm:p-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-lg border-2 border-slate-900 flex items-center justify-center cursor-pointer transition-all z-10"
+                        title="Subir o cambiar fotografía del jugador (Admin)"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsImageEditorOpen(true)}
+                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 rounded-2xl hidden sm:flex flex-col items-center justify-center text-white text-[11px] font-bold transition-opacity cursor-pointer gap-1"
+                        title="Subir o cambiar fotografía del jugador (Admin)"
+                      >
+                        <Camera className="w-5 h-5 text-emerald-400" />
+                        <span>Cambiar Foto</span>
+                      </button>
+                    </>
+                  )}
+                </div>
                 <div className="flex-1 text-center sm:text-left space-y-2">
                   <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                     <span className="text-2xl sm:text-3xl font-black text-white">
@@ -118,6 +145,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                     <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold text-xs border border-slate-700">
                       {data.player.position}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsImageEditorOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      <Camera className="w-3 h-3 text-emerald-400" />
+                      <span>Cambiar Foto</span>
+                    </button>
                   </div>
 
                   {/* Physical & Bio details */}
@@ -311,6 +346,23 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
           )}
         </div>
       </div>
+
+      {/* Player Photo Editor Modal (Restricted to authenticated admin) */}
+      {isAdminAuthenticated && isImageEditorOpen && data?.player && (
+        <PlayerImageEditorModal
+          player={data.player}
+          isOpen={true}
+          onClose={() => setIsImageEditorOpen(false)}
+          onSavePhoto={(newPhoto, updatedP) => {
+            if (updatedP) {
+              setData((prev) => (prev ? { ...prev, player: updatedP } : prev));
+            } else {
+              setData((prev) => (prev ? { ...prev, player: { ...prev.player, photo: newPhoto } } : prev));
+            }
+            triggerDataRefresh();
+          }}
+        />
+      )}
     </div>
   );
 };

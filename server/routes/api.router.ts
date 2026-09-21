@@ -191,6 +191,27 @@ apiRouter.put('/admin/players/:id', requireAdmin, (req: Request, res: Response) 
   res.json(player);
 });
 
+apiRouter.post('/admin/players/import', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const rawList = Array.isArray(req.body.players) ? req.body.players : Array.isArray(req.body) ? req.body : [];
+  if (rawList.length === 0) {
+    return res.status(400).json({ error: 'La lista de jugadores a importar está vacía o no tiene formato válido.' });
+  }
+
+  const result = baseballRepo.importPlayers(rawList);
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Importación de Jugadores',
+    `Se procesaron e importaron ${result.importedCount} jugadores (${result.createdCount} nuevos, ${result.updatedCount} actualizados en plantilla).`,
+    'players'
+  );
+  res.json({
+    success: true,
+    ...result,
+    message: `Se han importado exitosamente ${result.importedCount} jugadores.`,
+  });
+});
+
 apiRouter.delete('/admin/players/:id', requireAdmin, (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const success = baseballRepo.deletePlayer(req.params.id);
@@ -323,6 +344,57 @@ apiRouter.get('/teams/:id', (req: Request, res: Response) => {
   res.json({ team, roster, games });
 });
 
+// Update Team Logo directly
+const handleUpdateTeamLogo = (req: Request, res: Response) => {
+  const { logo, primaryColor } = req.body;
+  if (!logo || typeof logo !== 'string') {
+    return res.status(400).json({ error: 'Se requiere el logo en formato base64, emoji o URL.' });
+  }
+
+  const updates: any = { logo };
+  if (primaryColor) {
+    updates.primaryColor = primaryColor;
+  }
+
+  const updatedTeam = baseballRepo.updateTeam(req.params.id, updates);
+  if (!updatedTeam) {
+    return res.status(404).json({ error: 'Equipo no encontrado.' });
+  }
+
+  // Audit if admin session is present
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : (req.headers['x-admin-token'] as string);
+  const admin = adminAuthService.verifySession(token);
+  if (admin) {
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Actualización de Logo de Equipo',
+      `Logo actualizado para ${updatedTeam.name} (${updatedTeam.shortName}).`,
+      'teams'
+    );
+  }
+
+  res.json({
+    success: true,
+    message: 'Logo del equipo actualizado correctamente.',
+    team: updatedTeam,
+    logo: updatedTeam.logo,
+  });
+};
+
+apiRouter.put('/teams/:id/logo', requireAdmin, handleUpdateTeamLogo);
+apiRouter.post('/teams/:id/logo', requireAdmin, handleUpdateTeamLogo);
+
+apiRouter.put('/teams/:id', requireAdmin, (req: Request, res: Response) => {
+  const updatedTeam = baseballRepo.updateTeam(req.params.id, req.body);
+  if (!updatedTeam) {
+    return res.status(404).json({ error: 'Equipo no encontrado.' });
+  }
+  res.json(updatedTeam);
+});
+
 // Players
 apiRouter.get('/players', (req: Request, res: Response) => {
   const { teamId, position, search, limit, page } = req.query;
@@ -345,6 +417,44 @@ apiRouter.get('/players/:id', (req: Request, res: Response) => {
   const pitching = baseballRepo.getPitchingStats().find((p) => p.playerId === player.id);
   res.json({ player, batting, pitching });
 });
+
+// Update Player Photo directly (from profile modal or admin tools)
+const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
+  const { photo } = req.body;
+  if (!photo || typeof photo !== 'string') {
+    return res.status(400).json({ error: 'Se requiere la imagen en formato base64 o URL.' });
+  }
+
+  const updatedPlayer = baseballRepo.updatePlayer(req.params.id, { photo });
+  if (!updatedPlayer) {
+    return res.status(404).json({ error: 'Jugador no encontrado.' });
+  }
+
+  // Audit if admin session is present
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : (req.headers['x-admin-token'] as string);
+  const admin = adminAuthService.verifySession(token);
+  if (admin) {
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Actualización de Foto de Jugador',
+      `Foto actualizada para ${updatedPlayer.fullName} (#${updatedPlayer.jerseyNumber} - ${updatedPlayer.teamShort}).`,
+      'players'
+    );
+  }
+
+  res.json({
+    success: true,
+    message: 'Fotografía actualizada correctamente.',
+    player: updatedPlayer,
+    photo: updatedPlayer.photo,
+  });
+};
+
+apiRouter.put('/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
+apiRouter.post('/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
 
 // Games
 apiRouter.get('/games', (req: Request, res: Response) => {
@@ -382,12 +492,20 @@ apiRouter.get('/matchup/:id', (req: Request, res: Response) => {
   res.json(matchup);
 });
 
-apiRouter.post('/games/simulate-run', (req: Request, res: Response) => {
+apiRouter.post('/games/simulate-run', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
   const { gameId, side, runs } = req.body || {};
   const result = baseballRepo.simulateLiveScoreChange(gameId, side, runs);
   if (!result) {
     return res.status(404).json({ error: 'No se encontraron partidos en vivo para simular carreras.' });
   }
+
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Simulación de Carrera en Vivo',
+    `Carrera manual anotada en partido ${result.game.awayTeam.shortName} vs ${result.game.homeTeam.shortName}`,
+    'games'
+  );
 
   // Broadcast to all real-time SSE stream clients and notification subscribers
   notificationService.broadcastScoreChange({
@@ -444,7 +562,7 @@ apiRouter.get('/leaders', (req: Request, res: Response) => {
 
 // News
 apiRouter.get('/news', (req: Request, res: Response) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 24;
   const category = req.query.category as string;
   const news = baseballRepo.getNews(limit, category);
   res.json(news);
@@ -456,6 +574,48 @@ apiRouter.get('/news/:slug', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Noticia no encontrada' });
   }
   res.json(article);
+});
+
+// Community Comments on News Articles (Public consumers can read and comment)
+apiRouter.get('/news/:slug/comments', (req: Request, res: Response) => {
+  const comments = baseballRepo.getCommentsByArticle(req.params.slug);
+  res.json(comments);
+});
+
+apiRouter.post('/news/:slug/comments', (req: Request, res: Response) => {
+  const { authorName, favoriteTeam, content } = req.body || {};
+  if (!content || typeof content !== 'string' || content.trim().length < 3) {
+    return res.status(400).json({ error: 'El comentario debe contener al menos 3 caracteres.' });
+  }
+  if (content.length > 800) {
+    return res.status(400).json({ error: 'El comentario no puede exceder los 800 caracteres.' });
+  }
+
+  const comment = baseballRepo.addComment(req.params.slug, {
+    authorName,
+    favoriteTeam,
+    content,
+  });
+
+  res.status(201).json(comment);
+});
+
+// Delete comment (Administrative moderation only)
+apiRouter.delete('/news/comments/:id', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const success = baseballRepo.deleteComment(req.params.id);
+  if (!success) {
+    return res.status(404).json({ error: 'Comentario no encontrado.' });
+  }
+
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Moderación de Comentarios',
+    `Comentario ${req.params.id} eliminado por el moderador.`,
+    'system'
+  );
+
+  res.json({ success: true, message: 'Comentario eliminado.' });
 });
 
 // Videos
@@ -471,8 +631,8 @@ apiRouter.get('/search', (req: Request, res: Response) => {
   res.json(results);
 });
 
-// Data Ingestion & Audit Tool
-apiRouter.post('/ingest/validate', (req: Request, res: Response) => {
+// Data Ingestion & Audit Tool (Administrative access only)
+apiRouter.post('/ingest/validate', requireAdmin, (req: Request, res: Response) => {
   const { rawText, format } = req.body;
   if (!rawText) {
     return res.status(400).json({ error: 'rawText es requerido' });
@@ -481,12 +641,13 @@ apiRouter.post('/ingest/validate', (req: Request, res: Response) => {
   res.json(summary);
 });
 
-apiRouter.post('/ingest/commit', (req: Request, res: Response) => {
+apiRouter.post('/ingest/commit', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
   const { records, username } = req.body;
   if (!Array.isArray(records) || records.length === 0) {
     return res.status(400).json({ error: 'Lista de registros válida requerida para commit' });
   }
   const insertedCount = IngestionService.commitIngestion(records);
-  adminAuthService.recordIngestionSuccess(insertedCount, username || 'admin');
+  adminAuthService.recordIngestionSuccess(insertedCount, admin?.username || username || 'admin');
   res.json({ success: true, count: insertedCount, message: `${insertedCount} registros insertados exitosamente` });
 });

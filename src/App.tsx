@@ -17,10 +17,16 @@ import { TeamsView } from './views/TeamsView.tsx';
 import { PlayersView } from './views/PlayersView.tsx';
 import { NewsView } from './views/NewsView.tsx';
 import { VideosView } from './views/VideosView.tsx';
-import { AdminView } from './views/AdminView.tsx';
+import { ArticlePostView } from './views/ArticlePostView.tsx';
+import { AdminStandalonePage } from './views/AdminStandalonePage.tsx';
 
 const AppContent: React.FC = () => {
-  const { activeTab } = useApp();
+  const { activeTab, selectedNewsSlug, setActiveTab } = useApp();
+
+  // Standalone dedicated page for /admin - completely isolated from public MainLayout
+  if (activeTab === 'admin') {
+    return <AdminStandalonePage />;
+  }
 
   const renderActiveView = () => {
     switch (activeTab) {
@@ -40,10 +46,15 @@ const AppContent: React.FC = () => {
         return <PlayersView />;
       case 'news':
         return <NewsView />;
+      case 'article':
+        return (
+          <ArticlePostView
+            slug={selectedNewsSlug || ''}
+            onBack={() => setActiveTab('news')}
+          />
+        );
       case 'videos':
         return <VideosView />;
-      case 'admin':
-        return <AdminView />;
       default:
         return <HomeView />;
     }

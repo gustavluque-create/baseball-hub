@@ -69,6 +69,8 @@ export const AdminAuditLogs: React.FC = () => {
         return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
       case 'players':
         return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+      case 'teams':
+        return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
       case 'etl':
         return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
       case 'system':
@@ -105,6 +107,7 @@ export const AdminAuditLogs: React.FC = () => {
             <option value="auth">Seguridad &amp; Acceso (Auth)</option>
             <option value="games">Partidos en Vivo (Games)</option>
             <option value="players">Roster &amp; Jugadores (Players)</option>
+            <option value="teams">Equipos &amp; Logos (Teams)</option>
             <option value="etl">Ingesta ETL (Data)</option>
             <option value="system">Sistema General</option>
           </select>

@@ -29,6 +29,7 @@ import {
   Clock,
   Server,
   KeyRound,
+  ArrowLeft,
 } from 'lucide-react';
 import { ApiClient } from '../services/api.ts';
 import { IngestionValidationSummary, AdminSystemOverview } from '../types/index.ts';
@@ -66,6 +67,7 @@ const SAMPLE_JSON = `[
 
 export const AdminView: React.FC = () => {
   const {
+    setActiveTab,
     theme,
     themeMode,
     setThemeMode,
@@ -114,10 +116,14 @@ export const AdminView: React.FC = () => {
   };
 
   const handleCommit = async () => {
-    if (!auditSummary || auditSummary.preview.length === 0) return;
+    if (!auditSummary) return;
+    const recordsToCommit = auditSummary.records && auditSummary.records.length > 0
+      ? auditSummary.records
+      : auditSummary.preview;
+    if (!recordsToCommit || recordsToCommit.length === 0) return;
     setIsCommitting(true);
     try {
-      const res = await ApiClient.commitIngestion(auditSummary.preview);
+      const res = await ApiClient.commitIngestion(recordsToCommit);
       setCommitMessage(res.message);
     } catch (err: any) {
       alert(`Error al insertar en base de datos: ${err.message}`);
@@ -157,16 +163,24 @@ export const AdminView: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Conectado como <strong className="text-slate-200">{adminUser?.name}</strong> (@{adminUser?.username}) • Acceso Seguro Activo
+              Conectado como <strong className="text-slate-200">{adminUser?.name}</strong> • Sesión Segura Activa
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3 self-end md:self-center">
           <button
+            onClick={() => setActiveTab('home')}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+            title="Volver a la portada deportiva pública"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Sitio Público</span>
+          </button>
+          <button
             onClick={logout}
             id="admin-logout-btn"
-            className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
             title="Cerrar sesión de administrador"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -708,7 +722,23 @@ export const AdminView: React.FC = () => {
               </button>
             </div>
           </div>
-      {commitMessage && (
+          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-300">
+              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Soporte flexible de JSON &amp; CSV:</strong> Acepta campos como <code className="text-emerald-400">playerName</code>, <code className="text-emerald-400">fullName</code> o <code className="text-emerald-400">nombre</code>, equipos (<code className="text-emerald-400">teamShort</code>, ej. <em>GRA</em>, <em>PRI</em>, <em>IND</em>) y estadísticas. Al insertar, los jugadores se registran automáticamente en el roster de su equipo.
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveSection('players')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors shrink-0"
+            >
+              <Users className="w-3.5 h-3.5 text-purple-400" />
+              <span>Gestor de Jugadores &amp; Roster</span>
+            </button>
+          </div>
+
+          {commitMessage && (
         <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 flex items-center gap-3 text-emerald-300">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span className="font-bold text-sm">{commitMessage}</span>

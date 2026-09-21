@@ -601,36 +601,6 @@ export const SettingsMenuModal: React.FC = () => {
               </button>
             </div>
           </section>
-
-          {/* SECTION: Quick Admin / ETL Tool link */}
-          <section className="pt-2 border-t border-slate-800">
-            <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                  <Database className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-200">
-                    {t('settings.adminLink') || 'Ingesta & Auditoría de Datos (ETL)'}
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    Importa estadísticas desde CSV o JSON con validación
-                  </div>
-                </div>
-              </div>
-              <button
-                id="settings-to-admin-btn"
-                onClick={() => {
-                  setIsSettingsOpen(false);
-                  setActiveTab('admin');
-                }}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shadow-sm"
-              >
-                <span>Abrir</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </section>
         </div>
 
         {/* Modal Footer */}

@@ -9,10 +9,17 @@ import {
   RefreshCw,
   X,
   Save,
-  Shield,
+  FileSpreadsheet,
+  Camera,
+  Edit3,
+  Sliders,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { PlayerImageEditorModal, BASEBALL_PHOTO_PRESETS } from './PlayerImageEditorModal.tsx';
+import { AdminPlayerImportModal } from './AdminPlayerImportModal.tsx';
+import { PlayerEditModal } from './PlayerEditModal.tsx';
 
 export const AdminPlayersManager: React.FC = () => {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -23,6 +30,12 @@ export const AdminPlayersManager: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  // Modals state
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [imageEditingPlayer, setImageEditingPlayer] = useState<Player | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCreateImageEditorOpen, setIsCreateImageEditorOpen] = useState(false);
+
   // New player form fields
   const [fullName, setFullName] = useState('');
   const [teamId, setTeamId] = useState('');
@@ -30,7 +43,9 @@ export const AdminPlayersManager: React.FC = () => {
   const [position, setPosition] = useState('OF');
   const [bats, setBats] = useState<'R' | 'L' | 'S'>('R');
   const [throws, setThrows] = useState<'R' | 'L'>('R');
+  const [photo, setPhoto] = useState(BASEBALL_PHOTO_PRESETS[0].url);
   const [isStar, setIsStar] = useState(false);
+  const [bio, setBio] = useState('');
 
   const fetchInitialData = async () => {
     setLoading(true);
@@ -64,18 +79,22 @@ export const AdminPlayersManager: React.FC = () => {
 
     try {
       const newPlayer = await ApiClient.createAdminPlayer({
-        fullName,
+        fullName: fullName.trim(),
         teamId,
         jerseyNumber: Number(jerseyNumber),
         position: position as any,
         bats,
         throws,
+        photo,
+        bio: bio.trim() || 'Jugador profesional de la Serie Nacional.',
+        isStar,
       } as any);
 
       setPlayers((prev) => [newPlayer, ...prev]);
       setIsCreating(false);
       setFullName('');
-      showMessage(`Jugador ${newPlayer.fullName} creado exitosamente.`);
+      setBio('');
+      showMessage(`Jugador ${newPlayer.fullName} creado exitosamente con su fotografía.`);
     } catch (err: any) {
       alert(`Error al crear jugador: ${err.message}`);
     }
@@ -92,9 +111,31 @@ export const AdminPlayersManager: React.FC = () => {
     }
   };
 
+  const handleUpdatePlayerSuccess = (updatedPlayer: Player) => {
+    setPlayers((prev) => prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p)));
+    showMessage(`Datos y fotografía de ${updatedPlayer.fullName} actualizados.`);
+  };
+
+  const handlePhotoUpdated = (newPhotoUrl: string, updatedPlayer?: Player) => {
+    if (updatedPlayer) {
+      handleUpdatePlayerSuccess(updatedPlayer);
+    } else if (imageEditingPlayer) {
+      // Direct local update if returned without full player payload
+      setPlayers((prev) =>
+        prev.map((p) => (p.id === imageEditingPlayer.id ? { ...p, photo: newPhotoUrl } : p))
+      );
+      showMessage(`Fotografía de ${imageEditingPlayer.fullName} actualizada.`);
+    }
+  };
+
+  const handleImportSuccess = (count: number, message: string) => {
+    fetchInitialData();
+    showMessage(message);
+  };
+
   const showMessage = (msg: string) => {
     setActionMessage(msg);
-    setTimeout(() => setActionMessage(null), 3500);
+    setTimeout(() => setActionMessage(null), 4000);
   };
 
   const filtered = players.filter((p) => {
@@ -122,8 +163,8 @@ export const AdminPlayersManager: React.FC = () => {
       )}
 
       {/* Filter and Action Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900 border border-slate-800">
-        <div className="flex flex-1 items-center gap-2 max-w-lg">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900 border border-slate-800">
+        <div className="flex flex-col sm:flex-row flex-1 items-stretch sm:items-center gap-2 max-w-lg w-full">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -131,14 +172,14 @@ export const AdminPlayersManager: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por nombre, posición o equipo..."
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+              className="w-full pl-9 pr-3 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
             />
           </div>
 
           <select
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 font-semibold focus:border-emerald-500 focus:outline-none"
+            className="px-3 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 font-semibold focus:border-emerald-500 focus:outline-none"
           >
             <option value="all">Todos los Equipos</option>
             {teams.map((t) => (
@@ -149,7 +190,7 @@ export const AdminPlayersManager: React.FC = () => {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto justify-end">
           <button
             onClick={fetchInitialData}
             className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
@@ -157,9 +198,21 @@ export const AdminPlayersManager: React.FC = () => {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
+
+          {/* Import Button */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex-1 sm:flex-none justify-center px-3.5 py-2 rounded-lg bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+            title="Cargar rosters completos vía CSV o JSON"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Importar Roster</span>
+          </button>
+
+          {/* New Player Button */}
           <button
             onClick={() => setIsCreating(!isCreating)}
-            className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+            className="flex-1 sm:flex-none justify-center px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
             <span>Registrar Jugador</span>
@@ -184,6 +237,43 @@ export const AdminPlayersManager: React.FC = () => {
               className="text-slate-400 hover:text-white"
             >
               <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Photo picker row in create form */}
+          <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <div className="relative group">
+              <div className="w-16 h-16 rounded-xl overflow-hidden border border-emerald-500/50 bg-slate-900">
+                <img
+                  src={photo}
+                  alt="Avatar"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateImageEditorOpen(true)}
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center text-white transition-opacity"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1">
+              <span className="text-xs font-bold text-slate-200 block">Fotografía del Jugador</span>
+              <p className="text-[11px] text-slate-400">
+                Sube un archivo de imagen, recorta, aplica filtros o elige una foto de la galería oficial.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCreateImageEditorOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Subir / Elegir Foto</span>
             </button>
           </div>
 
@@ -297,6 +387,9 @@ export const AdminPlayersManager: React.FC = () => {
       <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
         <div className="p-3 bg-slate-950/60 border-b border-slate-800 text-xs font-bold text-slate-400 flex items-center justify-between">
           <span>Listado Oficial de Roster ({filtered.length} jugadores)</span>
+          <span className="text-[11px] text-slate-500">
+            Haz clic en la foto o en el botón editar para actualizar imagen y datos
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -304,6 +397,7 @@ export const AdminPlayersManager: React.FC = () => {
             <thead className="bg-slate-950/80 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
               <tr>
                 <th className="py-2.5 px-3">#</th>
+                <th className="py-2.5 px-3">Foto</th>
                 <th className="py-2.5 px-3">Jugador</th>
                 <th className="py-2.5 px-3">Equipo</th>
                 <th className="py-2.5 px-3">Posición</th>
@@ -313,10 +407,34 @@ export const AdminPlayersManager: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {filtered.map((player) => (
-                <tr key={player.id} className="hover:bg-slate-800/40 transition-colors">
+                <tr key={player.id} className="hover:bg-slate-800/40 transition-colors group">
                   <td className="py-2.5 px-3 font-mono font-bold text-amber-400">
                     #{player.jerseyNumber}
                   </td>
+
+                  {/* Player Photo with interactive trigger */}
+                  <td className="py-2.5 px-3">
+                    <button
+                      type="button"
+                      onClick={() => setImageEditingPlayer(player)}
+                      className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-700 hover:border-emerald-400 shadow-sm group/photo cursor-pointer transition-all"
+                      title="Haz clic para subir o editar la foto"
+                    >
+                      <img
+                        src={player.photo}
+                        alt={player.fullName}
+                        className="w-full h-full object-cover group-hover/photo:scale-110 transition-transform"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/photo:opacity-100 flex items-center justify-center text-white transition-opacity">
+                        <Camera className="w-3.5 h-3.5 text-emerald-300" />
+                      </div>
+                    </button>
+                  </td>
+
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-100">{player.fullName}</span>
@@ -336,14 +454,36 @@ export const AdminPlayersManager: React.FC = () => {
                   <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
                     {player.bats}/{player.throws}
                   </td>
+
                   <td className="py-2.5 px-3 text-right">
-                    <button
-                      onClick={() => handleDeletePlayer(player.id, player.fullName)}
-                      className="p-1.5 rounded-lg bg-slate-950 hover:bg-red-500/20 text-slate-500 hover:text-red-400 border border-slate-800 transition-colors cursor-pointer"
-                      title="Dar de baja jugador"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {/* Edit Photo Quick Button */}
+                      <button
+                        onClick={() => setImageEditingPlayer(player)}
+                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 border border-slate-800 transition-colors cursor-pointer"
+                        title="Subir / Editar fotografía"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Edit Player Full Button */}
+                      <button
+                        onClick={() => setEditingPlayer(player)}
+                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-blue-500/20 text-slate-400 hover:text-blue-300 border border-slate-800 transition-colors cursor-pointer"
+                        title="Editar datos del jugador"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Delete Player Button */}
+                      <button
+                        onClick={() => handleDeletePlayer(player.id, player.fullName)}
+                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-red-500/20 text-slate-500 hover:text-red-400 border border-slate-800 transition-colors cursor-pointer"
+                        title="Dar de baja jugador"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -351,6 +491,49 @@ export const AdminPlayersManager: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Modal 1: Image Editor for an Existing Player */}
+      {imageEditingPlayer && (
+        <PlayerImageEditorModal
+          player={imageEditingPlayer}
+          isOpen={true}
+          onClose={() => setImageEditingPlayer(null)}
+          onSavePhoto={handlePhotoUpdated}
+        />
+      )}
+
+      {/* Modal 2: Image Editor for the New Player Form */}
+      {isCreateImageEditorOpen && (
+        <PlayerImageEditorModal
+          initialImageUrl={photo}
+          isOpen={true}
+          onClose={() => setIsCreateImageEditorOpen(false)}
+          onSavePhoto={(newPhotoUrl) => {
+            setPhoto(newPhotoUrl);
+          }}
+        />
+      )}
+
+      {/* Modal 3: Full Player Edit Modal */}
+      {editingPlayer && (
+        <PlayerEditModal
+          player={editingPlayer}
+          teams={teams}
+          isOpen={true}
+          onClose={() => setEditingPlayer(null)}
+          onSaveSuccess={handleUpdatePlayerSuccess}
+        />
+      )}
+
+      {/* Modal 4: Batch Import Players Modal */}
+      {isImportModalOpen && (
+        <AdminPlayerImportModal
+          isOpen={true}
+          teams={teams}
+          onClose={() => setIsImportModalOpen(false)}
+          onImportSuccess={handleImportSuccess}
+        />
+      )}
     </div>
   );
 };

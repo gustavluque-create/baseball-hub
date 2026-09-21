@@ -15,15 +15,11 @@ import {
   Sun,
   Moon,
   Sliders,
-  Lock,
-  ShieldCheck,
 } from 'lucide-react';
 import { useApp, ActiveNavTab } from '../context/AppContext.tsx';
-import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 
 export const MobileNav: React.FC = () => {
   const { activeTab, setActiveTab, t, theme, toggleTheme, setIsSettingsOpen } = useApp();
-  const { isAdminAuthenticated, adminUser } = useAdminAuth();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   const mainTabs: { id: ActiveNavTab; label: string; icon: React.ReactNode }[] = [
@@ -39,24 +35,16 @@ export const MobileNav: React.FC = () => {
     { id: 'leaders', label: t('nav.leaders'), icon: <Award className="w-5 h-5 text-sky-400" /> },
     { id: 'news', label: t('nav.news'), icon: <Newspaper className="w-5 h-5 text-purple-400" /> },
     { id: 'videos', label: t('nav.videos'), icon: <Video className="w-5 h-5 text-rose-400" /> },
-    isAdminAuthenticated
-      ? {
-          id: 'admin' as ActiveNavTab,
-          label: `Admin (${adminUser?.username})`,
-          icon: <ShieldCheck className="w-5 h-5 text-emerald-400" />,
-        }
-      : {
-          id: 'admin' as ActiveNavTab,
-          label: 'Acceso Admin',
-          icon: <Lock className="w-5 h-5 text-slate-400" />,
-        },
   ];
 
   return (
     <>
       {/* "Más" Drawer Sheet */}
       {isMoreOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm lg:hidden">
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setIsMoreOpen(false)}
+        >
           <div
             className="w-full bg-slate-900 border-t border-slate-800 rounded-t-2xl p-4 shadow-2xl animate-in slide-in-from-bottom duration-200"
             onClick={(e) => e.stopPropagation()}

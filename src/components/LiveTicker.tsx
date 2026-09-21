@@ -19,6 +19,8 @@ import { useApp } from '../context/AppContext.tsx';
 import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
 import { playBaseballScoreChime } from '../utils/scoreNotification.ts';
 import { LiveTickerItemSkeleton } from './LoadingSkeleton.tsx';
+import { TeamLogo } from './TeamLogo.tsx';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 
 export interface LiveTickerProps {
   /** Filter games by competition ID (defaults to activeCompetitionId from context) */
@@ -120,6 +122,7 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({
     language,
     theme,
   } = useApp();
+  const { isAdminAuthenticated } = useAdminAuth();
 
   const compId = competitionId || activeCompetitionId;
   const sId = seasonId || activeSeasonId;
@@ -544,8 +547,8 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({
 
             {/* Right: Quick actions (Simulation, Sound, Refresh, Auto-polling status) */}
             <div className="flex items-center gap-2">
-              {/* Simulation Trigger Button */}
-              {allowSimulate && (
+              {/* Simulation Trigger Button (Restricted to authenticated admin) */}
+              {allowSimulate && isAdminAuthenticated && (
                 <button
                   onClick={() => handleSimulateRun()}
                   disabled={isSimulating || games.length === 0}
@@ -751,7 +754,9 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({
                       {/* Away Team */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <span className="text-sm shrink-0">{game.awayTeam.logo}</span>
+                          <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                            <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full text-sm" />
+                          </div>
                           <span className="font-bold text-xs text-slate-100 truncate inline-flex items-center gap-1">
                             <span>{game.awayTeam.shortName}</span>
                             {isFavoriteTeam(game.awayTeam.id) && (
@@ -784,7 +789,9 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({
                       {/* Home Team */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <span className="text-sm shrink-0">{game.homeTeam.logo}</span>
+                          <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                            <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full text-sm" />
+                          </div>
                           <span className="font-bold text-xs text-slate-100 truncate inline-flex items-center gap-1">
                             <span>{game.homeTeam.shortName}</span>
                             {isFavoriteTeam(game.homeTeam.id) && (

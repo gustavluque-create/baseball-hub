@@ -19,6 +19,7 @@ import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { GameCard } from '../components/GameCard.tsx';
 import { LiveGamesDashboard } from '../components/LiveGamesDashboard.tsx';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import {
   GameCardSkeleton,
   GamesGridSkeleton,
@@ -38,6 +39,7 @@ import {
 
 export const GamesView: React.FC = () => {
   const { activeCompetitionId, navigateToGame } = useApp();
+  const { isAdminAuthenticated } = useAdminAuth();
   const [games, setGames] = useState<Game[]>([]);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'LIVE' | 'FINAL' | 'SCHEDULED'>('ALL');
   const [loading, setLoading] = useState(true);
@@ -388,32 +390,36 @@ export const GamesView: React.FC = () => {
 
         {/* Action Controls */}
         <div className="flex items-center flex-wrap gap-2.5 w-full lg:w-auto">
-          {/* Simulate Run Button */}
-          <button
-            id="simulate-run-btn"
-            onClick={() => handleSimulateRun()}
-            disabled={isSimulating}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-95 disabled:opacity-50 cursor-pointer"
-            title="Genera una carrera en un partido en vivo para ver la notificación toast"
-          >
-            <Zap className={`w-4 h-4 ${isSimulating ? 'animate-spin' : ''}`} />
-            <span>{isSimulating ? 'Anotando carrera...' : 'Simular Carrera (Test Toast)'}</span>
-          </button>
+          {/* Simulate Run Button (Restricted to authenticated admin) */}
+          {isAdminAuthenticated && (
+            <button
+              id="simulate-run-btn"
+              onClick={() => handleSimulateRun()}
+              disabled={isSimulating}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Genera una carrera en un partido en vivo para ver la notificación toast (Admin)"
+            >
+              <Zap className={`w-4 h-4 ${isSimulating ? 'animate-spin' : ''}`} />
+              <span>{isSimulating ? 'Anotando carrera...' : 'Simular Carrera (Test Toast)'}</span>
+            </button>
+          )}
 
-          {/* Auto-simulation Ticker Toggle */}
-          <button
-            id="auto-simulation-toggle"
-            onClick={() => setAutoSimulate((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-              autoSimulate
-                ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-1 ring-amber-500/30'
-                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
-            }`}
-            title="Activa o desactiva la simulación de carreras periódicas cada 11 segundos"
-          >
-            {autoSimulate ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5" />}
-            <span>{autoSimulate ? 'Auto-Carreras: ON (11s)' : 'Auto-Carreras: OFF'}</span>
-          </button>
+          {/* Auto-simulation Ticker Toggle (Restricted to authenticated admin) */}
+          {isAdminAuthenticated && (
+            <button
+              id="auto-simulation-toggle"
+              onClick={() => setAutoSimulate((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                autoSimulate
+                  ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-1 ring-amber-500/30'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
+              }`}
+              title="Activa o desactiva la simulación de carreras periódicas cada 11 segundos (Admin)"
+            >
+              {autoSimulate ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5" />}
+              <span>{autoSimulate ? 'Auto-Carreras: ON (11s)' : 'Auto-Carreras: OFF'}</span>
+            </button>
+          )}
 
           {/* Audio Chime Toggle */}
           <button
@@ -441,12 +447,14 @@ export const GamesView: React.FC = () => {
             <span>Historial ({scoringHistory.length})</span>
           </button>
 
-          {/* Simulate Loading Button */}
-          <SimulateLoadButton
-            onSimulate={handleSimulateLoading}
-            isLoading={loading}
-            label="Simular Carga Partidos"
-          />
+          {/* Simulate Loading Button (Restricted to authenticated admin) */}
+          {isAdminAuthenticated && (
+            <SimulateLoadButton
+              onSimulate={handleSimulateLoading}
+              isLoading={loading}
+              label="Simular Carga Partidos"
+            />
+          )}
         </div>
       </div>
 

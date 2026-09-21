@@ -2,6 +2,7 @@ import React from 'react';
 import { Game } from '../types/index.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { ChevronRight, Star } from 'lucide-react';
+import { TeamLogo } from './TeamLogo.tsx';
 
 interface GameCardProps {
   game: Game;
@@ -59,7 +60,9 @@ export const GameCard: React.FC<GameCardProps> = ({ game, compact = false }) => 
         {/* Away Team */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xl">{game.awayTeam.logo}</span>
+            <div className="w-6 h-6 flex items-center justify-center shrink-0">
+              <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full text-xl" />
+            </div>
             <div>
               <span className="font-bold text-slate-100 text-sm group-hover:text-emerald-400 transition-colors inline-flex items-center gap-1">
                 <span>{game.awayTeam.shortName}</span>
@@ -88,7 +91,9 @@ export const GameCard: React.FC<GameCardProps> = ({ game, compact = false }) => 
         {/* Home Team */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xl">{game.homeTeam.logo}</span>
+            <div className="w-6 h-6 flex items-center justify-center shrink-0">
+              <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full text-xl" />
+            </div>
             <div>
               <span className="font-bold text-slate-100 text-sm group-hover:text-emerald-400 transition-colors inline-flex items-center gap-1">
                 <span>{game.homeTeam.shortName}</span>

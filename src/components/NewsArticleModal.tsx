@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Clock, User, Tag, Share2, Check, ArrowRight } from 'lucide-react';
+import { X, Calendar, Clock, User, Tag, Share2, Check, ArrowRight, ExternalLink } from 'lucide-react';
 import { NewsArticle } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
+import { getArticleFullUrl } from '../utils/slug.ts';
 import { ArticleModalSkeleton } from './LoadingSkeleton.tsx';
+import { ArticleCommentsSection } from './ArticleCommentsSection.tsx';
 
 interface NewsArticleModalProps {
   slug: string | null;
@@ -11,7 +13,7 @@ interface NewsArticleModalProps {
 }
 
 export const NewsArticleModal: React.FC<NewsArticleModalProps> = ({ slug, onClose }) => {
-  const { navigateToTeam, navigateToPlayer } = useApp();
+  const { navigateToTeam, navigateToPlayer, navigateToNews } = useApp();
   const [article, setArticle] = useState<NewsArticle | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -32,10 +34,23 @@ export const NewsArticleModal: React.FC<NewsArticleModalProps> = ({ slug, onClos
 
   if (!slug) return null;
 
+  const fullUrl = article ? getArticleFullUrl(article.slug) : '';
+
   const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
+    if (fullUrl) {
+      navigator.clipboard.writeText(fullUrl);
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenPage = () => {
+    if (article) {
+      onClose();
+      navigateToNews(article.slug);
+    }
   };
 
   return (
@@ -55,6 +70,14 @@ export const NewsArticleModal: React.FC<NewsArticleModalProps> = ({ slug, onClos
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenPage}
+              title="Abrir página en su URL independiente"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 transition-colors font-medium"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Página Completa</span>
+            </button>
             <button
               onClick={handleShare}
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
@@ -157,6 +180,9 @@ export const NewsArticleModal: React.FC<NewsArticleModalProps> = ({ slug, onClos
                   </div>
                 )}
               </div>
+
+              {/* Community Comments Section */}
+              <ArticleCommentsSection slug={article.slug} articleTitle={article.title} />
             </>
           )}
         </div>
