@@ -276,8 +276,28 @@ export class BaseballRepository {
   }
 
   // Standings
-  getStandings(competitionId?: string, division?: string): Standing[] {
+  getStandings(competitionId?: string, division?: string, seasonId?: string): Standing[] {
     let result = this.standings;
+
+    if (seasonId) {
+      const is56 = seasonId === 'snb-56' || seasonId.includes('56') || seasonId === '2017';
+      const is64 = seasonId === 'snb-64' || seasonId.includes('64');
+      const is65 = seasonId === 'snb-65' || seasonId.includes('65') || seasonId === '2027';
+
+      if (is56) {
+        result = result.filter((s) => s.seasonId === 'snb-56');
+      } else if (is64) {
+        result = result.filter((s) => s.seasonId === 'snb-64');
+      } else if (is65) {
+        result = result.filter((s) => s.seasonId === 'snb-65');
+      } else {
+        result = result.filter((s) => s.seasonId === seasonId);
+      }
+    } else {
+      // Por defecto la temporada activa (65 Serie Nacional)
+      result = result.filter((s) => s.seasonId === 'snb-65');
+    }
+
     if (division && division !== 'General') {
       result = result.filter((s) => s.division === division);
     }
@@ -285,16 +305,64 @@ export class BaseballRepository {
   }
 
   // Stats
-  getBattingStats(sortBy: keyof BattingStats = 'avg', order: 'asc' | 'desc' = 'desc'): BattingStats[] {
-    return [...this.battingStats].sort((a, b) => {
+  getBattingStats(
+    sortBy: keyof BattingStats = 'avg',
+    order: 'asc' | 'desc' = 'desc',
+    seasonId?: string
+  ): BattingStats[] {
+    let list = this.battingStats;
+    if (seasonId) {
+      const is56 = seasonId === 'snb-56' || seasonId.includes('56') || seasonId === '2017';
+      const is64 = seasonId === 'snb-64' || seasonId.includes('64');
+      const is65 = seasonId === 'snb-65' || seasonId.includes('65') || seasonId === '2027';
+
+      if (is56) {
+        list = list.filter((s) => s.seasonId === 'snb-56' || s.seasonYear === 2017);
+      } else if (is64) {
+        list = list.filter((s) => s.seasonId === 'snb-64' || (s.id?.includes('-64-')));
+      } else if (is65) {
+        list = list.filter((s) => s.seasonId === 'snb-65' || (!s.id?.includes('-56-') && !s.id?.includes('-64-')));
+      } else {
+        list = list.filter((s) => s.seasonId === seasonId);
+      }
+    } else {
+      // Por defecto la temporada activa (65 Serie Nacional)
+      list = list.filter((s) => s.seasonId === 'snb-65' || (!s.id?.includes('-56-') && !s.id?.includes('-64-')));
+    }
+
+    return [...list].sort((a, b) => {
       const valA = (a[sortBy] as number) ?? 0;
       const valB = (b[sortBy] as number) ?? 0;
       return order === 'desc' ? valB - valA : valA - valB;
     });
   }
 
-  getPitchingStats(sortBy: keyof PitchingStats = 'era', order: 'asc' | 'desc' = 'asc'): PitchingStats[] {
-    return [...this.pitchingStats].sort((a, b) => {
+  getPitchingStats(
+    sortBy: keyof PitchingStats = 'era',
+    order: 'asc' | 'desc' = 'asc',
+    seasonId?: string
+  ): PitchingStats[] {
+    let list = this.pitchingStats;
+    if (seasonId) {
+      const is56 = seasonId === 'snb-56' || seasonId.includes('56') || seasonId === '2017';
+      const is64 = seasonId === 'snb-64' || seasonId.includes('64');
+      const is65 = seasonId === 'snb-65' || seasonId.includes('65') || seasonId === '2027';
+
+      if (is56) {
+        list = list.filter((s) => s.seasonId === 'snb-56' || s.seasonYear === 2017);
+      } else if (is64) {
+        list = list.filter((s) => s.seasonId === 'snb-64' || (s.id?.includes('-64-')));
+      } else if (is65) {
+        list = list.filter((s) => s.seasonId === 'snb-65' || (!s.id?.includes('-56-') && !s.id?.includes('-64-')));
+      } else {
+        list = list.filter((s) => s.seasonId === seasonId);
+      }
+    } else {
+      // Por defecto la temporada activa (65 Serie Nacional)
+      list = list.filter((s) => s.seasonId === 'snb-65' || (!s.id?.includes('-56-') && !s.id?.includes('-64-')));
+    }
+
+    return [...list].sort((a, b) => {
       const valA = (a[sortBy] as number) ?? 0;
       const valB = (b[sortBy] as number) ?? 0;
       return order === 'desc' ? valB - valA : valA - valB;
@@ -302,9 +370,9 @@ export class BaseballRepository {
   }
 
   // Leaders
-  getLeaders(category: 'batting' | 'pitching', stat: string, limit = 5): any[] {
+  getLeaders(category: 'batting' | 'pitching', stat: string, limit = 5, seasonId?: string): any[] {
     if (category === 'batting') {
-      const sorted = this.getBattingStats(stat as keyof BattingStats, stat === 'so' ? 'asc' : 'desc');
+      const sorted = this.getBattingStats(stat as keyof BattingStats, stat === 'so' ? 'asc' : 'desc', seasonId);
       return sorted.slice(0, limit).map((s, index) => {
         const player = this.getPlayerById(s.playerId);
         const team = this.getTeamById(s.teamId);
@@ -322,7 +390,7 @@ export class BaseballRepository {
       });
     } else {
       const isAsc = stat === 'era' || stat === 'whip';
-      const sorted = this.getPitchingStats(stat as keyof PitchingStats, isAsc ? 'asc' : 'desc');
+      const sorted = this.getPitchingStats(stat as keyof PitchingStats, isAsc ? 'asc' : 'desc', seasonId);
       return sorted.slice(0, limit).map((s, index) => {
         const player = this.getPlayerById(s.playerId);
         const team = this.getTeamById(s.teamId);

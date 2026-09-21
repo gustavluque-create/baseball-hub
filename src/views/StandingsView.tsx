@@ -5,9 +5,11 @@ import { ApiClient } from '../services/api.ts';
 import { StandingsTableSkeleton } from '../components/LoadingSkeleton.tsx';
 import { Standing } from '../types/index.ts';
 import { TeamLogo } from '../components/TeamLogo.tsx';
+import { getSeasonBadgeLabel } from '../utils/season.ts';
+import { SeasonToggleBar } from '../components/SeasonToggleBar.tsx';
 
 export const StandingsView: React.FC = () => {
-  const { activeCompetitionId, navigateToTeam, dataVersion } = useApp();
+  const { activeCompetitionId, activeSeasonId, navigateToTeam, dataVersion } = useApp();
   const [standings, setStandings] = useState<Standing[]>([]);
   const [division, setDivision] = useState<string>('General');
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,7 @@ export const StandingsView: React.FC = () => {
     ApiClient.getStandings({
       competition: activeCompetitionId,
       division: division === 'General' ? undefined : division,
+      seasonId: activeSeasonId,
     })
       .then((res) => {
         setStandings(res);
@@ -26,37 +29,45 @@ export const StandingsView: React.FC = () => {
         console.error(err);
         setLoading(false);
       });
-  }, [activeCompetitionId, division, dataVersion]);
+  }, [activeCompetitionId, activeSeasonId, division, dataVersion]);
 
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5">
+          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 flex-wrap">
             <Trophy className="w-6 h-6 text-amber-400" />
-            Tabla de Posiciones Oficial
+            <span>Tabla de Posiciones Oficial</span>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              {getSeasonBadgeLabel(activeSeasonId)}
+            </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             Clasificación actualizada de la temporada. Los 4 primeros puestos acceden a la postemporada.
           </p>
         </div>
 
-        {/* Division Selector */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
-          {['General', 'Occidental', 'Oriental'].map((div) => (
-            <button
-              key={div}
-              onClick={() => setDivision(div)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                division === div
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              {div}
-            </button>
-          ))}
+        {/* Controls: Season selector & Division Selector */}
+        <div className="flex flex-wrap items-center gap-3">
+          <SeasonToggleBar />
+
+          {/* Division Selector */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
+            {['General', 'Occidental', 'Oriental'].map((div) => (
+              <button
+                key={div}
+                onClick={() => setDivision(div)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  division === div
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {div}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -530,8 +530,9 @@ apiRouter.post('/games/simulate-run', requireAdmin, (req: Request, res: Response
 
 // Standings
 apiRouter.get('/standings', (req: Request, res: Response) => {
-  const { competition, division } = req.query;
-  const standings = baseballRepo.getStandings(competition as string, division as string);
+  const { competition, division, season, seasonId } = req.query;
+  const activeSeason = (seasonId || season) as string | undefined;
+  const standings = baseballRepo.getStandings(competition as string, division as string, activeSeason);
   res.json(standings);
 });
 
@@ -540,14 +541,15 @@ apiRouter.get('/stats', (req: Request, res: Response) => {
   const type = (req.query.type as string) || 'batting';
   const sortBy = req.query.sortBy as any;
   const order = (req.query.order as 'asc' | 'desc') || 'desc';
+  const seasonId = (req.query.seasonId || req.query.season) as string | undefined;
 
   if (type === 'pitching') {
-    const stats = baseballRepo.getPitchingStats(sortBy || 'era', order);
+    const stats = baseballRepo.getPitchingStats(sortBy || 'era', order, seasonId);
     return res.json(stats);
   }
 
   // batting or advanced
-  const stats = baseballRepo.getBattingStats(sortBy || 'avg', order);
+  const stats = baseballRepo.getBattingStats(sortBy || 'avg', order, seasonId);
   res.json(stats);
 });
 
@@ -556,7 +558,8 @@ apiRouter.get('/leaders', (req: Request, res: Response) => {
   const category = (req.query.category as 'batting' | 'pitching') || 'batting';
   const stat = (req.query.stat as string) || (category === 'batting' ? 'avg' : 'era');
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 5;
-  const leaders = baseballRepo.getLeaders(category, stat, limit);
+  const seasonId = (req.query.seasonId || req.query.season) as string | undefined;
+  const leaders = baseballRepo.getLeaders(category, stat, limit, seasonId);
   res.json(leaders);
 });
 

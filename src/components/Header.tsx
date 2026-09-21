@@ -37,7 +37,12 @@ export const Header: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    ApiClient.getSeasons(activeCompetitionId).then(setSeasons).catch(console.error);
+    ApiClient.getSeasons(activeCompetitionId).then((data) => {
+      setSeasons(data);
+      if (data.length > 0 && !data.some((s) => s.id === activeSeasonId)) {
+        setActiveSeasonId(data[0].id);
+      }
+    }).catch(console.error);
   }, [activeCompetitionId]);
 
   const navItems: { id: ActiveNavTab; label: string }[] = [
@@ -94,7 +99,7 @@ export const Header: React.FC = () => {
             >
               {seasons.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.year} {s.isCurrent ? '(Actual)' : ''}
+                  {s.name || `${s.year} ${s.isCurrent ? '(Actual)' : ''}`}
                 </option>
               ))}
             </select>

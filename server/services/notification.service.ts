@@ -220,7 +220,7 @@ class NotificationService extends EventEmitter {
         colors: { primary: '#1d4ed8', secondary: '#3b82f6', text: '#ffffff' },
         logo: '🦁',
         competitionId: 'snb',
-        seasonId: 'snb-2026',
+        seasonId: 'snb-65',
         record: { wins: 34, losses: 18, pct: 0.654, streak: 'W3', lastTen: '7-3', position: 1 },
       },
       awayTeam: {
@@ -236,7 +236,7 @@ class NotificationService extends EventEmitter {
         colors: { primary: '#15803d', secondary: '#22c55e', text: '#ffffff' },
         logo: '🪓',
         competitionId: 'snb',
-        seasonId: 'snb-2026',
+        seasonId: 'snb-65',
         record: { wins: 32, losses: 20, pct: 0.615, streak: 'W1', lastTen: '6-4', position: 2 },
       },
       scoringTeam: {
@@ -252,7 +252,7 @@ class NotificationService extends EventEmitter {
         colors: { primary: '#1d4ed8', secondary: '#3b82f6', text: '#ffffff' },
         logo: '🦁',
         competitionId: 'snb',
-        seasonId: 'snb-2026',
+        seasonId: 'snb-65',
         record: { wins: 34, losses: 18, pct: 0.654, streak: 'W3', lastTen: '7-3', position: 1 },
       },
       scoringTeamSide: 'home',

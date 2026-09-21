@@ -183,7 +183,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
   const [activeCompetitionId, setActiveCompetitionId] = useState<string>('snb');
-  const [activeSeasonId, setActiveSeasonId] = useState<string>('snb-2026');
+  const [activeSeasonId, setActiveSeasonId] = useState<string>('snb-65');
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [selectedComparisonGameId, setSelectedComparisonGameId] = useState<string | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);

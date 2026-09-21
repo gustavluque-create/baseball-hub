@@ -32,6 +32,7 @@ import {
 export const HomeView: React.FC = () => {
   const {
     activeCompetitionId,
+    activeSeasonId,
     setActiveTab,
     navigateToGame,
     navigateToNews,
@@ -52,10 +53,10 @@ export const HomeView: React.FC = () => {
     setLoading(true);
     Promise.all([
       ApiClient.getGames({ competition: activeCompetitionId }),
-      ApiClient.getStandings({ competition: activeCompetitionId }),
+      ApiClient.getStandings({ competition: activeCompetitionId, seasonId: activeSeasonId }),
       ApiClient.getNews({ limit: 4 }),
       ApiClient.getVideos(),
-      ApiClient.getLeaders({ category: 'batting', stat: 'avg', limit: 3 }),
+      ApiClient.getLeaders({ category: 'batting', stat: 'avg', limit: 3, seasonId: activeSeasonId }),
       ApiClient.getTeams(activeCompetitionId),
     ])
       .then(([g, s, n, v, l, tm]) => {
@@ -71,7 +72,7 @@ export const HomeView: React.FC = () => {
         console.error(err);
         setLoading(false);
       });
-  }, [activeCompetitionId]);
+  }, [activeCompetitionId, activeSeasonId]);
 
   const featuredArticle = news[0];
   const secondaryArticles = news.slice(1, 4);

@@ -20,9 +20,11 @@ import {
 } from '../components/LoadingSkeleton.tsx';
 import { PlayerPerformanceCharts } from '../components/PlayerPerformanceCharts.tsx';
 import { BattingStats, PitchingStats } from '../types/index.ts';
+import { getSeasonBadgeLabel } from '../utils/season.ts';
+import { SeasonToggleBar } from '../components/SeasonToggleBar.tsx';
 
 export const StatisticsView: React.FC = () => {
-  const { navigateToPlayer } = useApp();
+  const { navigateToPlayer, activeSeasonId } = useApp();
   const [statType, setStatType] = useState<'batting' | 'pitching' | 'advanced'>('batting');
   const [viewMode, setViewMode] = useState<'both' | 'charts' | 'table'>('both');
   const [battingData, setBattingData] = useState<BattingStats[]>([]);
@@ -36,21 +38,31 @@ export const StatisticsView: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     if (statType === 'pitching') {
-      ApiClient.getStats<PitchingStats[]>({ type: 'pitching', sortBy: sortColumn, order: sortOrder })
+      ApiClient.getStats<PitchingStats[]>({
+        type: 'pitching',
+        sortBy: sortColumn,
+        order: sortOrder,
+        seasonId: activeSeasonId,
+      })
         .then((res) => {
           setPitchingData(res);
           setLoading(false);
         })
         .catch(() => setLoading(false));
     } else {
-      ApiClient.getStats<BattingStats[]>({ type: 'batting', sortBy: sortColumn, order: sortOrder })
+      ApiClient.getStats<BattingStats[]>({
+        type: 'batting',
+        sortBy: sortColumn,
+        order: sortOrder,
+        seasonId: activeSeasonId,
+      })
         .then((res) => {
           setBattingData(res);
           setLoading(false);
         })
         .catch(() => setLoading(false));
     }
-  }, [statType, sortColumn, sortOrder]);
+  }, [statType, sortColumn, sortOrder, activeSeasonId]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -135,19 +147,24 @@ export const StatisticsView: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5">
+          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 flex-wrap">
             <BarChart3 className="w-6 h-6 text-emerald-400" />
-            Líderes y Estadísticas Completas
+            <span>Líderes y Estadísticas Completas</span>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              {getSeasonBadgeLabel(activeSeasonId)}
+            </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             Tablas estadísticas detalladas, métricas tradicionales y sabermetría avanzada con ordenación dinámica.
           </p>
         </div>
 
-        {/* Actions: View Mode Switcher and Export CSV */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
+        {/* Actions: Season Selector, View Mode Switcher and Export CSV */}
+        <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
+          <SeasonToggleBar />
+
           {/* View Mode Toggle */}
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800">
             <button

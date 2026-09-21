@@ -157,10 +157,12 @@ export class ApiClient {
   }
 
   // Standings
-  static getStandings(params?: { competition?: string; division?: string }): Promise<Standing[]> {
+  static getStandings(params?: { competition?: string; division?: string; season?: string; seasonId?: string }): Promise<Standing[]> {
     const searchParams = new URLSearchParams();
     if (params?.competition) searchParams.set('competition', params.competition);
     if (params?.division) searchParams.set('division', params.division);
+    if (params?.season) searchParams.set('season', params.season);
+    if (params?.seasonId) searchParams.set('seasonId', params.seasonId);
 
     return this.request<Standing[]>(`/standings?${searchParams.toString()}`);
   }
@@ -170,22 +172,28 @@ export class ApiClient {
     type?: 'batting' | 'pitching' | 'advanced';
     sortBy?: string;
     order?: 'asc' | 'desc';
+    season?: string;
+    seasonId?: string;
   }): Promise<T> {
     const searchParams = new URLSearchParams();
     if (params?.type) searchParams.set('type', params.type);
     if (params?.sortBy) searchParams.set('sortBy', params.sortBy);
     if (params?.order) searchParams.set('order', params.order);
+    if (params?.season) searchParams.set('season', params.season);
+    if (params?.seasonId) searchParams.set('seasonId', params.seasonId);
 
     return this.request<T>(`/stats?${searchParams.toString()}`);
   }
 
   // Leaders
-  static getLeaders(params: { category: 'batting' | 'pitching'; stat: string; limit?: number }): Promise<any[]> {
+  static getLeaders(params: { category: 'batting' | 'pitching'; stat: string; limit?: number; season?: string; seasonId?: string }): Promise<any[]> {
     const searchParams = new URLSearchParams({
       category: params.category,
       stat: params.stat,
       limit: (params.limit || 5).toString(),
     });
+    if (params.season) searchParams.set('season', params.season);
+    if (params.seasonId) searchParams.set('seasonId', params.seasonId);
 
     return this.request<any[]>(`/leaders?${searchParams.toString()}`);
   }

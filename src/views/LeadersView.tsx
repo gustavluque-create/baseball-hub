@@ -3,9 +3,11 @@ import { Award, Flame, Activity } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { LeadersGridSkeleton } from '../components/LoadingSkeleton.tsx';
+import { getSeasonBadgeLabel } from '../utils/season.ts';
+import { SeasonToggleBar } from '../components/SeasonToggleBar.tsx';
 
 export const LeadersView: React.FC = () => {
-  const { navigateToPlayer } = useApp();
+  const { navigateToPlayer, activeSeasonId } = useApp();
   const [limit, setLimit] = useState<number>(5);
 
   // Batting leaders state
@@ -25,14 +27,14 @@ export const LeadersView: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      ApiClient.getLeaders({ category: 'batting', stat: 'avg', limit }),
-      ApiClient.getLeaders({ category: 'batting', stat: 'hr', limit }),
-      ApiClient.getLeaders({ category: 'batting', stat: 'rbi', limit }),
-      ApiClient.getLeaders({ category: 'batting', stat: 'ops', limit }),
-      ApiClient.getLeaders({ category: 'pitching', stat: 'era', limit }),
-      ApiClient.getLeaders({ category: 'pitching', stat: 'so', limit }),
-      ApiClient.getLeaders({ category: 'pitching', stat: 'wins', limit }),
-      ApiClient.getLeaders({ category: 'pitching', stat: 'saves', limit }),
+      ApiClient.getLeaders({ category: 'batting', stat: 'avg', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'batting', stat: 'hr', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'batting', stat: 'rbi', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'batting', stat: 'ops', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'pitching', stat: 'era', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'pitching', stat: 'so', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'pitching', stat: 'wins', limit, seasonId: activeSeasonId }),
+      ApiClient.getLeaders({ category: 'pitching', stat: 'saves', limit, seasonId: activeSeasonId }),
     ])
       .then(([avg, hr, rbi, ops, era, so, wins, saves]) => {
         setAvgLeaders(avg);
@@ -49,7 +51,7 @@ export const LeadersView: React.FC = () => {
         console.error(err);
         setLoading(false);
       });
-  }, [limit]);
+  }, [limit, activeSeasonId]);
 
   const renderLeaderCard = (
     title: string,
@@ -142,39 +144,47 @@ export const LeadersView: React.FC = () => {
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5">
+          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 flex-wrap">
             <Award className="w-6 h-6 text-amber-400" />
-            Líderes Individuales de la Temporada
+            <span>Líderes Individuales de la Temporada</span>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              {getSeasonBadgeLabel(activeSeasonId)}
+            </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             Los mejores atletas en cada departamento ofensivo y de pitcheo del campeonato.
           </p>
         </div>
 
-        {/* Limit Toggle */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
-          <button
-            onClick={() => setLimit(5)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              limit === 5
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            Top 5
-          </button>
-          <button
-            onClick={() => setLimit(10)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              limit === 10
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            Top 10
-          </button>
+        {/* Controls: Season Selector & Limit Toggle */}
+        <div className="flex flex-wrap items-center gap-3">
+          <SeasonToggleBar />
+
+          {/* Limit Toggle */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <button
+              onClick={() => setLimit(5)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                limit === 5
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              Top 5
+            </button>
+            <button
+              onClick={() => setLimit(10)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                limit === 10
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              Top 10
+            </button>
+          </div>
         </div>
       </div>
 

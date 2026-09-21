@@ -174,6 +174,7 @@ export interface BattingStats {
   teamShort: string;
   position: PlayerPosition;
   seasonYear: number;
+  seasonId?: string;
   games: number;
   pa: number;
   ab: number;
@@ -207,6 +208,7 @@ export interface PitchingStats {
   teamShort: string;
   position: 'SP' | 'RP';
   seasonYear: number;
+  seasonId?: string;
   games: number;
   gs: number;
   cg: number;
@@ -250,6 +252,8 @@ export interface FieldingStats {
 
 export interface Standing {
   id?: string;
+  competitionId?: string;
+  seasonId?: string;
   teamId: string;
   teamName: string;
   teamShort: string;
