@@ -84,6 +84,7 @@ export const AdminPlayerImportModal: React.FC<AdminPlayerImportModalProps> = ({
 
       // Normalize common keys
       const normalized: any = {
+        id: rowObj.id || rowObj.ID || rowObj.Id || rowObj.playerId || rowObj.PlayerId || undefined,
         fullName:
           rowObj.Nombre ||
           rowObj.nombre ||
@@ -120,6 +121,7 @@ export const AdminPlayerImportModal: React.FC<AdminPlayerImportModalProps> = ({
     const data = JSON.parse(jsonText);
     const arr = Array.isArray(data) ? data : data.players || data.data || data.items || [data];
     return arr.map((item: any) => ({
+      id: item.id || item.ID || item.playerId || undefined,
       fullName:
         item.fullName ||
         item.playerName ||

@@ -6,11 +6,13 @@ import {
   Globe,
   Settings,
   ChevronDown,
+  X,
 } from 'lucide-react';
 import { useApp, ActiveNavTab } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { Competition, Season } from '../types/index.ts';
 import { NotificationCenterDropdown } from './NotificationCenterDropdown.tsx';
+import { HeaderSearchBar } from './HeaderSearchBar.tsx';
 
 export const Header: React.FC = () => {
   const {
@@ -24,13 +26,13 @@ export const Header: React.FC = () => {
     setLanguage,
     theme,
     toggleTheme,
-    setIsSearchOpen,
     setIsSettingsOpen,
     t,
   } = useApp();
 
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState<boolean>(false);
 
   useEffect(() => {
     ApiClient.getCompetitions().then(setCompetitions).catch(console.error);
@@ -60,9 +62,9 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950/95 backdrop-blur supports-[backdrop-filter]:bg-slate-950/80">
       {/* Top Bar: Selector & Utilities */}
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2 text-xs border-b border-slate-900">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 text-xs border-b border-slate-900">
         {/* Global Competition & Season Selectors */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
           <div className="flex items-center gap-1.5 text-slate-400 font-medium">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>{t('common.competition')}:</span>
@@ -107,20 +109,26 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick controls: Search trigger, Language, Theme, Admin */}
-        <div className="flex items-center gap-2">
-          {/* Search Trigger */}
+        {/* Intelligent Real-time Search Bar (Desktop / Tablet) */}
+        <div className="hidden md:flex flex-1 max-w-sm lg:max-w-md mx-2">
+          <HeaderSearchBar />
+        </div>
+
+        {/* Quick controls: Mobile Search Trigger, Language, Theme, Notifications, Settings */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Mobile search toggle button */}
           <button
-            id="global-search-btn"
-            onClick={() => setIsSearchOpen(true)}
-            className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors cursor-pointer"
-            title="Buscar jugador, equipo o competición (/)"
+            id="mobile-search-toggle-btn"
+            onClick={() => setIsMobileSearchExpanded((prev) => !prev)}
+            className="md:hidden flex items-center justify-center p-1.5 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
+            title="Buscar equipos, jugadores o artículos"
+            aria-label="Abrir buscador"
           >
-            <Search className="w-3.5 h-3.5" />
-            <span className="text-xs">{t('common.search')}</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-mono border border-slate-700">
-              /
-            </kbd>
+            {isMobileSearchExpanded ? (
+              <X className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Search className="w-3.5 h-3.5 text-slate-300" />
+            )}
           </button>
 
           {/* Language Switcher */}
@@ -168,6 +176,13 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
+      {/* Mobile Search Bar Expansion (Visible when toggled on mobile) */}
+      {isMobileSearchExpanded && (
+        <div className="md:hidden px-4 py-2.5 bg-slate-950 border-b border-slate-800 animate-in slide-in-from-top-2 duration-150">
+          <HeaderSearchBar />
+        </div>
+      )}
+
       {/* Main Header & Nav Tabs */}
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         {/* Brand Logo */}
@@ -214,11 +229,12 @@ export const Header: React.FC = () => {
           })}
         </nav>
 
-        {/* Mobile Search Button (Quick) */}
+        {/* Mobile Search Button (Quick toggle) */}
         <div className="flex lg:hidden items-center gap-2">
           <button
-            onClick={() => setIsSearchOpen(true)}
+            onClick={() => setIsMobileSearchExpanded((prev) => !prev)}
             className="p-2 rounded-lg bg-slate-900 text-slate-300 border border-slate-800"
+            title="Buscar"
           >
             <Search className="w-4 h-4" />
           </button>

@@ -48,9 +48,11 @@ export class BaseballRepository {
     const clean: Player[] = [];
     for (const p of this.players) {
       if (!p || !p.id) continue;
-      const key = `${p.teamId}::${(p.fullName || '').trim().toLowerCase()}`;
-      if (!seenIds.has(p.id) && !seenTeamAndNames.has(key)) {
-        seenIds.add(p.id);
+      const cleanId = String(p.id).trim();
+      const normName = (p.fullName || '').trim().toLowerCase();
+      const key = `${p.teamId}::${normName}`;
+      if (!seenIds.has(cleanId) && !seenTeamAndNames.has(key)) {
+        seenIds.add(cleanId);
         seenTeamAndNames.add(key);
         clean.push(p);
       }
@@ -806,23 +808,57 @@ export class BaseballRepository {
   // Search
   searchGlobal(query: string) {
     const q = query.trim().toLowerCase();
-    if (!q) return { players: [], teams: [], competitions: [] };
+    if (!q) return { players: [], teams: [], articles: [], news: [], competitions: [] };
 
     const matchedPlayers = this.players
-      .filter((p) => p.fullName.toLowerCase().includes(q) || p.teamName.toLowerCase().includes(q))
-      .slice(0, 6);
+      .filter(
+        (p) =>
+          p.fullName.toLowerCase().includes(q) ||
+          p.firstName.toLowerCase().includes(q) ||
+          p.lastName.toLowerCase().includes(q) ||
+          p.teamName.toLowerCase().includes(q) ||
+          p.teamShort.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
 
     const matchedTeams = this.teams
-      .filter((t) => t.name.toLowerCase().includes(q) || t.nickname.toLowerCase().includes(q) || t.city.toLowerCase().includes(q))
-      .slice(0, 6);
+      .filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.nickname.toLowerCase().includes(q) ||
+          t.city.toLowerCase().includes(q) ||
+          t.shortName.toLowerCase().includes(q) ||
+          (t.stadium && t.stadium.toLowerCase().includes(q)) ||
+          (t.manager && t.manager.toLowerCase().includes(q))
+      )
+      .slice(0, 8);
+
+    const matchedArticles = this.news
+      .filter(
+        (n) =>
+          n.title.toLowerCase().includes(q) ||
+          (n.subtitle && n.subtitle.toLowerCase().includes(q)) ||
+          (n.excerpt && n.excerpt.toLowerCase().includes(q)) ||
+          (n.category && n.category.toLowerCase().includes(q)) ||
+          (n.tags && n.tags.some((tag) => tag.toLowerCase().includes(q))) ||
+          (n.author && n.author.toLowerCase().includes(q))
+      )
+      .slice(0, 8);
 
     const matchedCompetitions = this.competitions
-      .filter((c) => c.name.toLowerCase().includes(q) || c.country.toLowerCase().includes(q))
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.country.toLowerCase().includes(q) ||
+          c.shortName.toLowerCase().includes(q)
+      )
       .slice(0, 4);
 
     return {
       players: matchedPlayers,
       teams: matchedTeams,
+      articles: matchedArticles,
+      news: matchedArticles,
       competitions: matchedCompetitions,
     };
   }
@@ -944,8 +980,23 @@ export class BaseballRepository {
   }
 
   insertPlayersBatch(newPlayers: Player[]): number {
-    this.players.push(...newPlayers);
-    return newPlayers.length;
+    let count = 0;
+    for (const np of newPlayers) {
+      if (!np) continue;
+      const cleanId = np.id ? String(np.id).trim() : '';
+      if (cleanId) {
+        const existing = this.players.find((p) => p.id === cleanId);
+        if (existing) {
+          this.updatePlayer(existing.id, np);
+          count++;
+          continue;
+        }
+      }
+      this.createPlayer(np);
+      count++;
+    }
+    this.deduplicatePlayers();
+    return count;
   }
 
   // Team Aggregated Season Statistics
@@ -1211,37 +1262,42 @@ export class BaseballRepository {
     const lastName = data.lastName || (data.fullName ? data.fullName.trim().split(' ').slice(1).join(' ') : 'Jugador');
     const fullName = (data.fullName || `${firstName} ${lastName}`).trim();
 
-    // 1. Check if the player already exists (by ID, or same full name and team)
-    const existingIndex = this.players.findIndex(
-      (p) =>
-        (data.id && p.id === data.id) ||
-        (p.teamId === team.id && p.fullName.trim().toLowerCase() === fullName.toLowerCase())
-    );
-
-    if (existingIndex !== -1) {
-      // Existing player found - update in-place instead of creating a duplicate copy
-      const existing = this.players[existingIndex];
-      const updated: Player = {
-        ...existing,
-        ...data,
-        fullName: fullName || existing.fullName,
-        teamId: team.id,
-        teamName: team.name,
-        teamShort: team.shortName,
-      };
-      this.players[existingIndex] = updated;
-      this.deduplicatePlayers();
-      return updated;
+    // 1. If an ID is provided, check if that exact player exists already
+    const cleanId = data.id ? String(data.id).trim() : '';
+    if (cleanId) {
+      const existingById = this.players.find((p) => p.id === cleanId);
+      if (existingById) {
+        // Execute atomic update by existing ID without creating duplicate
+        return this.updatePlayer(existingById.id, data)!;
+      }
     }
 
-    // 2. Enforce Serie Nacional 40-player limit per team
+    // 2. Check if player already exists by (teamId + normalized fullName) or normalized fullName
+    const normalizedName = fullName.toLowerCase();
+    const existingByTeamAndName = this.players.find(
+      (p) => p.teamId === team.id && (p.fullName || '').trim().toLowerCase() === normalizedName
+    );
+    if (existingByTeamAndName) {
+      return this.updatePlayer(existingByTeamAndName.id, data)!;
+    }
+
+    const existingByName = this.players.find(
+      (p) => (p.fullName || '').trim().toLowerCase() === normalizedName
+    );
+    if (existingByName && (!data.teamId || data.teamId === existingByName.teamId)) {
+      return this.updatePlayer(existingByName.id, data)!;
+    }
+
+    // 3. Enforce Serie Nacional 40-player limit per team for new registrations
     const teamPlayers = this.players.filter((p) => p.teamId === team.id);
     if (teamPlayers.length >= 40) {
       throw new Error(`El equipo ${team.name} ya cuenta con el límite reglamentario máximo de 40 jugadores.`);
     }
 
+    const generatedId = cleanId || ('p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
     const newPlayer: Player = {
-      id: data.id || 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      id: generatedId,
       fullName,
       firstName,
       lastName,
@@ -1270,7 +1326,10 @@ export class BaseballRepository {
   }
 
   updatePlayer(id: string, updates: Partial<Player>): Player | undefined {
-    const index = this.players.findIndex((p) => p.id === id);
+    const cleanId = (id || '').trim();
+    if (!cleanId) return undefined;
+
+    const index = this.players.findIndex((p) => p.id === cleanId || p.slug === cleanId);
     if (index === -1) return undefined;
 
     const current = this.players[index];
@@ -1278,7 +1337,7 @@ export class BaseballRepository {
     // Enforce 40 players limit if team is being changed
     if (updates.teamId && updates.teamId !== current.teamId) {
       const destTeam = this.getTeamById(updates.teamId);
-      const destTeamPlayers = this.players.filter((p) => p.teamId === updates.teamId && p.id !== id);
+      const destTeamPlayers = this.players.filter((p) => p.teamId === updates.teamId && p.id !== current.id);
       if (destTeamPlayers.length >= 40) {
         throw new Error(
           `El equipo de destino (${destTeam ? destTeam.name : updates.teamId}) ya cuenta con el límite reglamentario máximo de 40 jugadores.`
@@ -1289,29 +1348,53 @@ export class BaseballRepository {
     const updated: Player = {
       ...current,
       ...updates,
+      id: current.id, // IMMUTABLE ID: guarantee the unique ID is preserved and never overwritten
     };
+
     if (updates.teamId && updates.teamId !== current.teamId) {
       const team = this.getTeamById(updates.teamId);
       if (team) {
+        updated.teamId = team.id;
         updated.teamName = team.name;
         updated.teamShort = team.shortName;
       }
     }
 
+    // Atomic update in-place at the exact index to avoid reordering or creating multiple instances
     this.players[index] = updated;
 
-    // Purge any stale duplicate in memory with same id or name+team
-    this.players = this.players.filter((p, i) => {
-      if (i === index) return true;
-      if (p.id === id) return false;
+    // Purge any duplicates in memory with same id or same team+normalized name
+    const normalizedName = (updated.fullName || '').trim().toLowerCase();
+    this.players = this.players.filter((p) => {
+      if (p.id === current.id) {
+        return p === updated; // keep only the updated reference
+      }
       if (
         p.teamId === updated.teamId &&
-        p.fullName.trim().toLowerCase() === updated.fullName.trim().toLowerCase()
+        (p.fullName || '').trim().toLowerCase() === normalizedName
       ) {
         return false;
       }
       return true;
     });
+
+    // Atomically synchronize player details in related stats collections
+    for (const b of this.battingStats) {
+      if (b.playerId === current.id) {
+        b.playerName = updated.fullName;
+        b.teamId = updated.teamId;
+        b.teamShort = updated.teamShort;
+      }
+    }
+    for (const pit of this.pitchingStats) {
+      if (pit.playerId === current.id) {
+        pit.playerName = updated.fullName;
+        pit.teamId = updated.teamId;
+        pit.teamShort = updated.teamShort;
+      }
+    }
+
+    this.deduplicatePlayers();
 
     return updated;
   }
@@ -1323,6 +1406,7 @@ export class BaseballRepository {
 
     for (const raw of incoming) {
       if (!raw) continue;
+      const cleanId = raw.id ? String(raw.id).trim() : (raw.playerId ? String(raw.playerId).trim() : '');
       const fullName = (
         raw.fullName ||
         raw.playerName ||
@@ -1333,7 +1417,7 @@ export class BaseballRepository {
         raw.jugador ||
         ''
       ).trim();
-      if (!fullName) continue;
+      if (!fullName && !cleanId) continue;
 
       const teamQuery = (
         raw.teamId ||
@@ -1360,13 +1444,26 @@ export class BaseballRepository {
       const bio = raw.bio || raw.Biografia || raw.biografia || 'Jugador profesional de béisbol.';
       const age = Number(raw.age || raw.Edad || raw.edad || 25);
 
-      // Check if player exists by id or fullName + team
-      const existing = this.players.find(
-        (p) => (raw.id && p.id === raw.id) || (p.fullName.toLowerCase() === fullName.toLowerCase() && p.teamId === matchedTeam.id)
-      );
+      // Check if player exists by unique ID first, then by fullName + team, then by fullName
+      let existing: Player | undefined;
+      if (cleanId) {
+        existing = this.players.find((p) => p.id === cleanId);
+      }
+      if (!existing && fullName) {
+        const normName = fullName.toLowerCase();
+        existing = this.players.find(
+          (p) => p.teamId === matchedTeam.id && (p.fullName || '').trim().toLowerCase() === normName
+        );
+        if (!existing) {
+          existing = this.players.find(
+            (p) => (p.fullName || '').trim().toLowerCase() === normName
+          );
+        }
+      }
 
       if (existing) {
         const updated = this.updatePlayer(existing.id, {
+          teamId: matchedTeam.id,
           jerseyNumber,
           position: position as any,
           bats,
@@ -1374,6 +1471,7 @@ export class BaseballRepository {
           photo,
           bio,
           age,
+          fullName: fullName || existing.fullName,
         });
         if (updated) {
           resultPlayers.push(updated);
@@ -1382,6 +1480,7 @@ export class BaseballRepository {
       } else {
         try {
           const created = this.createPlayer({
+            id: cleanId || undefined,
             fullName,
             teamId: matchedTeam.id,
             jerseyNumber,
@@ -1399,6 +1498,8 @@ export class BaseballRepository {
         }
       }
     }
+
+    this.deduplicatePlayers();
 
     return {
       importedCount: resultPlayers.length,

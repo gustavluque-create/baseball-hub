@@ -179,10 +179,13 @@ export const AdminPlayersManager: React.FC = () => {
   };
 
   const handleUpdatePlayerSuccess = (updatedPlayer: Player) => {
-    // Strictly replace the player by ID to ensure no duplicate copies exist
+    // Strictly update the player in-place by unique ID to preserve roster order and avoid duplicates
     setPlayers((prev) => {
-      const clean = prev.filter((p) => p.id !== updatedPlayer.id);
-      return [updatedPlayer, ...clean];
+      const exists = prev.some((p) => p.id === updatedPlayer.id);
+      if (exists) {
+        return prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p));
+      }
+      return [updatedPlayer, ...prev.filter((p) => p.id !== updatedPlayer.id)];
     });
     showMessage(`Datos y fotografía de ${updatedPlayer.fullName} actualizados.`);
   };

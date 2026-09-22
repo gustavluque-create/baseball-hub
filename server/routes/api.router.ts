@@ -538,12 +538,17 @@ apiRouter.get('/players/:id', (req: Request, res: Response) => {
 const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
   const { photo } = req.body;
   if (!photo || typeof photo !== 'string') {
-    return res.status(400).json({ error: 'Se requiere la imagen en formato base64 o URL.' });
+    return res.status(400).json({ error: 'Se requiere la imagen en formato base64 o URL válida.' });
   }
 
-  const updatedPlayer = baseballRepo.updatePlayer(req.params.id, { photo });
+  const playerId = (req.params.id || '').trim();
+  if (!playerId) {
+    return res.status(400).json({ error: 'Identificador único (ID) del jugador es requerido para la actualización.' });
+  }
+
+  const updatedPlayer = baseballRepo.updatePlayer(playerId, { photo });
   if (!updatedPlayer) {
-    return res.status(404).json({ error: 'Jugador no encontrado.' });
+    return res.status(404).json({ error: `Jugador no encontrado para el ID: ${playerId}` });
   }
 
   // Audit if admin session is present
@@ -556,7 +561,7 @@ const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
     adminAuthService.addAuditLog(
       admin.username,
       'Actualización de Foto de Jugador',
-      `Foto actualizada para ${updatedPlayer.fullName} (#${updatedPlayer.jerseyNumber} - ${updatedPlayer.teamShort}).`,
+      `Foto actualizada para ${updatedPlayer.fullName} (#${updatedPlayer.jerseyNumber} - ${updatedPlayer.teamShort}) [ID: ${updatedPlayer.id}].`,
       'players'
     );
   }
@@ -569,8 +574,10 @@ const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
   });
 };
 
-apiRouter.put('/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
-apiRouter.post('/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
+apiRouter.put('/players/:id/photo', handleUpdatePlayerPhoto);
+apiRouter.post('/players/:id/photo', handleUpdatePlayerPhoto);
+apiRouter.put('/admin/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
+apiRouter.post('/admin/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
 
 // Games
 apiRouter.get('/games', (req: Request, res: Response) => {

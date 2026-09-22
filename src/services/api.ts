@@ -238,10 +238,20 @@ export class ApiClient {
   }
 
   // Global Search
-  static search(query: string): Promise<{ players: Player[]; teams: Team[]; competitions: Competition[] }> {
-    return this.request<{ players: Player[]; teams: Team[]; competitions: Competition[] }>(
-      `/search?q=${encodeURIComponent(query)}`
-    );
+  static search(query: string): Promise<{
+    players: Player[];
+    teams: Team[];
+    articles?: NewsArticle[];
+    news?: NewsArticle[];
+    competitions: Competition[];
+  }> {
+    return this.request<{
+      players: Player[];
+      teams: Team[];
+      articles?: NewsArticle[];
+      news?: NewsArticle[];
+      competitions: Competition[];
+    }>(`/search?q=${encodeURIComponent(query)}`);
   }
 
   // Ingestion validation & commit
@@ -380,7 +390,7 @@ export class ApiClient {
   }
 
   static updateAdminPlayer(id: string, updates: Partial<Player>): Promise<Player> {
-    return this.request<Player>(`/admin/players/${id}`, {
+    return this.request<Player>(`/admin/players/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });

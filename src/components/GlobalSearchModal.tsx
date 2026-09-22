@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Users, Shield, Trophy, ArrowRight } from 'lucide-react';
+import { Search, X, Users, Shield, Trophy, ArrowRight, FileText } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
-import { Player, Team, Competition } from '../types/index.ts';
+import { Player, Team, Competition, NewsArticle } from '../types/index.ts';
 
 export const GlobalSearchModal: React.FC = () => {
   const {
@@ -10,6 +10,7 @@ export const GlobalSearchModal: React.FC = () => {
     setIsSearchOpen,
     navigateToPlayer,
     navigateToTeam,
+    navigateToNews,
     setActiveCompetitionId,
     setActiveTab,
     t,
@@ -19,8 +20,9 @@ export const GlobalSearchModal: React.FC = () => {
   const [results, setResults] = useState<{
     players: Player[];
     teams: Team[];
+    articles: NewsArticle[];
     competitions: Competition[];
-  }>({ players: [], teams: [], competitions: [] });
+  }>({ players: [], teams: [], articles: [], competitions: [] });
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -29,13 +31,13 @@ export const GlobalSearchModal: React.FC = () => {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setQuery('');
-      setResults({ players: [], teams: [], competitions: [] });
+      setResults({ players: [], teams: [], articles: [], competitions: [] });
     }
   }, [isSearchOpen]);
 
   useEffect(() => {
     if (!query.trim()) {
-      setResults({ players: [], teams: [], competitions: [] });
+      setResults({ players: [], teams: [], articles: [], competitions: [] });
       return;
     }
 
@@ -43,7 +45,12 @@ export const GlobalSearchModal: React.FC = () => {
       setLoading(true);
       ApiClient.search(query)
         .then((res) => {
-          setResults(res);
+          setResults({
+            players: res.players || [],
+            teams: res.teams || [],
+            articles: res.articles || res.news || [],
+            competitions: res.competitions || [],
+          });
           setLoading(false);
         })
         .catch(() => setLoading(false));
@@ -55,7 +62,10 @@ export const GlobalSearchModal: React.FC = () => {
   if (!isSearchOpen) return null;
 
   const hasResults =
-    results.players.length > 0 || results.teams.length > 0 || results.competitions.length > 0;
+    results.players.length > 0 ||
+    results.teams.length > 0 ||
+    results.articles.length > 0 ||
+    results.competitions.length > 0;
 
   return (
     <div
@@ -199,7 +209,51 @@ export const GlobalSearchModal: React.FC = () => {
             </div>
           )}
 
-          {/* Group 3: COMPETICIONES */}
+          {/* Group 3: ARTÍCULOS Y NOTICIAS */}
+          {results.articles.length > 0 && (
+            <div className="py-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-400 mb-2.5">
+                <FileText className="w-3.5 h-3.5" />
+                <span>Artículos y Crónicas ({results.articles.length})</span>
+              </div>
+              <div className="space-y-1">
+                {results.articles.map((a) => (
+                  <div
+                    key={a.id}
+                    onClick={() => {
+                      navigateToNews(a.slug || a.id);
+                      setIsSearchOpen(false);
+                    }}
+                    className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-colors group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {a.image && (
+                        <img
+                          src={a.image}
+                          alt={a.title}
+                          className="w-12 h-9 rounded-lg object-cover border border-slate-700 bg-slate-800 shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-100 group-hover:text-purple-300 transition-colors line-clamp-1">
+                          {a.title}
+                        </p>
+                        <p className="text-xs text-slate-400 truncate">
+                          <span className="font-semibold text-purple-400">{a.category || 'Crónica'}</span>
+                          {a.readingTimeMinutes && ` • ${a.readingTimeMinutes} min`}
+                          {a.publishedAt && ` • ${new Date(a.publishedAt).toLocaleDateString()}`}
+                        </p>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 group-hover:translate-x-1 transition-all shrink-0 ml-2" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Group 4: COMPETICIONES */}
           {results.competitions.length > 0 && (
             <div className="py-3 last:pb-0">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-sky-400 mb-2.5">
