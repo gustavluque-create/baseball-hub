@@ -22,8 +22,10 @@ import { playerCreateSchema, validateWithSchema } from '../../schemas/adminSchem
 import { PlayerImageEditorModal, BASEBALL_PHOTO_PRESETS } from './PlayerImageEditorModal.tsx';
 import { AdminPlayerImportModal } from './AdminPlayerImportModal.tsx';
 import { PlayerEditModal } from './PlayerEditModal.tsx';
+import { useApp } from '../../context/AppContext.tsx';
 
 export const AdminPlayersManager: React.FC = () => {
+  const { dataVersion } = useApp();
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [search, setSearch] = useState('');
@@ -91,7 +93,7 @@ export const AdminPlayersManager: React.FC = () => {
 
   useEffect(() => {
     fetchInitialData();
-  }, []);
+  }, [dataVersion]);
 
   const handleCreatePlayer = async (e: React.FormEvent) => {
     e.preventDefault();

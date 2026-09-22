@@ -40,6 +40,7 @@ import { AdminGamesManager } from '../components/admin/AdminGamesManager.tsx';
 import { AdminPlayersManager } from '../components/admin/AdminPlayersManager.tsx';
 import { AdminAuditLogs } from '../components/admin/AdminAuditLogs.tsx';
 import { AdminNewsManager } from '../components/admin/AdminNewsManager.tsx';
+import { AdminTeamsManager } from '../components/admin/AdminTeamsManager.tsx';
 
 const SAMPLE_CSV = `Jugador,Equipo,Posicion,VB,H,2B,3B,HR,CI,BB,K,AVG
 Erisbel Arruebarrena,MTZ,SS,110,40,9,1,8,30,14,22,0.364
@@ -81,7 +82,7 @@ export const AdminView: React.FC = () => {
 
   const { isAdminAuthenticated, adminUser, logout } = useAdminAuth();
 
-  type AdminTab = 'overview' | 'games' | 'etl' | 'players' | 'news' | 'logs' | 'settings';
+  type AdminTab = 'overview' | 'teams' | 'games' | 'etl' | 'players' | 'news' | 'logs' | 'settings';
   const [activeSection, setActiveSection] = useState<AdminTab>('overview');
   const [format, setFormat] = useState<'csv' | 'json'>('csv');
   const [rawText, setRawText] = useState<string>(SAMPLE_CSV);
@@ -201,6 +202,18 @@ export const AdminView: React.FC = () => {
         >
           <Activity className="w-3.5 h-3.5" />
           <span>Visión General</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSection('teams')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            activeSection === 'teams'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+          }`}
+        >
+          <Shield className="w-3.5 h-3.5" />
+          <span>Equipos ({overviewMetrics?.totalTeams ?? 16})</span>
         </button>
 
         <button
@@ -342,7 +355,25 @@ export const AdminView: React.FC = () => {
               <span>Accesos Rápidos de Administración</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <button
+                onClick={() => setActiveSection('teams')}
+                className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-left transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <Shield className="w-4 h-4" />
+                  </span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors" />
+                </div>
+                <div className="font-bold text-sm text-slate-200 group-hover:text-emerald-400">
+                  Gestión de Equipos
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  Registrar, modificar o eliminar clubes, estadios, mánagers e insignias.
+                </div>
+              </button>
+
               <button
                 onClick={() => setActiveSection('games')}
                 className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-left transition-all cursor-pointer group"
@@ -399,6 +430,15 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB: TEAMS MANAGEMENT */}
+      {activeSection === 'teams' && (
+        <AdminTeamsManager
+          onTeamsChange={() => {
+            ApiClient.getAdminOverview().then(setOverviewMetrics).catch(() => {});
+          }}
+        />
       )}
 
       {/* TAB: GAMES CONTROLLER */}

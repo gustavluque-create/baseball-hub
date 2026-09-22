@@ -392,6 +392,32 @@ export class ApiClient {
     });
   }
 
+  static createAdminTeam(teamData: Partial<Team>): Promise<Team> {
+    return this.request<Team>('/teams', {
+      method: 'POST',
+      body: JSON.stringify(teamData),
+    });
+  }
+
+  static updateAdminTeam(id: string, updates: Partial<Team>): Promise<Team> {
+    return this.request<Team>(`/teams/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  static deleteAdminTeam(id: string): Promise<{ success: boolean; message: string; deletedTeam?: Team }> {
+    return this.request<{ success: boolean; message: string; deletedTeam?: Team }>(`/teams/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  static seedAll16Teams(): Promise<{ success: boolean; message: string; teams: Team[] }> {
+    return this.request<{ success: boolean; message: string; teams: Team[] }>('/teams/seed-16', {
+      method: 'POST',
+    });
+  }
+
   static importAdminPlayers(players: any[]): Promise<{
     success: boolean;
     importedCount: number;

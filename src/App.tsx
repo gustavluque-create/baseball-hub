@@ -31,6 +31,14 @@ const KNOWN_TEAMS: Record<string, { city: string; name: string }> = {
   scu: { city: 'Santiago de Cuba', name: 'Avispas de Santiago de Cuba' },
   cav: { city: 'Ciego de Ávila', name: 'Tigres de Ciego de Ávila' },
   ssp: { city: 'Sancti Spíritus', name: 'Gallos de Sancti Spíritus' },
+  vcl: { city: 'Villa Clara', name: 'Leopardos de Villa Clara' },
+  cmg: { city: 'Camagüey', name: 'Toros de Camagüey' },
+  hol: { city: 'Holguín', name: 'Cachorros de Holguín' },
+  cfg: { city: 'Cienfuegos', name: 'Elefantes de Cienfuegos' },
+  art: { city: 'Artemisa', name: 'Cazadores de Artemisa' },
+  may: { city: 'Mayabeque', name: 'Huracanes de Mayabeque' },
+  ijv: { city: 'Isla de la Juventud', name: 'Piratas de la Isla' },
+  gtm: { city: 'Guantánamo', name: 'Indios de Guantánamo' },
 };
 
 const AppContent: React.FC = () => {

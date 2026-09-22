@@ -395,13 +395,121 @@ const handleUpdateTeamLogo = (req: Request, res: Response) => {
 apiRouter.put('/teams/:id/logo', requireAdmin, handleUpdateTeamLogo);
 apiRouter.post('/teams/:id/logo', requireAdmin, handleUpdateTeamLogo);
 
-apiRouter.put('/teams/:id', requireAdmin, (req: Request, res: Response) => {
-  const updatedTeam = baseballRepo.updateTeam(req.params.id, req.body);
-  if (!updatedTeam) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
+const handleUpdateTeam = (req: Request, res: Response) => {
+  try {
+    const updatedTeam = baseballRepo.updateTeam(req.params.id, req.body);
+    if (!updatedTeam) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : (req.headers['x-admin-token'] as string);
+    const admin = adminAuthService.verifySession(token);
+    if (admin) {
+      adminAuthService.addAuditLog(
+        admin.username,
+        'Modificación de Equipo',
+        `Datos actualizados para ${updatedTeam.name} (${updatedTeam.shortName}).`,
+        'teams'
+      );
+    }
+
+    res.json(updatedTeam);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar equipo.' });
   }
-  res.json(updatedTeam);
-});
+};
+
+apiRouter.put('/teams/:id', requireAdmin, handleUpdateTeam);
+apiRouter.put('/admin/teams/:id', requireAdmin, handleUpdateTeam);
+
+// Create Team
+const handleCreateTeam = (req: Request, res: Response) => {
+  try {
+    const newTeam = baseballRepo.createTeam(req.body);
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : (req.headers['x-admin-token'] as string);
+    const admin = adminAuthService.verifySession(token);
+    if (admin) {
+      adminAuthService.addAuditLog(
+        admin.username,
+        'Alta de Nuevo Equipo',
+        `Equipo registrado: ${newTeam.name} (${newTeam.shortName}) de ${newTeam.city}.`,
+        'teams'
+      );
+    }
+    res.status(201).json(newTeam);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al crear equipo.' });
+  }
+};
+
+apiRouter.post('/teams', requireAdmin, handleCreateTeam);
+apiRouter.post('/admin/teams', requireAdmin, handleCreateTeam);
+
+// Seed 16 Official Cuban Series Teams
+const handleSeed16Teams = (req: Request, res: Response) => {
+  try {
+    const teams = baseballRepo.seed16NationalSeriesTeams();
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : (req.headers['x-admin-token'] as string);
+    const admin = adminAuthService.verifySession(token);
+    if (admin) {
+      adminAuthService.addAuditLog(
+        admin.username,
+        'Carga de 16 Equipos de la Serie Nacional',
+        'Se verificaron y cargaron los 16 equipos provinciales oficiales de Cuba.',
+        'teams'
+      );
+    }
+    res.json({
+      success: true,
+      message: 'Se han configurado y sincronizado los 16 equipos oficiales de la Serie Nacional.',
+      teams,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al cargar los 16 equipos.' });
+  }
+};
+
+apiRouter.post('/teams/seed-16', requireAdmin, handleSeed16Teams);
+apiRouter.post('/admin/teams/seed-16', requireAdmin, handleSeed16Teams);
+
+// Delete Team
+const handleDeleteTeam = (req: Request, res: Response) => {
+  try {
+    const result = baseballRepo.deleteTeam(req.params.id);
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : (req.headers['x-admin-token'] as string);
+    const admin = adminAuthService.verifySession(token);
+    if (admin) {
+      adminAuthService.addAuditLog(
+        admin.username,
+        'Baja de Equipo',
+        `Equipo eliminado: ${result.deletedTeam.name} (${result.deletedTeam.shortName}).`,
+        'teams'
+      );
+    }
+    res.json({
+      success: true,
+      message: `Equipo ${result.deletedTeam.name} eliminado correctamente.`,
+      deletedTeam: result.deletedTeam,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar equipo.' });
+  }
+};
+
+apiRouter.delete('/teams/:id', requireAdmin, handleDeleteTeam);
+apiRouter.delete('/admin/teams/:id', requireAdmin, handleDeleteTeam);
 
 // Players
 apiRouter.get('/players', (req: Request, res: Response) => {

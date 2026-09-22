@@ -162,6 +162,359 @@ export class BaseballRepository {
     return updated;
   }
 
+  createTeam(data: Partial<Team>): Team {
+    if (!data.name || !data.shortName) {
+      throw new Error('El nombre y la abreviatura del equipo son obligatorios.');
+    }
+    const shortName = data.shortName.trim().toUpperCase();
+    const existing = this.teams.find(
+      (t) =>
+        t.shortName.toUpperCase() === shortName ||
+        t.name.trim().toLowerCase() === (data.name || '').trim().toLowerCase()
+    );
+    if (existing) {
+      throw new Error(`Ya existe un equipo registrado con el nombre "${data.name}" o sigla "${shortName}".`);
+    }
+
+    const id = data.id || shortName.toLowerCase();
+    const primaryColor = data.colors?.primary || data.primaryColor || '#10B981';
+    const secondaryColor = data.colors?.secondary || '#1E293B';
+    const textColor = data.colors?.text || '#FFFFFF';
+
+    const newTeam: Team = {
+      id,
+      name: data.name.trim(),
+      nickname: (data.nickname || data.name).trim(),
+      shortName,
+      city: (data.city || 'Cuba').trim(),
+      stadium: (data.stadium || `Estadio de ${shortName}`).trim(),
+      capacity: Number(data.capacity || data.stadiumCapacity || 15000),
+      manager: (data.manager || 'Director Técnico').trim(),
+      foundedYear: Number(data.foundedYear || 1977),
+      championships: Number(data.championships || 0),
+      colors: {
+        primary: primaryColor,
+        secondary: secondaryColor,
+        text: textColor,
+      },
+      primaryColor,
+      logo: data.logo || '⚾',
+      competitionId: data.competitionId || 'snb',
+      seasonId: data.seasonId || 'snb-65',
+      record: data.record || {
+        wins: 0,
+        losses: 0,
+        pct: 0,
+        streak: '-',
+        lastTen: '0-0',
+        position: this.teams.length + 1,
+      },
+    };
+
+    this.teams.push(newTeam);
+
+    // Also add to standings if not present
+    const existingStanding = this.standings.find((s) => s.teamId === newTeam.id || s.teamShort === newTeam.shortName);
+    if (!existingStanding) {
+      this.standings.push({
+        position: this.standings.length + 1,
+        teamId: newTeam.id,
+        teamName: newTeam.name,
+        teamShort: newTeam.shortName,
+        teamLogo: newTeam.logo,
+        logo: newTeam.logo,
+        gamesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        pct: 0,
+        gamesBehind: 0,
+        homeRecord: '0-0',
+        awayRecord: '0-0',
+        streak: '-',
+        lastTen: '0-0',
+        runsScored: 0,
+        runsAllowed: 0,
+        runDifferential: 0,
+      } as any);
+    }
+
+    return newTeam;
+  }
+
+  deleteTeam(id: string): { success: boolean; deletedTeam: Team } {
+    const index = this.teams.findIndex((t) => t.id === id || t.shortName.toLowerCase() === id.toLowerCase());
+    if (index === -1) {
+      throw new Error(`Equipo con identificador "${id}" no encontrado.`);
+    }
+
+    const team = this.teams[index];
+
+    // Remove from teams list
+    this.teams.splice(index, 1);
+
+    // Remove from standings
+    this.standings = this.standings.filter((s) => s.teamId !== team.id && s.teamShort !== team.shortName);
+    this.standings.forEach((s, idx) => {
+      s.rank = idx + 1;
+    });
+
+    // Remove players belonging to this team or detach
+    this.players = this.players.filter((p) => p.teamId !== team.id && p.teamShort !== team.shortName);
+
+    return { success: true, deletedTeam: team };
+  }
+
+  seed16NationalSeriesTeams(): Team[] {
+    const OFFICIAL_16: Array<Omit<Team, 'seasonId' | 'competitionId' | 'record'>> = [
+      {
+        id: 'mtz',
+        name: 'Cocodrilos de Matanzas',
+        nickname: 'Cocodrilos',
+        shortName: 'MTZ',
+        city: 'Matanzas',
+        stadium: 'Estadio Victoria de Girón',
+        capacity: 22000,
+        manager: 'Armando Ferrer',
+        foundedYear: 1992,
+        championships: 1,
+        colors: { primary: '#DC2626', secondary: '#F59E0B', text: '#FFFFFF' },
+        logo: '🐊',
+      },
+      {
+        id: 'ind',
+        name: 'Leones de Industriales',
+        nickname: 'Leones de la Capital',
+        shortName: 'IND',
+        city: 'La Habana',
+        stadium: 'Estadio Latinoamericano',
+        capacity: 55000,
+        manager: 'Guillermo Carmona',
+        foundedYear: 1962,
+        championships: 12,
+        colors: { primary: '#1E40AF', secondary: '#60A5FA', text: '#FFFFFF' },
+        logo: '🦁',
+      },
+      {
+        id: 'ltu',
+        name: 'Leñadores de Las Tunas',
+        nickname: 'Leñadores',
+        shortName: 'LTU',
+        city: 'Las Tunas',
+        stadium: 'Estadio Julio Antonio Mella',
+        capacity: 13000,
+        manager: 'Abeysi Pantoja',
+        foundedYear: 1977,
+        championships: 3,
+        colors: { primary: '#047857', secondary: '#FBBF24', text: '#FFFFFF' },
+        logo: '🪓',
+      },
+      {
+        id: 'pri',
+        name: 'Vegueros de Pinar del Río',
+        nickname: 'Vegueros',
+        shortName: 'PRI',
+        city: 'Pinar del Río',
+        stadium: 'Estadio Capitán San Luis',
+        capacity: 10000,
+        manager: 'Alexander Urquiola',
+        foundedYear: 1967,
+        championships: 10,
+        colors: { primary: '#15803D', secondary: '#E2E8F0', text: '#FFFFFF' },
+        logo: '🌿',
+      },
+      {
+        id: 'scu',
+        name: 'Avispas de Santiago de Cuba',
+        nickname: 'Avispas',
+        shortName: 'SCU',
+        city: 'Santiago de Cuba',
+        stadium: 'Estadio Guillermón Moncada',
+        capacity: 25000,
+        manager: 'Eddy Cajigal',
+        foundedYear: 1977,
+        championships: 8,
+        colors: { primary: '#B91C1C', secondary: '#111827', text: '#FFFFFF' },
+        logo: '🐝',
+      },
+      {
+        id: 'gra',
+        name: 'Alazanes de Granma',
+        nickname: 'Alazanes',
+        shortName: 'GRA',
+        city: 'Bayamo',
+        stadium: 'Estadio Mártires de Barbados',
+        capacity: 12000,
+        manager: 'Ángel Ortega',
+        foundedYear: 1977,
+        championships: 4,
+        colors: { primary: '#2563EB', secondary: '#DC2626', text: '#FFFFFF' },
+        logo: '🐎',
+      },
+      {
+        id: 'vcl',
+        name: 'Leopardos de Villa Clara',
+        nickname: 'Leopardos',
+        shortName: 'VCL',
+        city: 'Santa Clara',
+        stadium: 'Estadio Augusto César Sandino',
+        capacity: 20000,
+        manager: 'Ramón Moré',
+        foundedYear: 1977,
+        championships: 5,
+        colors: { primary: '#EA580C', secondary: '#1E293B', text: '#FFFFFF' },
+        logo: '🐆',
+      },
+      {
+        id: 'cav',
+        name: 'Tigres de Ciego de Ávila',
+        nickname: 'Tigres',
+        shortName: 'CAV',
+        city: 'Ciego de Ávila',
+        stadium: 'Estadio José Ramón Cepero',
+        capacity: 13000,
+        manager: 'Dany Miranda',
+        foundedYear: 1977,
+        championships: 3,
+        colors: { primary: '#D97706', secondary: '#1E1B4B', text: '#FFFFFF' },
+        logo: '🐯',
+      },
+      {
+        id: 'art',
+        name: 'Cazadores de Artemisa',
+        nickname: 'Cazadores',
+        shortName: 'ART',
+        city: 'Artemisa',
+        stadium: 'Estadio 26 de Julio',
+        capacity: 10000,
+        manager: 'Yulieski González',
+        foundedYear: 2011,
+        championships: 0,
+        colors: { primary: '#B45309', secondary: '#DC2626', text: '#FFFFFF' },
+        logo: '🏹',
+      },
+      {
+        id: 'may',
+        name: 'Huracanes de Mayabeque',
+        nickname: 'Huracanes',
+        shortName: 'MAY',
+        city: 'San José de las Lajas',
+        stadium: 'Estadio Nelson Fernández',
+        capacity: 8000,
+        manager: 'Michael González',
+        foundedYear: 2011,
+        championships: 0,
+        colors: { primary: '#7C3AED', secondary: '#38BDF8', text: '#FFFFFF' },
+        logo: '🌪️',
+      },
+      {
+        id: 'ijv',
+        name: 'Piratas de la Isla de la Juventud',
+        nickname: 'Piratas',
+        shortName: 'IJV',
+        city: 'Nueva Gerona',
+        stadium: 'Estadio Cristóbal Labra',
+        capacity: 5000,
+        manager: 'Maikel Maldonado',
+        foundedYear: 1977,
+        championships: 0,
+        colors: { primary: '#0284C7', secondary: '#F59E0B', text: '#FFFFFF' },
+        logo: '🏴‍☠️',
+      },
+      {
+        id: 'cfg',
+        name: 'Elefantes de Cienfuegos',
+        nickname: 'Elefantes',
+        shortName: 'CFG',
+        city: 'Cienfuegos',
+        stadium: 'Estadio 5 de Septiembre',
+        capacity: 15000,
+        manager: 'Jorge R. Rodríguez',
+        foundedYear: 1977,
+        championships: 0,
+        colors: { primary: '#059669', secondary: '#0284C7', text: '#FFFFFF' },
+        logo: '🐘',
+      },
+      {
+        id: 'ssp',
+        name: 'Gallos de Sancti Spíritus',
+        nickname: 'Gallos',
+        shortName: 'SSP',
+        city: 'Sancti Spíritus',
+        stadium: 'Estadio José Antonio Huelga',
+        capacity: 12000,
+        manager: 'Eriel Sánchez',
+        foundedYear: 1977,
+        championships: 1,
+        colors: { primary: '#F59E0B', secondary: '#DC2626', text: '#FFFFFF' },
+        logo: '🐓',
+      },
+      {
+        id: 'cmg',
+        name: 'Toros de Camagüey',
+        nickname: 'Toros',
+        shortName: 'CMG',
+        city: 'Camagüey',
+        stadium: 'Estadio Cándido González',
+        capacity: 15000,
+        manager: 'Marino Luis',
+        foundedYear: 1977,
+        championships: 1,
+        colors: { primary: '#2563EB', secondary: '#0F172A', text: '#FFFFFF' },
+        logo: '🐂',
+      },
+      {
+        id: 'hol',
+        name: 'Cachorros de Holguín',
+        nickname: 'Cachorros',
+        shortName: 'HOL',
+        city: 'Holguín',
+        stadium: 'Estadio Calixto García',
+        capacity: 18000,
+        manager: 'Lugdis Pineda',
+        foundedYear: 1977,
+        championships: 1,
+        colors: { primary: '#DC2626', secondary: '#2563EB', text: '#FFFFFF' },
+        logo: '🐶',
+      },
+      {
+        id: 'gtm',
+        name: 'Indios de Guantánamo',
+        nickname: 'Indios',
+        shortName: 'GTM',
+        city: 'Guantánamo',
+        stadium: 'Estadio Nguyen Van Troi',
+        capacity: 14000,
+        manager: 'Rubén Prevot',
+        foundedYear: 1977,
+        championships: 0,
+        colors: { primary: '#16A34A', secondary: '#1E1B4B', text: '#FFFFFF' },
+        logo: '🪶',
+      },
+    ];
+
+    for (const official of OFFICIAL_16) {
+      const existing = this.teams.find(
+        (t) =>
+          t.shortName.toUpperCase() === official.shortName.toUpperCase() ||
+          t.id.toLowerCase() === official.id.toLowerCase()
+      );
+      if (!existing) {
+        this.createTeam(official as any);
+      } else {
+        // Ensure default official attributes are complete
+        if (!existing.stadium) existing.stadium = official.stadium;
+        if (!existing.capacity) existing.capacity = official.capacity;
+        if (!existing.manager) existing.manager = official.manager;
+        if (!existing.city) existing.city = official.city;
+        if (!existing.logo || existing.logo === '⚾') existing.logo = official.logo;
+        if (!existing.colors) existing.colors = official.colors;
+        if (!existing.foundedYear) existing.foundedYear = official.foundedYear;
+      }
+    }
+
+    return this.teams;
+  }
+
   // Players
   getPlayers(params?: { teamId?: string; position?: string; search?: string; limit?: number; page?: number }): {
     items: Player[];
