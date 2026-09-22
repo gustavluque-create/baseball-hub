@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import {
   Competition,
   Season,
@@ -27,7 +29,38 @@ import {
   DEMO_VIDEOS,
 } from '../data/seed-data.ts';
 
+const INITIAL_COMMENTS: ArticleComment[] = [
+  {
+    id: 'comm_1',
+    articleSlug: 'final-serie-nacional-63-las-tunas-vs-pinar-del-rio',
+    authorName: 'Yordanis Morales',
+    favoriteTeam: 'Leñadores de Las Tunas',
+    content: '¡Tremendo análisis! Los Leñadores han demostrado una consistencia bárbara en el Julio Antonio Mella.',
+    createdAt: '2026-09-20T14:30:00Z',
+    likes: 8,
+  },
+  {
+    id: 'comm_2',
+    articleSlug: 'final-serie-nacional-63-las-tunas-vs-pinar-del-rio',
+    authorName: 'Alejandro Valdés',
+    favoriteTeam: 'Vegueros de Pinar del Río',
+    content: 'El pitcheo de relevo de Pinar va a decidir esta serie. Si los abridores caminan 6 innings, la ventaja es verde.',
+    createdAt: '2026-09-20T16:15:00Z',
+    likes: 5,
+  },
+  {
+    id: 'comm_3',
+    articleSlug: 'analisis-snb-63-lideres-estadisticos-temporada-regular',
+    authorName: 'Ernesto Santana',
+    favoriteTeam: 'Industriales',
+    content: 'Gran trabajo recopilando estos datos. Ojalá sigan publicando estas métricas avanzadas antes de cada subserie.',
+    createdAt: '2026-09-20T18:40:00Z',
+    likes: 12,
+  },
+];
+
 export class BaseballRepository {
+  private readonly dbFilePath = path.resolve(process.cwd(), 'server/data/database.json');
   private competitions: Competition[] = [...DEMO_COMPETITIONS];
   private seasons: Season[] = [...DEMO_SEASONS];
   private teams: Team[] = [...DEMO_TEAMS];
@@ -38,8 +71,96 @@ export class BaseballRepository {
   private standings: Standing[] = [...DEMO_STANDINGS];
   private news: NewsArticle[] = [...DEMO_NEWS];
   private videos: VideoItem[] = [...DEMO_VIDEOS];
+  private comments: ArticleComment[] = [...INITIAL_COMMENTS];
+
   constructor() {
+    this.loadFromDisk();
     this.deduplicatePlayers();
+  }
+
+  /**
+   * Load persistent database state from disk if it exists, otherwise initialize and persist seed data
+   */
+  private loadFromDisk(): void {
+    try {
+      if (fs.existsSync(this.dbFilePath)) {
+        const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
+        if (raw && raw.trim().length > 0) {
+          const data = JSON.parse(raw);
+          if (Array.isArray(data.competitions) && data.competitions.length > 0) {
+            this.competitions = data.competitions;
+          }
+          if (Array.isArray(data.seasons) && data.seasons.length > 0) {
+            this.seasons = data.seasons;
+          }
+          if (Array.isArray(data.teams) && data.teams.length > 0) {
+            this.teams = data.teams;
+          }
+          if (Array.isArray(data.players) && data.players.length > 0) {
+            this.players = data.players;
+          }
+          if (Array.isArray(data.games) && data.games.length > 0) {
+            this.games = data.games;
+          }
+          if (Array.isArray(data.battingStats) && data.battingStats.length > 0) {
+            this.battingStats = data.battingStats;
+          }
+          if (Array.isArray(data.pitchingStats) && data.pitchingStats.length > 0) {
+            this.pitchingStats = data.pitchingStats;
+          }
+          if (Array.isArray(data.standings) && data.standings.length > 0) {
+            this.standings = data.standings;
+          }
+          if (Array.isArray(data.news) && data.news.length > 0) {
+            this.news = data.news;
+          }
+          if (Array.isArray(data.videos) && data.videos.length > 0) {
+            this.videos = data.videos;
+          }
+          if (Array.isArray(data.comments) && data.comments.length > 0) {
+            this.comments = data.comments;
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('[Database] Failed to read database.json, initializing from seed data:', err);
+    }
+
+    // Persist initial database on first launch
+    this.saveToDisk();
+  }
+
+  /**
+   * Atomically save the current database state to disk
+   */
+  public saveToDisk(): void {
+    try {
+      const dir = path.dirname(this.dbFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const payload = {
+        version: '1.0',
+        lastUpdated: new Date().toISOString(),
+        competitions: this.competitions,
+        seasons: this.seasons,
+        teams: this.teams,
+        players: this.players,
+        games: this.games,
+        battingStats: this.battingStats,
+        pitchingStats: this.pitchingStats,
+        standings: this.standings,
+        news: this.news,
+        videos: this.videos,
+        comments: this.comments,
+      };
+      const tempPath = `${this.dbFilePath}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf-8');
+      fs.renameSync(tempPath, this.dbFilePath);
+    } catch (err) {
+      console.error('[Database] Error saving database to disk:', err);
+    }
   }
 
   deduplicatePlayers(): void {
@@ -59,36 +180,6 @@ export class BaseballRepository {
     }
     this.players = clean;
   }
-
-  private comments: ArticleComment[] = [
-    {
-      id: 'comm_1',
-      articleSlug: 'final-serie-nacional-63-las-tunas-vs-pinar-del-rio',
-      authorName: 'Yordanis Morales',
-      favoriteTeam: 'Leñadores de Las Tunas',
-      content: '¡Tremendo análisis! Los Leñadores han demostrado una consistencia bárbara en el Julio Antonio Mella.',
-      createdAt: '2026-09-20T14:30:00Z',
-      likes: 8,
-    },
-    {
-      id: 'comm_2',
-      articleSlug: 'final-serie-nacional-63-las-tunas-vs-pinar-del-rio',
-      authorName: 'Alejandro Valdés',
-      favoriteTeam: 'Vegueros de Pinar del Río',
-      content: 'El pitcheo de relevo de Pinar va a decidir esta serie. Si los abridores caminan 6 innings, la ventaja es verde.',
-      createdAt: '2026-09-20T16:15:00Z',
-      likes: 5,
-    },
-    {
-      id: 'comm_3',
-      articleSlug: 'analisis-snb-63-lideres-estadisticos-temporada-regular',
-      authorName: 'Ernesto Santana',
-      favoriteTeam: 'Industriales',
-      content: 'Gran trabajo recopilando estos datos. Ojalá sigan publicando estas métricas avanzadas antes de cada subserie.',
-      createdAt: '2026-09-20T18:40:00Z',
-      likes: 12,
-    },
-  ];
 
   // Competitions & Seasons
   getCompetitions(): Competition[] {
@@ -161,6 +252,7 @@ export class BaseballRepository {
       }
     }
 
+    this.saveToDisk();
     return updated;
   }
 
@@ -240,6 +332,7 @@ export class BaseballRepository {
       } as any);
     }
 
+    this.saveToDisk();
     return newTeam;
   }
 
@@ -263,6 +356,7 @@ export class BaseballRepository {
     // Remove players belonging to this team or detach
     this.players = this.players.filter((p) => p.teamId !== team.id && p.teamShort !== team.shortName);
 
+    this.saveToDisk();
     return { success: true, deletedTeam: team };
   }
 
@@ -514,6 +608,7 @@ export class BaseballRepository {
       }
     }
 
+    this.saveToDisk();
     return this.teams;
   }
 
@@ -639,6 +734,7 @@ export class BaseballRepository {
       isScoringPlay: true,
     });
 
+    this.saveToDisk();
     return {
       game: { ...target },
       runsScored: runs,
@@ -976,6 +1072,7 @@ export class BaseballRepository {
         }
       }
     }
+    this.saveToDisk();
     return newStats.length;
   }
 
@@ -996,6 +1093,7 @@ export class BaseballRepository {
       count++;
     }
     this.deduplicatePlayers();
+    this.saveToDisk();
     return count;
   }
 
@@ -1231,6 +1329,7 @@ export class BaseballRepository {
     };
 
     this.games.unshift(newGame);
+    this.saveToDisk();
     return newGame;
   }
 
@@ -1247,12 +1346,14 @@ export class BaseballRepository {
     };
 
     this.games[index] = updated;
+    this.saveToDisk();
     return updated;
   }
 
   deleteGame(id: string): boolean {
     const initialLen = this.games.length;
     this.games = this.games.filter((g) => g.id !== id);
+    this.saveToDisk();
     return this.games.length < initialLen;
   }
 
@@ -1322,6 +1423,7 @@ export class BaseballRepository {
 
     this.players.unshift(newPlayer);
     this.deduplicatePlayers();
+    this.saveToDisk();
     return newPlayer;
   }
 
@@ -1395,6 +1497,7 @@ export class BaseballRepository {
     }
 
     this.deduplicatePlayers();
+    this.saveToDisk();
 
     return updated;
   }
@@ -1500,6 +1603,7 @@ export class BaseballRepository {
     }
 
     this.deduplicatePlayers();
+    this.saveToDisk();
 
     return {
       importedCount: resultPlayers.length,
@@ -1512,6 +1616,7 @@ export class BaseballRepository {
   deletePlayer(id: string): boolean {
     const initialLen = this.players.length;
     this.players = this.players.filter((p) => p.id !== id);
+    this.saveToDisk();
     return this.players.length < initialLen;
   }
 
@@ -1541,12 +1646,14 @@ export class BaseballRepository {
     };
 
     this.news.unshift(newArticle);
+    this.saveToDisk();
     return newArticle;
   }
 
   deleteNews(id: string): boolean {
     const initialLen = this.news.length;
     this.news = this.news.filter((n) => n.id !== id);
+    this.saveToDisk();
     return this.news.length < initialLen;
   }
 
@@ -1574,13 +1681,23 @@ export class BaseballRepository {
     };
 
     this.comments.unshift(newComment);
+    this.saveToDisk();
     return newComment;
   }
 
   deleteComment(id: string): boolean {
     const initialLen = this.comments.length;
     this.comments = this.comments.filter((c) => c.id !== id);
+    this.saveToDisk();
     return this.comments.length < initialLen;
+  }
+
+  likeComment(id: string): { success: boolean; likes: number } {
+    const comment = this.comments.find((c) => c.id === id);
+    if (!comment) return { success: false, likes: 0 };
+    comment.likes = (comment.likes || 0) + 1;
+    this.saveToDisk();
+    return { success: true, likes: comment.likes };
   }
 
   resetToDefaults(): void {
@@ -1594,7 +1711,41 @@ export class BaseballRepository {
     this.standings = [...DEMO_STANDINGS];
     this.news = [...DEMO_NEWS];
     this.videos = [...DEMO_VIDEOS];
+    this.comments = [...INITIAL_COMMENTS];
     this.deduplicatePlayers();
+    this.saveToDisk();
+  }
+
+  getDatabaseInfo(): { filePath: string; exists: boolean; sizeBytes: number; lastModified?: string; counts: Record<string, number> } {
+    const exists = fs.existsSync(this.dbFilePath);
+    let sizeBytes = 0;
+    let lastModified: string | undefined = undefined;
+    if (exists) {
+      try {
+        const stats = fs.statSync(this.dbFilePath);
+        sizeBytes = stats.size;
+        lastModified = stats.mtime.toISOString();
+      } catch (e) {
+        // ignore
+      }
+    }
+    return {
+      filePath: this.dbFilePath,
+      exists,
+      sizeBytes,
+      lastModified,
+      counts: {
+        teams: this.teams.length,
+        players: this.players.length,
+        games: this.games.length,
+        battingStats: this.battingStats.length,
+        pitchingStats: this.pitchingStats.length,
+        standings: this.standings.length,
+        news: this.news.length,
+        videos: this.videos.length,
+        comments: this.comments.length,
+      },
+    };
   }
 }
 

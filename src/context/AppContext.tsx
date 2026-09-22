@@ -385,7 +385,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [dataVersion, setDataVersion] = useState<number>(1);
   const triggerDataRefresh = () => {
-    setDataVersion((v) => v + 1);
+    setDataVersion((v) => {
+      const nextVersion = v + 1;
+      console.log(
+        `%c[STATE HOOK: useApp]%c triggerDataRefresh() dispatched -> dataVersion: ${v} -> ${nextVersion}. Re-evaluating queries.`,
+        'color: #0284c7; font-weight: bold;',
+        'color: inherit;'
+      );
+      return nextVersion;
+    });
   };
 
   const navigateToNews = (slug: string) => {

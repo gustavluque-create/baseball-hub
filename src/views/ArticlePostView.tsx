@@ -15,6 +15,11 @@ import {
   TrendingUp,
   Award,
   Sparkles,
+  Send,
+  Linkedin,
+  Facebook,
+  X,
+  MessageSquare,
 } from 'lucide-react';
 import { NewsArticle } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
@@ -35,6 +40,8 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -161,27 +168,51 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
   }, [article]);
 
   const handleCopyLink = () => {
-    const url = getArticleFullUrl(slug);
+    const url = article ? getArticleFullUrl(article.slug) : getArticleFullUrl(slug);
     if (navigator.clipboard) {
       navigator.clipboard.writeText(url);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      setShareFeedback('¡Enlace copiado al portapapeles!');
+      setTimeout(() => {
+        setCopied(false);
+        setShareFeedback(null);
+      }, 2500);
     }
   };
 
-  const handleShareNative = () => {
+  const handleShare = async () => {
     if (!article) return;
     const url = getArticleFullUrl(article.slug);
-    if (navigator.share) {
-      navigator
-        .share({
-          title: article.title,
-          text: article.excerpt,
-          url,
-        })
-        .catch(() => {});
+    const shareData = {
+      title: article.title,
+      text: article.excerpt || `Lee esta noticia en Baseball Hub: ${article.title}`,
+      url,
+    };
+
+    // Check if Web Share API is available and can share this data
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        if (navigator.canShare && !navigator.canShare(shareData)) {
+          // If browser canShare reports false, open custom share dialog
+          setIsShareModalOpen(true);
+          return;
+        }
+        await navigator.share(shareData);
+        setShareFeedback('¡Compartido con éxito!');
+        setTimeout(() => setShareFeedback(null), 3000);
+      } catch (err: any) {
+        // If user cancelled the share sheet, AbortError is raised
+        if (err?.name === 'AbortError') {
+          // User simply closed/dismissed native sheet, no error message needed
+          return;
+        }
+        // In other cases (permissions, platform limitations), fallback to modal
+        console.warn('Web Share API error, using fallback modal:', err);
+        setIsShareModalOpen(true);
+      }
     } else {
-      handleCopyLink();
+      // Web Share API not supported on this browser/environment (e.g. desktop non-Safari/Edge, or iframe without allow="web-share")
+      setIsShareModalOpen(true);
     }
   };
 
@@ -317,6 +348,15 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
               </span>
             </>
           )}
+          <span className="text-slate-500">•</span>
+          <a
+            href="#article-comments-section"
+            className="flex items-center gap-1 text-slate-400 hover:text-emerald-400 transition-colors font-medium"
+            title="Ir a los comentarios y opiniones"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Opiniones &amp; Debate</span>
+          </a>
         </div>
 
         {/* Main Title (H1 for SEO) */}
@@ -343,8 +383,19 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
             </div>
           </div>
 
-          {/* Social share icons */}
+          {/* Social share icons & Native Web Share */}
           <div className="flex items-center gap-1.5">
+            {/* Primary Web Share API button */}
+            <button
+              onClick={handleShare}
+              id="article-header-share-btn"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-sm cursor-pointer"
+              title="Compartir artículo en redes o aplicaciones"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Compartir</span>
+            </button>
+
             {/* WhatsApp */}
             <a
               href={`https://api.whatsapp.com/send?text=${encodeURIComponent(article.title + ' ' + articleUrl)}`}
@@ -367,14 +418,27 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
               <span className="font-bold text-xs">𝕏</span>
             </a>
 
-            {/* Native Share / Copy */}
-            <button
-              onClick={handleShareNative}
-              className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
-              title="Compartir"
+            {/* Telegram */}
+            <a
+              href={`https://t.me/share/url?url=${encodeURIComponent(articleUrl)}&text=${encodeURIComponent(article.title)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-lg bg-sky-950/50 hover:bg-sky-900/60 text-sky-400 border border-sky-500/30 transition-colors hidden sm:inline-flex"
+              title="Compartir en Telegram"
             >
-              <Share2 className="w-4 h-4 text-emerald-400" />
-            </button>
+              <Send className="w-4 h-4" />
+            </a>
+
+            {/* Facebook */}
+            <a
+              href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(articleUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-lg bg-blue-950/50 hover:bg-blue-900/60 text-blue-400 border border-blue-500/30 transition-colors hidden md:inline-flex"
+              title="Compartir en Facebook"
+            >
+              <Facebook className="w-4 h-4" />
+            </a>
           </div>
         </div>
       </header>
@@ -406,6 +470,92 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
           ))
         ) : (
           <p className="text-slate-300 leading-relaxed">{article.excerpt}</p>
+        )}
+      </div>
+
+      {/* Interactive Social Share Bar */}
+      <div className="mt-8 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-slate-800 shadow-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <Share2 className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-black text-slate-100 uppercase tracking-wide">
+                ¿Te gustó este artículo? ¡Compártelo!
+              </h3>
+            </div>
+            <p className="text-xs text-slate-400">
+              Difunde las noticias y análisis de la Serie Nacional con tus amigos y en redes sociales.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Native Web Share button */}
+            <button
+              onClick={handleShare}
+              id="article-bottom-webshare-btn"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md hover:shadow-emerald-600/20 cursor-pointer"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Compartir Artículo</span>
+            </button>
+
+            {/* WhatsApp */}
+            <a
+              href={`https://api.whatsapp.com/send?text=${encodeURIComponent(article.title + '\n' + articleUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors"
+              title="Compartir en WhatsApp"
+            >
+              <MessageCircle className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline">WhatsApp</span>
+            </a>
+
+            {/* Twitter / X */}
+            <a
+              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(articleUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors"
+              title="Compartir en X (Twitter)"
+            >
+              <span className="font-bold text-xs">𝕏</span>
+              <span className="hidden sm:inline">Twitter</span>
+            </a>
+
+            {/* Facebook */}
+            <a
+              href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(articleUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border border-blue-500/30 text-xs font-semibold transition-colors"
+              title="Compartir en Facebook"
+            >
+              <Facebook className="w-4 h-4 text-blue-400" />
+              <span className="hidden sm:inline">Facebook</span>
+            </a>
+
+            {/* Telegram */}
+            <a
+              href={`https://t.me/share/url?url=${encodeURIComponent(articleUrl)}&text=${encodeURIComponent(article.title)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-950/60 hover:bg-sky-900/80 text-sky-300 border border-sky-500/30 text-xs font-semibold transition-colors"
+              title="Compartir en Telegram"
+            >
+              <Send className="w-4 h-4 text-sky-400" />
+              <span className="hidden sm:inline">Telegram</span>
+            </a>
+          </div>
+        </div>
+
+        {shareFeedback && (
+          <div className="mt-3 py-1.5 px-3 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-1.5 animate-fadeIn">
+            <Check className="w-3.5 h-3.5" />
+            <span>{shareFeedback}</span>
+          </div>
         )}
       </div>
 
@@ -499,6 +649,166 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
             ))}
           </div>
         </section>
+      )}
+
+      {/* Social Media Share Modal Dialog (Fallback & Direct Selection) */}
+      {isShareModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setIsShareModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 space-y-5 text-slate-100 relative"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-modal-title"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="share-modal-title" className="text-sm font-black uppercase tracking-wider text-slate-100">
+                    Compartir Noticia
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Elige tu red social o copia el enlace directo
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+                aria-label="Cerrar modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Article Preview Card */}
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-850 flex gap-3 items-center">
+              {article.image && (
+                <img
+                  src={article.image}
+                  alt={article.title}
+                  className="w-16 h-16 rounded-lg object-cover shrink-0 bg-slate-900 border border-slate-800"
+                  referrerPolicy="no-referrer"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] uppercase font-bold text-emerald-400">
+                  {article.category}
+                </span>
+                <p className="text-xs font-bold text-slate-200 line-clamp-2 mt-0.5">
+                  {article.title}
+                </p>
+              </div>
+            </div>
+
+            {/* Social Media Grid */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Redes Sociales &amp; Mensajería
+              </span>
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* WhatsApp */}
+                <a
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(article.title + '\n' + articleUrl)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-950/40 hover:bg-emerald-950/70 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all hover:scale-[1.02]"
+                >
+                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                    <MessageCircle className="w-4 h-4" />
+                  </div>
+                  <span>WhatsApp</span>
+                </a>
+
+                {/* Twitter / X */}
+                <a
+                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(articleUrl)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-200 text-xs font-bold transition-all hover:scale-[1.02]"
+                >
+                  <div className="p-1.5 rounded-lg bg-slate-800 text-slate-200 font-mono text-xs font-black flex items-center justify-center w-7 h-7">
+                    𝕏
+                  </div>
+                  <span>Twitter / X</span>
+                </a>
+
+                {/* Telegram */}
+                <a
+                  href={`https://t.me/share/url?url=${encodeURIComponent(articleUrl)}&text=${encodeURIComponent(article.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-sky-950/40 hover:bg-sky-950/70 border border-sky-500/30 text-sky-300 text-xs font-bold transition-all hover:scale-[1.02]"
+                >
+                  <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400">
+                    <Send className="w-4 h-4" />
+                  </div>
+                  <span>Telegram</span>
+                </a>
+
+                {/* Facebook */}
+                <a
+                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(articleUrl)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-950/40 hover:bg-blue-950/70 border border-blue-500/30 text-blue-300 text-xs font-bold transition-all hover:scale-[1.02]"
+                >
+                  <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400">
+                    <Facebook className="w-4 h-4" />
+                  </div>
+                  <span>Facebook</span>
+                </a>
+
+                {/* LinkedIn */}
+                <a
+                  href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(articleUrl)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-indigo-950/40 hover:bg-indigo-950/70 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition-all hover:scale-[1.02] col-span-2"
+                >
+                  <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
+                    <Linkedin className="w-4 h-4" />
+                  </div>
+                  <span>LinkedIn</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Direct Link Copy */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Enlace Directo
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={articleUrl}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 truncate focus:outline-none focus:border-emerald-500 select-all"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  id="modal-copy-link-btn"
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    copied
+                      ? 'bg-emerald-500 text-slate-950 font-black'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                  }`}
+                >
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? '¡Copiado!' : 'Copiar'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </article>
   );

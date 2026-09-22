@@ -443,3 +443,26 @@ export interface ArticleComment {
   likes?: number;
 }
 
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+export interface DatabaseApiLogEntry {
+  id: string;
+  timestamp: string;
+  epochMs: number;
+  method: HttpMethod;
+  endpoint: string;
+  isWriteOperation: boolean;
+  status?: number;
+  statusText?: string;
+  durationMs: number;
+  success: boolean;
+  requestPayload?: any;
+  responsePreview?: any;
+  error?: {
+    message: string;
+    code?: string | number;
+    details?: any;
+  };
+  context?: string;
+}
+

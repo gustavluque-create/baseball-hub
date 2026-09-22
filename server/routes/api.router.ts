@@ -276,6 +276,33 @@ apiRouter.post('/admin/system/reset-demo', requireAdmin, (req: Request, res: Res
   res.json({ success: true, message: 'Datos restablecidos exitosamente a los valores de fábrica.' });
 });
 
+// Database Persistence Status and Manual Sync
+apiRouter.get('/admin/system/database-status', requireAdmin, (req: Request, res: Response) => {
+  const info = baseballRepo.getDatabaseInfo();
+  res.json({
+    success: true,
+    status: 'PERSISTENT_DISK_STORAGE',
+    ...info,
+  });
+});
+
+apiRouter.post('/admin/system/persist', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  baseballRepo.saveToDisk();
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Sincronización Manual de Base de Datos',
+    'Se forzó el guardado seguro del estado de la base de datos a disco.',
+    'system'
+  );
+  const info = baseballRepo.getDatabaseInfo();
+  res.json({
+    success: true,
+    message: 'Base de datos guardada en disco exitosamente.',
+    info,
+  });
+});
+
 // Real-Time Browser Webhooks & Streaming (Server-Sent Events)
 apiRouter.get('/events/score-changes', (req: Request, res: Response) => {
   notificationService.handleSSEConnection(req, res);
@@ -742,6 +769,15 @@ apiRouter.delete('/news/comments/:id', requireAdmin, (req: Request, res: Respons
   );
 
   res.json({ success: true, message: 'Comentario eliminado.' });
+});
+
+// Like / Upvote a comment
+apiRouter.post('/news/comments/:id/like', (req: Request, res: Response) => {
+  const result = baseballRepo.likeComment(req.params.id);
+  if (!result.success) {
+    return res.status(404).json({ error: 'Comentario no encontrado.' });
+  }
+  res.json(result);
 });
 
 // Videos

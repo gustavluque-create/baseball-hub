@@ -30,6 +30,9 @@ import {
   Server,
   KeyRound,
   ArrowLeft,
+  HardDrive,
+  Save,
+  RefreshCw,
 } from 'lucide-react';
 import { ApiClient } from '../services/api.ts';
 import { IngestionValidationSummary, AdminSystemOverview } from '../types/index.ts';
@@ -41,6 +44,8 @@ import { AdminPlayersManager } from '../components/admin/AdminPlayersManager.tsx
 import { AdminAuditLogs } from '../components/admin/AdminAuditLogs.tsx';
 import { AdminNewsManager } from '../components/admin/AdminNewsManager.tsx';
 import { AdminTeamsManager } from '../components/admin/AdminTeamsManager.tsx';
+import { DatabaseOperationsMonitor } from '../components/admin/DatabaseOperationsMonitor.tsx';
+import { useDatabaseLogs } from '../hooks/useDatabaseLogs.ts';
 
 const SAMPLE_CSV = `Jugador,Equipo,Posicion,VB,H,2B,3B,HR,CI,BB,K,AVG
 Erisbel Arruebarrena,MTZ,SS,110,40,9,1,8,30,14,22,0.364
@@ -81,8 +86,9 @@ export const AdminView: React.FC = () => {
   } = useApp();
 
   const { isAdminAuthenticated, adminUser, logout } = useAdminAuth();
+  const { stats: monitorStats } = useDatabaseLogs();
 
-  type AdminTab = 'overview' | 'teams' | 'games' | 'etl' | 'players' | 'news' | 'logs' | 'settings';
+  type AdminTab = 'overview' | 'teams' | 'games' | 'etl' | 'players' | 'news' | 'logs' | 'db_monitor' | 'settings';
   const [activeSection, setActiveSection] = useState<AdminTab>('overview');
   const [format, setFormat] = useState<'csv' | 'json'>('csv');
   const [rawText, setRawText] = useState<string>(SAMPLE_CSV);
@@ -92,6 +98,22 @@ export const AdminView: React.FC = () => {
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
   const [overviewMetrics, setOverviewMetrics] = useState<AdminSystemOverview | null>(null);
   const [loadingOverview, setLoadingOverview] = useState(false);
+  const [dbStatus, setDbStatus] = useState<{
+    status: string;
+    filePath: string;
+    exists: boolean;
+    sizeBytes: number;
+    lastModified?: string;
+    counts: Record<string, number>;
+  } | null>(null);
+  const [isSavingDb, setIsSavingDb] = useState(false);
+  const [saveDbFeedback, setSaveDbFeedback] = useState<string | null>(null);
+
+  const loadDatabaseStatus = () => {
+    ApiClient.getDatabaseStatus()
+      .then((data) => setDbStatus(data))
+      .catch((err) => console.error('Error fetching database status:', err));
+  };
 
   useEffect(() => {
     if (isAdminAuthenticated) {
@@ -100,8 +122,26 @@ export const AdminView: React.FC = () => {
         .then((data) => setOverviewMetrics(data))
         .catch((err) => console.error('Error fetching admin overview:', err))
         .finally(() => setLoadingOverview(false));
+      loadDatabaseStatus();
     }
   }, [isAdminAuthenticated, activeSection]);
+
+  const handleForcePersist = async () => {
+    setIsSavingDb(true);
+    setSaveDbFeedback(null);
+    try {
+      const res = await ApiClient.forcePersistDatabase();
+      setSaveDbFeedback('¡Base de datos sincronizada y guardada en disco exitosamente!');
+      if (res.info) {
+        setDbStatus({ ...res.info, status: 'PERSISTENT_DISK_STORAGE' });
+      }
+      setTimeout(() => setSaveDbFeedback(null), 4000);
+    } catch (err: any) {
+      setSaveDbFeedback(`Error al guardar: ${err.message}`);
+    } finally {
+      setIsSavingDb(false);
+    }
+  };
 
   const handleValidate = async () => {
     setIsValidating(true);
@@ -277,6 +317,27 @@ export const AdminView: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveSection('db_monitor')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            activeSection === 'db_monitor'
+              ? 'bg-sky-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+          }`}
+        >
+          <HardDrive className="w-3.5 h-3.5" />
+          <span>Monitor DB &amp; Logs</span>
+          {monitorStats.failedWrites > 0 ? (
+            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse">
+              {monitorStats.failedWrites} ERR
+            </span>
+          ) : monitorStats.writes > 0 ? (
+            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 text-[10px] font-mono">
+              {monitorStats.writes}
+            </span>
+          ) : null}
+        </button>
+
+        <button
           onClick={() => setActiveSection('settings')}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
             activeSection === 'settings'
@@ -429,6 +490,108 @@ export const AdminView: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Database Persistence Health & Sync Card */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mt-0.5">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-slate-100 uppercase tracking-wider">
+                      Almacenamiento Persistente en Base de Datos
+                    </h3>
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      Activo &amp; Persistente
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Todos los cambios (equipos, jugadores, fotos, estadísticas y partidos) se guardan atómicamente en disco y se restauran automáticamente.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setActiveSection('db_monitor')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-bold transition-all cursor-pointer"
+                  title="Abrir telemetría y monitor de escrituras"
+                >
+                  <Activity className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Monitor de Escrituras</span>
+                </button>
+                <button
+                  onClick={loadDatabaseStatus}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs transition-colors cursor-pointer"
+                  title="Recargar estado del almacenamiento"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleForcePersist}
+                  disabled={isSavingDb}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950/40 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSavingDb ? 'Guardando...' : 'Sincronizar a Disco'}</span>
+                </button>
+              </div>
+            </div>
+
+            {saveDbFeedback && (
+              <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>{saveDbFeedback}</span>
+              </div>
+            )}
+
+            {/* Storage details grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80">
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-semibold">Estado del Archivo</div>
+                <div className="text-xs font-bold text-slate-200 mt-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>{dbStatus?.exists ? 'En Disco (OK)' : 'Inicializado'}</span>
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title={dbStatus?.filePath}>
+                  database.json
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-semibold">Tamaño en Disco</div>
+                <div className="text-xs font-bold text-slate-200 mt-1 font-mono">
+                  {dbStatus?.sizeBytes ? `${(dbStatus.sizeBytes / 1024).toFixed(1)} KB` : 'Calculando...'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Almacenamiento local</div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-semibold">Registros Almacenados</div>
+                <div className="text-xs font-bold text-emerald-400 mt-1 font-mono">
+                  {dbStatus?.counts
+                    ? `${dbStatus.counts.teams || 0} eq / ${dbStatus.counts.players || 0} jug`
+                    : 'Cargando...'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {dbStatus?.counts ? `${dbStatus.counts.games || 0} partidos guardados` : ''}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-semibold">Última Modificación</div>
+                <div className="text-xs font-bold text-slate-200 mt-1 font-mono truncate">
+                  {dbStatus?.lastModified
+                    ? new Date(dbStatus.lastModified).toLocaleTimeString()
+                    : 'Reciente'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Sincronización atómica</div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -452,6 +615,9 @@ export const AdminView: React.FC = () => {
 
       {/* TAB: AUDIT LOGS */}
       {activeSection === 'logs' && <AdminAuditLogs />}
+
+      {/* TAB: DATABASE OPERATIONS & WRITE MONITOR */}
+      {activeSection === 'db_monitor' && <DatabaseOperationsMonitor />}
 
       {/* SECTION 1: SETTINGS & THEME CUSTOMIZATION */}
       {activeSection === 'settings' && (

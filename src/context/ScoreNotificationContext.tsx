@@ -454,10 +454,24 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
 
   // Simulate run on server
   const simulateScoreChange = async (gameId?: string, side?: 'home' | 'away', runs = 1): Promise<void> => {
+    console.log(
+      `%c[STATE HOOK: useScoreNotifications]%c simulateScoreChange() writing score increment to database -> gameId: ${gameId || 'auto'}, side: ${side || 'auto'}, runs: ${runs}`,
+      'color: #d97706; font-weight: bold;',
+      'color: inherit;'
+    );
     try {
       await ApiClient.simulateGameRun({ gameId, side, runs });
-    } catch (err) {
-      console.error('Error simulating score run:', err);
+      console.log(
+        `%c[STATE HOOK: useScoreNotifications]%c simulateScoreChange() successfully persisted to database`,
+        'color: #10b981; font-weight: bold;',
+        'color: inherit;'
+      );
+    } catch (err: any) {
+      console.error(
+        `%c[STATE HOOK: useScoreNotifications]%c simulateScoreChange() failed to persist score: ${err.message}`,
+        'color: #ef4444; font-weight: bold;',
+        'color: inherit;'
+      );
     }
   };
 
@@ -469,13 +483,29 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
     playDescription?: string;
     title?: string;
   }): Promise<{ success: boolean; message: string }> => {
+    console.log(
+      `%c[STATE HOOK: useScoreNotifications]%c sendWebhookUpdate() dispatching score event write to database`,
+      'color: #d97706; font-weight: bold;',
+      'color: inherit;',
+      payload
+    );
     try {
       const res = await ApiClient.sendScoreWebhook(payload);
       if (res.event) {
         handleIncomingScoreEvent(res.event);
       }
+      console.log(
+        `%c[STATE HOOK: useScoreNotifications]%c sendWebhookUpdate() write confirmed by database: ${res.message}`,
+        'color: #10b981; font-weight: bold;',
+        'color: inherit;'
+      );
       return { success: res.success, message: res.message };
     } catch (err: any) {
+      console.error(
+        `%c[STATE HOOK: useScoreNotifications]%c sendWebhookUpdate() write failed: ${err.message}`,
+        'color: #ef4444; font-weight: bold;',
+        'color: inherit;'
+      );
       return { success: false, message: err?.message || 'Error enviando webhook' };
     }
   };

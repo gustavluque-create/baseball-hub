@@ -17,12 +17,45 @@ import {
   AdminAuditLog,
   AdminSystemOverview,
   ArticleComment,
+  DatabaseApiLogEntry,
+  HttpMethod,
 } from '../types/index.ts';
 
 const API_BASE = '/api';
 
+export class DatabaseApiError extends Error {
+  public status: number;
+  public statusText: string;
+  public method: HttpMethod;
+  public endpoint: string;
+  public details?: any;
+  public payload?: any;
+
+  constructor(
+    message: string,
+    status: number,
+    statusText: string,
+    method: HttpMethod,
+    endpoint: string,
+    details?: any,
+    payload?: any
+  ) {
+    super(message);
+    this.name = 'DatabaseApiError';
+    this.status = status;
+    this.statusText = statusText;
+    this.method = method;
+    this.endpoint = endpoint;
+    this.details = details;
+    this.payload = payload;
+  }
+}
+
 export class ApiClient {
   private static adminToken: string | null = (typeof window !== 'undefined' ? localStorage.getItem('baseball_admin_token') : null);
+  private static logs: DatabaseApiLogEntry[] = [];
+  private static readonly MAX_LOGS = 250;
+  private static logListeners = new Set<(logs: DatabaseApiLogEntry[]) => void>();
 
   static setAdminToken(token: string | null) {
     this.adminToken = token;
@@ -39,7 +72,109 @@ export class ApiClient {
     return this.adminToken;
   }
 
-  private static async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  /**
+   * Register a callback to receive real-time log updates
+   */
+  static subscribeLogs(listener: (logs: DatabaseApiLogEntry[]) => void): () => void {
+    this.logListeners.add(listener);
+    listener([...this.logs]);
+    return () => {
+      this.logListeners.delete(listener);
+    };
+  }
+
+  static getLogs(): DatabaseApiLogEntry[] {
+    return [...this.logs];
+  }
+
+  static getWriteLogs(): DatabaseApiLogEntry[] {
+    return this.logs.filter((l) => l.isWriteOperation);
+  }
+
+  static getFailedWriteLogs(): DatabaseApiLogEntry[] {
+    return this.logs.filter((l) => l.isWriteOperation && !l.success);
+  }
+
+  static clearLogs(): void {
+    this.logs = [];
+    this.notifyLogListeners();
+  }
+
+  private static notifyLogListeners(): void {
+    const snapshot = [...this.logs];
+    this.logListeners.forEach((fn) => {
+      try {
+        fn(snapshot);
+      } catch (err) {
+        console.error('[ApiLogger] Error in log listener:', err);
+      }
+    });
+  }
+
+  static recordLog(entry: DatabaseApiLogEntry): void {
+    this.logs.unshift(entry);
+    if (this.logs.length > this.MAX_LOGS) {
+      this.logs.pop();
+    }
+    this.notifyLogListeners();
+  }
+
+  static recordCustomLog(entry: {
+    method: HttpMethod;
+    endpoint: string;
+    isWriteOperation: boolean;
+    success: boolean;
+    status?: number;
+    statusText?: string;
+    durationMs?: number;
+    requestPayload?: any;
+    responsePreview?: any;
+    error?: { message: string; code?: string | number; details?: any };
+    context?: string;
+  }): void {
+    const id = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullEntry: DatabaseApiLogEntry = {
+      id,
+      timestamp: new Date().toISOString(),
+      epochMs: Date.now(),
+      durationMs: entry.durationMs || 0,
+      ...entry,
+    };
+    this.recordLog(fullEntry);
+  }
+
+  private static parsePayload(body: any): any {
+    if (!body) return undefined;
+    if (typeof body === 'string') {
+      try {
+        return JSON.parse(body);
+      } catch {
+        return body;
+      }
+    }
+    return body;
+  }
+
+  private static async request<T>(endpoint: string, options?: RequestInit & { context?: string }): Promise<T> {
+    const method = ((options?.method || 'GET').toUpperCase()) as HttpMethod;
+    const isWrite = method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
+    const requestPayload = this.parsePayload(options?.body);
+    const startTime = performance.now();
+    const logId = `db_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const contextTag = options?.context ? ` [${options.context}]` : '';
+
+    // Console logging: Start of write operation
+    if (isWrite) {
+      console.groupCollapsed(
+        `%c📝 [DB WRITE START]${contextTag} %c${method} ${endpoint}`,
+        'color: #0284c7; font-weight: bold; background: #e0f2fe; padding: 2px 6px; border-radius: 4px;',
+        'color: #0f172a; font-weight: 600;'
+      );
+      console.log('⏰ Timestamp:', new Date().toISOString());
+      console.log('📦 Request Payload:', requestPayload);
+      console.groupEnd();
+    }
+
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -55,14 +190,176 @@ export class ApiClient {
         ...options,
       });
 
+      const durationMs = Math.round(performance.now() - startTime);
+
       if (!res.ok) {
-        throw new Error(`API error ${res.status}: ${res.statusText}`);
+        let serverErrorData: any = null;
+        let errorMessage = `Error HTTP ${res.status}: ${res.statusText}`;
+
+        try {
+          const text = await res.text();
+          if (text) {
+            try {
+              serverErrorData = JSON.parse(text);
+              if (serverErrorData.error) {
+                errorMessage = serverErrorData.error;
+              } else if (serverErrorData.message) {
+                errorMessage = serverErrorData.message;
+              }
+            } catch {
+              serverErrorData = text;
+              errorMessage = text;
+            }
+          }
+        } catch (readErr) {
+          console.warn('[ApiLogger] Could not read error response body:', readErr);
+        }
+
+        // Record failed log entry
+        const failedEntry: DatabaseApiLogEntry = {
+          id: logId,
+          timestamp: new Date().toISOString(),
+          epochMs: Date.now(),
+          method,
+          endpoint,
+          isWriteOperation: isWrite,
+          status: res.status,
+          statusText: res.statusText,
+          durationMs,
+          success: false,
+          requestPayload,
+          error: {
+            message: errorMessage,
+            code: res.status,
+            details: serverErrorData,
+          },
+          context: options?.context,
+        };
+        this.recordLog(failedEntry);
+
+        // Detailed Console Logging for Error
+        console.group(
+          `%c❌ [DB ${isWrite ? 'WRITE' : 'READ'} FAILED]${contextTag} %c${method} ${endpoint} %c(HTTP ${res.status}: ${errorMessage})`,
+          'color: #ffffff; font-weight: bold; background: #dc2626; padding: 2px 6px; border-radius: 4px;',
+          'color: #b91c1c; font-weight: bold;',
+          'color: #ef4444;'
+        );
+        console.error('🚨 Error Message:', errorMessage);
+        console.error('📊 HTTP Status:', `${res.status} ${res.statusText}`);
+        console.error('⏱️ Latency:', `${durationMs}ms`);
+        if (isWrite) {
+          console.error('📦 Rejected Write Payload:', requestPayload);
+        }
+        console.error('📄 Server Response Body:', serverErrorData);
+        console.groupEnd();
+
+        throw new DatabaseApiError(
+          errorMessage,
+          res.status,
+          res.statusText,
+          method,
+          endpoint,
+          serverErrorData,
+          requestPayload
+        );
       }
 
-      return await res.json();
-    } catch (err) {
-      console.warn(`Fallback on ${endpoint}:`, err);
-      throw err;
+      // Success response handling
+      let data: any = null;
+      const text = await res.text();
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = text;
+        }
+      }
+
+      // Record successful log entry
+      const successEntry: DatabaseApiLogEntry = {
+        id: logId,
+        timestamp: new Date().toISOString(),
+        epochMs: Date.now(),
+        method,
+        endpoint,
+        isWriteOperation: isWrite,
+        status: res.status,
+        statusText: res.statusText,
+        durationMs,
+        success: true,
+        requestPayload,
+        responsePreview: typeof data === 'object' ? data : { raw: data },
+        context: options?.context,
+      };
+      this.recordLog(successEntry);
+
+      if (isWrite) {
+        console.groupCollapsed(
+          `%c✅ [DB WRITE SUCCESS]${contextTag} %c${method} ${endpoint} %c(${durationMs}ms, HTTP ${res.status})`,
+          'color: #ffffff; font-weight: bold; background: #16a34a; padding: 2px 6px; border-radius: 4px;',
+          'color: #15803d; font-weight: 600;',
+          'color: #64748b; font-size: 11px;'
+        );
+        console.log('⏱️ Duration:', `${durationMs}ms`);
+        console.log('📦 Saved Payload:', requestPayload);
+        console.log('📬 Response Data:', data);
+        console.groupEnd();
+      } else {
+        console.debug(
+          `%c🔍 [DB READ]${contextTag} %c${method} ${endpoint} %c(${durationMs}ms, HTTP ${res.status})`,
+          'color: #0284c7; font-weight: bold;',
+          'color: #334155;',
+          'color: #94a3b8; font-size: 11px;'
+        );
+      }
+
+      return data as T;
+    } catch (err: any) {
+      if (err instanceof DatabaseApiError) {
+        throw err;
+      }
+      const durationMs = Math.round(performance.now() - startTime);
+      const networkErrorMessage = err.message || 'Error de red o conexión al servidor';
+
+      const networkFailEntry: DatabaseApiLogEntry = {
+        id: logId,
+        timestamp: new Date().toISOString(),
+        epochMs: Date.now(),
+        method,
+        endpoint,
+        isWriteOperation: isWrite,
+        status: 0,
+        statusText: 'Network / Client Error',
+        durationMs,
+        success: false,
+        requestPayload,
+        error: {
+          message: networkErrorMessage,
+          code: 'CLIENT_NETWORK_ERROR',
+          details: err,
+        },
+        context: options?.context,
+      };
+      this.recordLog(networkFailEntry);
+
+      console.group(
+        `%c⚠️ [DB NETWORK/CLIENT ERROR]${contextTag} %c${method} ${endpoint}`,
+        'color: #ffffff; font-weight: bold; background: #ea580c; padding: 2px 6px; border-radius: 4px;',
+        'color: #c2410c;'
+      );
+      console.error('🚨 Network Exception:', networkErrorMessage);
+      console.error('📦 Request Payload:', requestPayload);
+      console.groupEnd();
+
+      throw new DatabaseApiError(
+        networkErrorMessage,
+        0,
+        'Network Error',
+        method,
+        endpoint,
+        err,
+        requestPayload
+      );
     }
   }
 
@@ -229,6 +526,12 @@ export class ApiClient {
   static deleteArticleComment(commentId: string): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>(`/news/comments/${commentId}`, {
       method: 'DELETE',
+    });
+  }
+
+  static likeArticleComment(commentId: string): Promise<{ success: boolean; likes: number }> {
+    return this.request<{ success: boolean; likes: number }>(`/news/comments/${commentId}/like`, {
+      method: 'POST',
     });
   }
 
@@ -457,6 +760,28 @@ export class ApiClient {
 
   static resetAdminDemo(): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>('/admin/system/reset-demo', {
+      method: 'POST',
+    });
+  }
+
+  static getDatabaseStatus(): Promise<{
+    success: boolean;
+    status: string;
+    filePath: string;
+    exists: boolean;
+    sizeBytes: number;
+    lastModified?: string;
+    counts: Record<string, number>;
+  }> {
+    return this.request('/admin/system/database-status');
+  }
+
+  static forcePersistDatabase(): Promise<{
+    success: boolean;
+    message: string;
+    info: any;
+  }> {
+    return this.request('/admin/system/persist', {
       method: 'POST',
     });
   }

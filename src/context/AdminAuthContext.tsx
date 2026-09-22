@@ -59,21 +59,46 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
+    console.log(
+      `%c[STATE HOOK: useAdminAuth]%c login() initiated for user "${username}"`,
+      'color: #8b5cf6; font-weight: bold;',
+      'color: inherit;'
+    );
     try {
       const res = await ApiClient.adminLogin(username, password);
       if (res.success && res.admin && res.token) {
+        console.log(
+          `%c[STATE HOOK: useAdminAuth]%c login() successful for user "${res.admin.username}" [role: ${res.admin.role}]`,
+          'color: #10b981; font-weight: bold;',
+          'color: inherit;'
+        );
         setAdminUser(res.admin);
         setAdminToken(res.token);
         setIsLoginModalOpen(false);
         return { success: true };
       }
+      console.warn(
+        `%c[STATE HOOK: useAdminAuth]%c login() rejected: ${res.message || 'Credenciales inválidas'}`,
+        'color: #f59e0b; font-weight: bold;',
+        'color: inherit;'
+      );
       return { success: false, error: res.message || 'Credenciales inválidas' };
     } catch (err: any) {
+      console.error(
+        `%c[STATE HOOK: useAdminAuth]%c login() network/server error: ${err.message}`,
+        'color: #ef4444; font-weight: bold;',
+        'color: inherit;'
+      );
       return { success: false, error: err.message || 'Error de conexión con el servidor de autenticación' };
     }
   }, []);
 
   const logout = useCallback(async () => {
+    console.log(
+      `%c[STATE HOOK: useAdminAuth]%c logout() initiated`,
+      'color: #8b5cf6; font-weight: bold;',
+      'color: inherit;'
+    );
     try {
       await ApiClient.adminLogout();
     } catch (err) {

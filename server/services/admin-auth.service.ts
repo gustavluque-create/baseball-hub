@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import crypto from 'crypto';
 import { AdminUser, AdminAuditLog, AdminSystemOverview } from '../../src/types/index.ts';
 import { baseballRepo } from '../repositories/baseball.repository.ts';
@@ -47,25 +49,76 @@ interface SessionData {
 }
 
 export class AdminAuthService {
+  private readonly securityFilePath = path.resolve(process.cwd(), 'server/data/admin-security.json');
   private sessions = new Map<string, SessionData>();
   private auditLogs: AdminAuditLog[] = [];
   private serverStartTime = Date.now();
   private lastIngestionTime = '2026-09-20 10:30:00 UTC';
 
   constructor() {
-    // Seed initial audit log entries
-    this.addAuditLog(
-      'SISTEMA',
-      'Inicialización de Seguridad',
-      'Módulo de autenticación administrativa activo con control de sesiones seguras y RBAC.',
-      'system'
-    );
-    this.addAuditLog(
-      'admin',
-      'Ingesta Inicial de Temporada',
-      'Carga de roster y estadísticas para 63 SNB y Élite 2026.',
-      'etl'
-    );
+    this.loadFromDisk();
+    if (this.auditLogs.length === 0) {
+      // Seed initial audit log entries if first run
+      this.addAuditLog(
+        'SISTEMA',
+        'Inicialización de Seguridad',
+        'Módulo de autenticación administrativa activo con control de sesiones seguras y RBAC.',
+        'system'
+      );
+      this.addAuditLog(
+        'admin',
+        'Ingesta Inicial de Temporada',
+        'Carga de roster y estadísticas para 63 SNB y Élite 2026.',
+        'etl'
+      );
+    }
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (fs.existsSync(this.securityFilePath)) {
+        const raw = fs.readFileSync(this.securityFilePath, 'utf-8');
+        if (raw && raw.trim().length > 0) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed.sessions)) {
+            const now = Date.now();
+            for (const s of parsed.sessions) {
+              if (s && s.token && s.expiresAt > now) {
+                this.sessions.set(s.token, s);
+              }
+            }
+          }
+          if (Array.isArray(parsed.auditLogs)) {
+            this.auditLogs = parsed.auditLogs;
+          }
+          if (parsed.lastIngestionTime) {
+            this.lastIngestionTime = parsed.lastIngestionTime;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Security] Failed to read admin-security.json:', err);
+    }
+  }
+
+  private saveToDisk(): void {
+    try {
+      const dir = path.dirname(this.securityFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const sessionsArr = Array.from(this.sessions.values()).filter((s) => s.expiresAt > Date.now());
+      const payload = {
+        sessions: sessionsArr,
+        auditLogs: this.auditLogs.slice(0, 300),
+        lastIngestionTime: this.lastIngestionTime,
+      };
+      const tmpPath = `${this.securityFilePath}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, this.securityFilePath);
+    } catch (err) {
+      console.error('[Security] Error writing admin-security.json:', err);
+    }
   }
 
   /**
@@ -120,6 +173,8 @@ export class AdminAuthService {
       'auth'
     );
 
+    this.saveToDisk();
+
     return {
       success: true,
       token,
@@ -137,6 +192,7 @@ export class AdminAuthService {
 
     if (Date.now() > session.expiresAt) {
       this.sessions.delete(token);
+      this.saveToDisk();
       return null;
     }
 
@@ -157,6 +213,7 @@ export class AdminAuthService {
         'auth'
       );
       this.sessions.delete(token);
+      this.saveToDisk();
       return true;
     }
     return false;
@@ -184,6 +241,7 @@ export class AdminAuthService {
     if (this.auditLogs.length > 200) {
       this.auditLogs.pop();
     }
+    this.saveToDisk();
   }
 
   /**
@@ -204,6 +262,7 @@ export class AdminAuthService {
       `Se procesaron y cargaron ${count} registros en la base de datos central.`,
       'etl'
     );
+    this.saveToDisk();
   }
 
   /**
