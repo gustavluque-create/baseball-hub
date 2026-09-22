@@ -37,7 +37,15 @@ export const PlayersView: React.FC = () => {
       limit: 100,
     })
       .then((res) => {
-        setPlayers(res.items);
+        const unique: Player[] = [];
+        const seen = new Set<string>();
+        for (const p of res.items) {
+          if (!seen.has(p.id)) {
+            seen.add(p.id);
+            unique.push(p);
+          }
+        }
+        setPlayers(unique);
         setLoading(false);
       })
       .catch((err) => {
@@ -393,7 +401,6 @@ export const PlayersView: React.FC = () => {
                 )
               );
             }
-            triggerDataRefresh();
           }}
         />
       )}

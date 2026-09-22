@@ -34,18 +34,18 @@ export const playerCreateSchema = z.object({
     ),
   teamId: z.string().trim().min(1, 'Debes seleccionar un equipo válido.'),
   jerseyNumber: z.coerce
-    .number({ invalid_type_error: 'El dorsal debe ser un número.' })
+    .number()
     .int('El dorsal debe ser un número entero.')
     .min(0, 'El dorsal no puede ser negativo.')
     .max(99, 'El dorsal no puede ser superior a 99.'),
-  position: z.enum(VALID_POSITIONS, {
-    errorMap: () => ({ message: 'Posición no válida en el béisbol.' }),
+  position: z.string().refine((val) => (VALID_POSITIONS as readonly string[]).includes(val), {
+    message: 'Posición no válida en el béisbol.',
   }),
-  bats: z.enum(['R', 'L', 'S'], {
-    errorMap: () => ({ message: 'Bateo debe ser R (Derecha), L (Zurda) o S (Ambidiestro).' }),
+  bats: z.string().refine((val) => ['R', 'L', 'S'].includes(val), {
+    message: 'Bateo debe ser R (Derecha), L (Zurda) o S (Ambidiestro).',
   }),
-  throws: z.enum(['R', 'L'], {
-    errorMap: () => ({ message: 'Lanzamiento debe ser R (Derecha) o L (Zurda).' }),
+  throws: z.string().refine((val) => ['R', 'L'].includes(val), {
+    message: 'Lanzamiento debe ser R (Derecha) o L (Zurda).',
   }),
   photo: z
     .string()
@@ -74,7 +74,7 @@ export type PlayerCreateInput = z.infer<typeof playerCreateSchema>;
  */
 export const playerEditSchema = playerCreateSchema.extend({
   age: z.coerce
-    .number({ invalid_type_error: 'La edad debe ser un número entero.' })
+    .number()
     .int('La edad debe ser un número entero.')
     .min(15, 'La edad mínima para competir en la Serie Nacional es 15 años.')
     .max(55, 'La edad máxima permitida es 55 años.'),

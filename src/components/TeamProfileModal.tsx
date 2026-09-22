@@ -209,7 +209,7 @@ export const TeamProfileModal: React.FC<TeamProfileModalProps> = ({ teamId, onCl
                       : 'border-transparent text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Róster de Jugadores ({data.roster.length})
+                  Nómina ({data.roster.length}/40 jugadores)
                 </button>
                 <button
                   onClick={() => setActiveTab('games')}

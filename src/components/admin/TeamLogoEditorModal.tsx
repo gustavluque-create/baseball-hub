@@ -4,6 +4,7 @@ import { Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { TeamLogo, isImageLogo } from '../TeamLogo.tsx';
 import { useApp } from '../../context/AppContext.tsx';
+import { teamLogoSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 
 export const TEAM_EMOJI_PRESETS = [
   { emoji: '🐊', name: 'Cocodrilos (MTZ)' },
@@ -160,22 +161,37 @@ export const TeamLogoEditorModal: React.FC<TeamLogoEditorModalProps> = ({
       setErrorMsg('Introduce una dirección URL válida.');
       return;
     }
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:')) {
+      setErrorMsg('La URL debe comenzar con http://, https:// o data:.');
+      return;
+    }
     setErrorMsg(null);
     setCurrentLogo(trimmed);
   };
 
   const handleSave = async () => {
-    setIsSaving(true);
     setErrorMsg(null);
+
+    const validation = validateWithSchema(teamLogoSchema, {
+      logo: currentLogo,
+      primaryColor: selectedColor,
+    });
+
+    if (!validation.success) {
+      setErrorMsg(validation.firstError);
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      const res = await ApiClient.updateTeamLogo(team.id, currentLogo, selectedColor);
-      onSaveLogo(currentLogo, res?.team);
+      const res = await ApiClient.updateTeamLogo(team.id, validation.data.logo, validation.data.primaryColor);
+      onSaveLogo(validation.data.logo, res?.team);
       triggerDataRefresh();
       onClose();
     } catch (err: any) {
       console.error('Error saving team logo:', err);
       // Fallback: still notify parent and refresh so user is never blocked
-      onSaveLogo(currentLogo, { ...team, logo: currentLogo });
+      onSaveLogo(validation.data.logo, { ...team, logo: validation.data.logo });
       triggerDataRefresh();
       onClose();
     } finally {

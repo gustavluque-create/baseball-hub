@@ -38,6 +38,26 @@ export class BaseballRepository {
   private standings: Standing[] = [...DEMO_STANDINGS];
   private news: NewsArticle[] = [...DEMO_NEWS];
   private videos: VideoItem[] = [...DEMO_VIDEOS];
+  constructor() {
+    this.deduplicatePlayers();
+  }
+
+  deduplicatePlayers(): void {
+    const seenIds = new Set<string>();
+    const seenTeamAndNames = new Set<string>();
+    const clean: Player[] = [];
+    for (const p of this.players) {
+      if (!p || !p.id) continue;
+      const key = `${p.teamId}::${(p.fullName || '').trim().toLowerCase()}`;
+      if (!seenIds.has(p.id) && !seenTeamAndNames.has(key)) {
+        seenIds.add(p.id);
+        seenTeamAndNames.add(key);
+        clean.push(p);
+      }
+    }
+    this.players = clean;
+  }
+
   private comments: ArticleComment[] = [
     {
       id: 'comm_1',
@@ -834,12 +854,41 @@ export class BaseballRepository {
 
   createPlayer(data: any): Player {
     const team = this.getTeamById(data.teamId || '') || this.teams[0];
-    const firstName = data.firstName || (data.fullName ? data.fullName.split(' ')[0] : 'Nuevo');
-    const lastName = data.lastName || (data.fullName ? data.fullName.split(' ').slice(1).join(' ') : 'Jugador');
-    const fullName = data.fullName || `${firstName} ${lastName}`;
+    const firstName = data.firstName || (data.fullName ? data.fullName.trim().split(' ')[0] : 'Nuevo');
+    const lastName = data.lastName || (data.fullName ? data.fullName.trim().split(' ').slice(1).join(' ') : 'Jugador');
+    const fullName = (data.fullName || `${firstName} ${lastName}`).trim();
+
+    // 1. Check if the player already exists (by ID, or same full name and team)
+    const existingIndex = this.players.findIndex(
+      (p) =>
+        (data.id && p.id === data.id) ||
+        (p.teamId === team.id && p.fullName.trim().toLowerCase() === fullName.toLowerCase())
+    );
+
+    if (existingIndex !== -1) {
+      // Existing player found - update in-place instead of creating a duplicate copy
+      const existing = this.players[existingIndex];
+      const updated: Player = {
+        ...existing,
+        ...data,
+        fullName: fullName || existing.fullName,
+        teamId: team.id,
+        teamName: team.name,
+        teamShort: team.shortName,
+      };
+      this.players[existingIndex] = updated;
+      this.deduplicatePlayers();
+      return updated;
+    }
+
+    // 2. Enforce Serie Nacional 40-player limit per team
+    const teamPlayers = this.players.filter((p) => p.teamId === team.id);
+    if (teamPlayers.length >= 40) {
+      throw new Error(`El equipo ${team.name} ya cuenta con el límite reglamentario máximo de 40 jugadores.`);
+    }
 
     const newPlayer: Player = {
-      id: data.id || 'p_' + Date.now(),
+      id: data.id || 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       fullName,
       firstName,
       lastName,
@@ -863,6 +912,7 @@ export class BaseballRepository {
     };
 
     this.players.unshift(newPlayer);
+    this.deduplicatePlayers();
     return newPlayer;
   }
 
@@ -871,6 +921,18 @@ export class BaseballRepository {
     if (index === -1) return undefined;
 
     const current = this.players[index];
+
+    // Enforce 40 players limit if team is being changed
+    if (updates.teamId && updates.teamId !== current.teamId) {
+      const destTeam = this.getTeamById(updates.teamId);
+      const destTeamPlayers = this.players.filter((p) => p.teamId === updates.teamId && p.id !== id);
+      if (destTeamPlayers.length >= 40) {
+        throw new Error(
+          `El equipo de destino (${destTeam ? destTeam.name : updates.teamId}) ya cuenta con el límite reglamentario máximo de 40 jugadores.`
+        );
+      }
+    }
+
     const updated: Player = {
       ...current,
       ...updates,
@@ -884,6 +946,20 @@ export class BaseballRepository {
     }
 
     this.players[index] = updated;
+
+    // Purge any stale duplicate in memory with same id or name+team
+    this.players = this.players.filter((p, i) => {
+      if (i === index) return true;
+      if (p.id === id) return false;
+      if (
+        p.teamId === updated.teamId &&
+        p.fullName.trim().toLowerCase() === updated.fullName.trim().toLowerCase()
+      ) {
+        return false;
+      }
+      return true;
+    });
+
     return updated;
   }
 
@@ -951,19 +1027,23 @@ export class BaseballRepository {
           updatedCount++;
         }
       } else {
-        const created = this.createPlayer({
-          fullName,
-          teamId: matchedTeam.id,
-          jerseyNumber,
-          position: position as any,
-          bats,
-          throws: throws_,
-          photo,
-          bio,
-          age,
-        });
-        resultPlayers.push(created);
-        createdCount++;
+        try {
+          const created = this.createPlayer({
+            fullName,
+            teamId: matchedTeam.id,
+            jerseyNumber,
+            position: position as any,
+            bats,
+            throws: throws_,
+            photo,
+            bio,
+            age,
+          });
+          resultPlayers.push(created);
+          createdCount++;
+        } catch (err: any) {
+          console.warn(`[Import] Omitido jugador ${fullName}: ${err.message}`);
+        }
       }
     }
 
@@ -1060,6 +1140,7 @@ export class BaseballRepository {
     this.standings = [...DEMO_STANDINGS];
     this.news = [...DEMO_NEWS];
     this.videos = [...DEMO_VIDEOS];
+    this.deduplicatePlayers();
   }
 }
 

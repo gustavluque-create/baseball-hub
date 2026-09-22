@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Newspaper, Plus, Trash2, CheckCircle2, RefreshCw, X, Save } from 'lucide-react';
+import { Newspaper, Plus, Trash2, CheckCircle2, RefreshCw, X, Save, AlertCircle } from 'lucide-react';
 import { NewsArticle } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { newsArticleSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 
 export const AdminNewsManager: React.FC = () => {
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -34,18 +37,30 @@ export const AdminNewsManager: React.FC = () => {
 
   const handleCreateNews = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !excerpt.trim()) {
-      alert('Complete el título y el resumen de la noticia.');
+    setFieldErrors({});
+    setFormError(null);
+
+    const validation = validateWithSchema(newsArticleSchema, {
+      title: title.trim(),
+      category: category.trim(),
+      excerpt: excerpt.trim(),
+      content: (content || excerpt).trim(),
+      author: author.trim(),
+    });
+
+    if (!validation.success) {
+      setFieldErrors(validation.errors);
+      setFormError(validation.firstError);
       return;
     }
 
     try {
       const created = await ApiClient.createAdminNews({
-        title,
-        category,
-        excerpt,
-        content: content || excerpt,
-        author,
+        title: validation.data.title,
+        category: validation.data.category,
+        excerpt: validation.data.excerpt,
+        content: validation.data.content,
+        author: validation.data.author,
         publishedAt: new Date().toISOString(),
       });
       setNews((prev) => [created, ...prev]);
@@ -53,9 +68,11 @@ export const AdminNewsManager: React.FC = () => {
       setTitle('');
       setExcerpt('');
       setContent('');
+      setFieldErrors({});
+      setFormError(null);
       showMessage('Noticia publicada exitosamente.');
     } catch (err: any) {
-      alert(`Error al publicar noticia: ${err.message}`);
+      setFormError(`Error al publicar noticia: ${err.message}`);
     }
   };
 
@@ -136,16 +153,40 @@ export const AdminNewsManager: React.FC = () => {
             </button>
           </div>
 
+          {/* Zod Validation Error Banner */}
+          {formError && (
+            <div className="p-3 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              <span>{formError}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Titular Principal</label>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Titular Principal *</label>
               <input
                 type="text"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (fieldErrors.title) {
+                    setFieldErrors((prev) => {
+                      const updated = { ...prev };
+                      delete updated.title;
+                      return updated;
+                    });
+                  }
+                }}
                 placeholder="ej. Industriales y Matanzas definen liderato..."
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none font-bold"
+                className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none font-bold transition-colors ${
+                  fieldErrors.title
+                    ? 'border-red-500 focus:border-red-400'
+                    : 'border-slate-800 focus:border-emerald-500'
+                }`}
               />
+              {fieldErrors.title && (
+                <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.title}</p>
+              )}
             </div>
 
             <div>
@@ -165,14 +206,30 @@ export const AdminNewsManager: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 mb-1">Resumen (Copete)</label>
+            <label className="block text-[11px] font-bold text-slate-400 mb-1">Resumen (Copete) *</label>
             <textarea
               rows={2}
               value={excerpt}
-              onChange={(e) => setExcerpt(e.target.value)}
+              onChange={(e) => {
+                setExcerpt(e.target.value);
+                if (fieldErrors.excerpt) {
+                  setFieldErrors((prev) => {
+                    const updated = { ...prev };
+                    delete updated.excerpt;
+                    return updated;
+                  });
+                }
+              }}
               placeholder="Breve sumario descriptivo para las portadas..."
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+              className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                fieldErrors.excerpt
+                  ? 'border-red-500 focus:border-red-400'
+                  : 'border-slate-800 focus:border-emerald-500'
+              }`}
             />
+            {fieldErrors.excerpt && (
+              <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.excerpt}</p>
+            )}
           </div>
 
           <div>
@@ -180,10 +237,26 @@ export const AdminNewsManager: React.FC = () => {
             <textarea
               rows={4}
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => {
+                setContent(e.target.value);
+                if (fieldErrors.content) {
+                  setFieldErrors((prev) => {
+                    const updated = { ...prev };
+                    delete updated.content;
+                    return updated;
+                  });
+                }
+              }}
               placeholder="Cuerpo completo del artículo o comunicado oficial..."
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+              className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                fieldErrors.content
+                  ? 'border-red-500 focus:border-red-400'
+                  : 'border-slate-800 focus:border-emerald-500'
+              }`}
             />
+            {fieldErrors.content && (
+              <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.content}</p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

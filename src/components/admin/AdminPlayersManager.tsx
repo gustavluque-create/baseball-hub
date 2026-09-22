@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   Search,
@@ -14,9 +14,11 @@ import {
   Edit3,
   Sliders,
   Image as ImageIcon,
+  AlertCircle,
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { playerCreateSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { PlayerImageEditorModal, BASEBALL_PHOTO_PRESETS } from './PlayerImageEditorModal.tsx';
 import { AdminPlayerImportModal } from './AdminPlayerImportModal.tsx';
 import { PlayerEditModal } from './PlayerEditModal.tsx';
@@ -46,15 +48,36 @@ export const AdminPlayersManager: React.FC = () => {
   const [photo, setPhoto] = useState(BASEBALL_PHOTO_PRESETS[0].url);
   const [isStar, setIsStar] = useState(false);
   const [bio, setBio] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [createFirstError, setCreateFirstError] = useState<string | null>(null);
+
+  // Compute roster count per team (Serie Nacional limit: maximum 40 players per team)
+  const teamRosterCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    players.forEach((p) => {
+      counts[p.teamId] = (counts[p.teamId] || 0) + 1;
+    });
+    return counts;
+  }, [players]);
 
   const fetchInitialData = async () => {
     setLoading(true);
     try {
       const [fetchedPlayersRes, fetchedTeams] = await Promise.all([
-        ApiClient.getPlayers(),
+        ApiClient.getPlayers({ limit: 1000 }),
         ApiClient.getTeams(),
       ]);
-      setPlayers(fetchedPlayersRes.items);
+      // Deduplicate fetched players by ID to avoid any double entries in the UI
+      const uniquePlayers: Player[] = [];
+      const seenIds = new Set<string>();
+      for (const p of fetchedPlayersRes.items) {
+        if (!seenIds.has(p.id)) {
+          seenIds.add(p.id);
+          uniquePlayers.push(p);
+        }
+      }
+      setPlayers(uniquePlayers);
       setTeams(fetchedTeams);
       if (fetchedTeams.length > 0 && !teamId) {
         setTeamId(fetchedTeams[0].id);
@@ -72,31 +95,73 @@ export const AdminPlayersManager: React.FC = () => {
 
   const handleCreatePlayer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !teamId) {
-      alert('Ingrese el nombre del jugador y seleccione un equipo.');
+    if (isSubmitting) return;
+    setCreateErrors({});
+    setCreateFirstError(null);
+
+    // 1. Enforce 40 players maximum roster limit per team
+    const currentTeamCount = teamRosterCounts[teamId] || 0;
+    if (currentTeamCount >= 40) {
+      const teamObj = teams.find((t) => t.id === teamId);
+      setCreateFirstError(
+        `El equipo ${teamObj?.name || 'seleccionado'} ya cuenta con el límite reglamentario máximo de 40 jugadores.`
+      );
       return;
     }
 
-    try {
-      const newPlayer = await ApiClient.createAdminPlayer({
-        fullName: fullName.trim(),
-        teamId,
-        jerseyNumber: Number(jerseyNumber),
-        position: position as any,
-        bats,
-        throws,
-        photo,
-        bio: bio.trim() || 'Jugador profesional de la Serie Nacional.',
-        isStar,
-      } as any);
+    // 2. Prevent duplicate player with the same name in the same team
+    const normalizedName = fullName.trim().toLowerCase();
+    const alreadyExists = players.some(
+      (p) => p.teamId === teamId && p.fullName.trim().toLowerCase() === normalizedName
+    );
+    if (alreadyExists) {
+      setCreateFirstError(
+        `Ya existe un jugador registrado con el nombre "${fullName.trim()}" en este equipo.`
+      );
+      return;
+    }
 
-      setPlayers((prev) => [newPlayer, ...prev]);
+    const validationResult = validateWithSchema(playerCreateSchema, {
+      fullName: fullName.trim(),
+      teamId,
+      jerseyNumber: Number(jerseyNumber),
+      position,
+      bats,
+      throws,
+      photo,
+      bio: bio.trim(),
+      isStar,
+    });
+
+    if (!validationResult.success) {
+      setCreateErrors(validationResult.errors);
+      setCreateFirstError(validationResult.firstError);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const newPlayer = await ApiClient.createAdminPlayer(validationResult.data as any);
+
+      // Add to state avoiding duplicate copies
+      setPlayers((prev) => {
+        const clean = prev.filter(
+          (p) =>
+            p.id !== newPlayer.id &&
+            !(p.teamId === newPlayer.teamId && p.fullName.trim().toLowerCase() === newPlayer.fullName.trim().toLowerCase())
+        );
+        return [newPlayer, ...clean];
+      });
       setIsCreating(false);
       setFullName('');
       setBio('');
-      showMessage(`Jugador ${newPlayer.fullName} creado exitosamente con su fotografía.`);
+      setCreateErrors({});
+      setCreateFirstError(null);
+      showMessage(`Jugador ${newPlayer.fullName} registrado exitosamente.`);
     } catch (err: any) {
-      alert(`Error al crear jugador: ${err.message}`);
+      setCreateFirstError(`Error al crear jugador: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -112,7 +177,11 @@ export const AdminPlayersManager: React.FC = () => {
   };
 
   const handleUpdatePlayerSuccess = (updatedPlayer: Player) => {
-    setPlayers((prev) => prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p)));
+    // Strictly replace the player by ID to ensure no duplicate copies exist
+    setPlayers((prev) => {
+      const clean = prev.filter((p) => p.id !== updatedPlayer.id);
+      return [updatedPlayer, ...clean];
+    });
     showMessage(`Datos y fotografía de ${updatedPlayer.fullName} actualizados.`);
   };
 
@@ -126,6 +195,7 @@ export const AdminPlayersManager: React.FC = () => {
       );
       showMessage(`Fotografía de ${imageEditingPlayer.fullName} actualizada.`);
     }
+    setImageEditingPlayer(null);
   };
 
   const handleImportSuccess = (count: number, message: string) => {
@@ -181,10 +251,10 @@ export const AdminPlayersManager: React.FC = () => {
             onChange={(e) => setTeamFilter(e.target.value)}
             className="px-3 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 font-semibold focus:border-emerald-500 focus:outline-none"
           >
-            <option value="all">Todos los Equipos</option>
+            <option value="all">Todos los Equipos ({players.length})</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.shortName}
+                {t.shortName} ({teamRosterCounts[t.id] || 0}/40)
               </option>
             ))}
           </select>
@@ -220,6 +290,32 @@ export const AdminPlayersManager: React.FC = () => {
         </div>
       </div>
 
+      {/* Team Roster Status Banner */}
+      {teamFilter !== 'all' && (
+        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="font-bold text-slate-200">
+              Nómina Oficial: {teams.find((t) => t.id === teamFilter)?.name}
+            </span>
+            <span
+              className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] ${
+                (teamRosterCounts[teamFilter] || 0) >= 40
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  : (teamRosterCounts[teamFilter] || 0) >= 35
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              }`}
+            >
+              {teamRosterCounts[teamFilter] || 0} / 40 jugadores
+              {(teamRosterCounts[teamFilter] || 0) >= 40 ? ' • Roster Completo' : ''}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 hidden sm:inline font-mono">
+            Serie Nacional: Límite máximo 40 peloteros
+          </span>
+        </div>
+      )}
+
       {/* Create Player Modal/Form */}
       {isCreating && (
         <form
@@ -240,10 +336,18 @@ export const AdminPlayersManager: React.FC = () => {
             </button>
           </div>
 
+          {/* Zod Validation Error Banner */}
+          {createFirstError && (
+            <div className="p-3 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              <span>{createFirstError}</span>
+            </div>
+          )}
+
           {/* Photo picker row in create form */}
           <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
             <div className="relative group">
-              <div className="w-16 h-16 rounded-xl overflow-hidden border border-emerald-500/50 bg-slate-900">
+              <div className={`w-16 h-16 rounded-xl overflow-hidden border bg-slate-900 ${createErrors.photo ? 'border-red-500' : 'border-emerald-500/50'}`}>
                 <img
                   src={photo}
                   alt="Avatar"
@@ -265,6 +369,9 @@ export const AdminPlayersManager: React.FC = () => {
               <p className="text-[11px] text-slate-400">
                 Sube un archivo de imagen, recorta, aplica filtros o elige una foto de la galería oficial.
               </p>
+              {createErrors.photo && (
+                <p className="text-[10px] text-red-400 font-semibold mt-0.5">{createErrors.photo}</p>
+              )}
             </div>
 
             <button
@@ -279,29 +386,70 @@ export const AdminPlayersManager: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Nombre Completo</label>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Nombre Completo *</label>
               <input
                 type="text"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => {
+                  setFullName(e.target.value);
+                  if (createErrors.fullName) {
+                    setCreateErrors((prev) => {
+                      const updated = { ...prev };
+                      delete updated.fullName;
+                      return updated;
+                    });
+                  }
+                }}
                 placeholder="ej. Yurisbel Gracial"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+                className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                  createErrors.fullName
+                    ? 'border-red-500 focus:border-red-400'
+                    : 'border-slate-800 focus:border-emerald-500'
+                }`}
               />
+              {createErrors.fullName && (
+                <p className="text-[10px] text-red-400 font-semibold mt-1">{createErrors.fullName}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Equipo</label>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Equipo *</label>
               <select
                 value={teamId}
-                onChange={(e) => setTeamId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-semibold focus:border-emerald-500 focus:outline-none"
+                onChange={(e) => {
+                  setTeamId(e.target.value);
+                  if (createErrors.teamId) {
+                    setCreateErrors((prev) => {
+                      const updated = { ...prev };
+                      delete updated.teamId;
+                      return updated;
+                    });
+                  }
+                }}
+                className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 font-semibold focus:outline-none transition-colors ${
+                  createErrors.teamId
+                    ? 'border-red-500 focus:border-red-400'
+                    : 'border-slate-800 focus:border-emerald-500'
+                }`}
               >
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.shortName})
-                  </option>
-                ))}
+                {teams.map((t) => {
+                  const count = teamRosterCounts[t.id] || 0;
+                  const isFull = count >= 40;
+                  return (
+                    <option key={t.id} value={t.id} disabled={isFull}>
+                      {t.name} ({t.shortName}) — {count}/40 {isFull ? '• [Lleno]' : ''}
+                    </option>
+                  );
+                })}
               </select>
+              {(teamRosterCounts[teamId] || 0) >= 40 && (
+                <p className="text-[10px] text-red-400 font-semibold mt-1 flex items-center gap-1">
+                  <span>⚠️ Roster completo: Este equipo alcanzó el tope de 40 jugadores.</span>
+                </p>
+              )}
+              {createErrors.teamId && (
+                <p className="text-[10px] text-red-400 font-semibold mt-1">{createErrors.teamId}</p>
+              )}
             </div>
 
             <div>
@@ -309,10 +457,25 @@ export const AdminPlayersManager: React.FC = () => {
               <div className="flex gap-2">
                 <input
                   type="number"
+                  min="0"
+                  max="99"
                   value={jerseyNumber}
-                  onChange={(e) => setJerseyNumber(Number(e.target.value))}
+                  onChange={(e) => {
+                    setJerseyNumber(Number(e.target.value));
+                    if (createErrors.jerseyNumber) {
+                      setCreateErrors((prev) => {
+                        const updated = { ...prev };
+                        delete updated.jerseyNumber;
+                        return updated;
+                      });
+                    }
+                  }}
                   placeholder="#"
-                  className="w-16 px-2 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-mono focus:border-emerald-500 focus:outline-none"
+                  className={`w-16 px-2 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 font-mono focus:outline-none transition-colors ${
+                    createErrors.jerseyNumber
+                      ? 'border-red-500 focus:border-red-400'
+                      : 'border-slate-800 focus:border-emerald-500'
+                  }`}
                 />
                 <select
                   value={position}
@@ -329,6 +492,9 @@ export const AdminPlayersManager: React.FC = () => {
                   <option value="DH">DH (Designado)</option>
                 </select>
               </div>
+              {createErrors.jerseyNumber && (
+                <p className="text-[10px] text-red-400 font-semibold mt-1">{createErrors.jerseyNumber}</p>
+              )}
             </div>
 
             <div>
@@ -374,10 +540,11 @@ export const AdminPlayersManager: React.FC = () => {
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+              disabled={isSubmitting || (teamRosterCounts[teamId] || 0) >= 40}
+              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Guardar Jugador</span>
+              <span>{isSubmitting ? 'Guardando...' : 'Guardar Jugador'}</span>
             </button>
           </div>
         </form>
@@ -519,6 +686,7 @@ export const AdminPlayersManager: React.FC = () => {
         <PlayerEditModal
           player={editingPlayer}
           teams={teams}
+          allPlayers={players}
           isOpen={true}
           onClose={() => setEditingPlayer(null)}
           onSaveSuccess={handleUpdatePlayerSuccess}

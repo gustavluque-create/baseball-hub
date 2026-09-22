@@ -165,30 +165,38 @@ apiRouter.delete('/admin/games/:id', requireAdmin, (req: Request, res: Response)
 
 // Admin Player Management
 apiRouter.post('/admin/players', requireAdmin, (req: Request, res: Response) => {
-  const admin = (req as any).adminUser;
-  const player = baseballRepo.createPlayer(req.body);
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Creación de Jugador',
-    `Jugador registrado: ${player.fullName} (${player.position}, #${player.jerseyNumber} - ${player.teamShort})`,
-    'players'
-  );
-  res.status(201).json(player);
+  try {
+    const admin = (req as any).adminUser;
+    const player = baseballRepo.createPlayer(req.body);
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Creación de Jugador',
+      `Jugador registrado: ${player.fullName} (${player.position}, #${player.jerseyNumber} - ${player.teamShort})`,
+      'players'
+    );
+    res.status(201).json(player);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al registrar jugador.' });
+  }
 });
 
 apiRouter.put('/admin/players/:id', requireAdmin, (req: Request, res: Response) => {
-  const admin = (req as any).adminUser;
-  const player = baseballRepo.updatePlayer(req.params.id, req.body);
-  if (!player) {
-    return res.status(404).json({ error: 'Jugador no encontrado' });
+  try {
+    const admin = (req as any).adminUser;
+    const player = baseballRepo.updatePlayer(req.params.id, req.body);
+    if (!player) {
+      return res.status(404).json({ error: 'Jugador no encontrado' });
+    }
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Actualización de Jugador',
+      `Jugador ${player.fullName} actualizado.`,
+      'players'
+    );
+    res.json(player);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar jugador.' });
   }
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Actualización de Jugador',
-    `Jugador ${player.fullName} actualizado.`,
-    'players'
-  );
-  res.json(player);
 });
 
 apiRouter.post('/admin/players/import', requireAdmin, (req: Request, res: Response) => {

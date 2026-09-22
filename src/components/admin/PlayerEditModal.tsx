@@ -10,11 +10,13 @@ import {
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { playerEditSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { PlayerImageEditorModal } from './PlayerImageEditorModal.tsx';
 
 interface PlayerEditModalProps {
   player: Player | null;
   teams: Team[];
+  allPlayers?: Player[];
   isOpen: boolean;
   onClose: () => void;
   onSaveSuccess: (updatedPlayer: Player) => void;
@@ -23,6 +25,7 @@ interface PlayerEditModalProps {
 export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
   player,
   teams,
+  allPlayers = [],
   isOpen,
   onClose,
   onSaveSuccess,
@@ -41,6 +44,7 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
   const [isStar, setIsStar] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
 
@@ -59,6 +63,7 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
       setWeight(player.weight || '85 kg');
       setIsStar(!!(player as any).isStar);
       setErrorMsg(null);
+      setFieldErrors({});
     }
   }, [player, teams]);
 
@@ -66,28 +71,43 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !teamId) {
-      setErrorMsg('El nombre y el equipo son obligatorios.');
+    setFieldErrors({});
+    setErrorMsg(null);
+
+    const validationResult = validateWithSchema(playerEditSchema, {
+      fullName: fullName.trim(),
+      teamId,
+      jerseyNumber: Number(jerseyNumber),
+      position,
+      bats,
+      throws,
+      photo: photo || player.photo || 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=256',
+      bio: bio.trim(),
+      age: Number(age),
+      height: height.trim(),
+      weight: weight.trim(),
+      isStar,
+    });
+
+    if (!validationResult.success) {
+      setFieldErrors(validationResult.errors);
+      setErrorMsg(validationResult.firstError);
       return;
     }
 
+    // Check 40-player limit if player is changing team
+    if (teamId !== player.teamId) {
+      const destPlayers = allPlayers.filter((p) => p.teamId === teamId && p.id !== player.id);
+      if (destPlayers.length >= 40) {
+        const destTeam = teams.find((t) => t.id === teamId);
+        setErrorMsg(`El equipo ${destTeam?.name || 'de destino'} ya cuenta con el límite reglamentario de 40 jugadores.`);
+        return;
+      }
+    }
+
     setIsSaving(true);
-    setErrorMsg(null);
     try {
-      const updated = await ApiClient.updateAdminPlayer(player.id, {
-        fullName: fullName.trim(),
-        teamId,
-        jerseyNumber: Number(jerseyNumber),
-        position: position as any,
-        bats,
-        throws,
-        photo,
-        bio: bio.trim(),
-        age: Number(age),
-        height,
-        weight,
-        isStar,
-      } as any);
+      const updated = await ApiClient.updateAdminPlayer(player.id, validationResult.data as any);
 
       onSaveSuccess(updated);
       onClose();
@@ -194,32 +214,68 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 mb-1">
-                  Nombre Completo
+                  Nombre Completo *
                 </label>
                 <input
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (fieldErrors.fullName) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.fullName;
+                        return next;
+                      });
+                    }
+                  }}
+                  className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                    fieldErrors.fullName
+                      ? 'border-red-500 focus:border-red-400'
+                      : 'border-slate-800 focus:border-emerald-500'
+                  }`}
                   required
                 />
+                {fieldErrors.fullName && (
+                  <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.fullName}</p>
+                )}
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 mb-1">
-                  Equipo
+                  Equipo *
                 </label>
                 <select
                   value={teamId}
-                  onChange={(e) => setTeamId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-semibold focus:border-emerald-500 focus:outline-none"
+                  onChange={(e) => {
+                    setTeamId(e.target.value);
+                    if (fieldErrors.teamId) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.teamId;
+                        return next;
+                      });
+                    }
+                  }}
+                  className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 font-semibold focus:outline-none transition-colors ${
+                    fieldErrors.teamId
+                      ? 'border-red-500 focus:border-red-400'
+                      : 'border-slate-800 focus:border-emerald-500'
+                  }`}
                 >
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.shortName})
-                    </option>
-                  ))}
+                  {teams.map((t) => {
+                    const count = allPlayers.filter((p) => p.teamId === t.id && p.id !== player.id).length;
+                    const isFull = count >= 40 && t.id !== player.teamId;
+                    return (
+                      <option key={t.id} value={t.id} disabled={isFull}>
+                        {t.name} ({t.shortName}) — {count}/40 {isFull ? '• [Lleno]' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
+                {fieldErrors.teamId && (
+                  <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.teamId}</p>
+                )}
               </div>
 
               <div>
@@ -229,9 +285,24 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
                 <div className="flex gap-2">
                   <input
                     type="number"
+                    min="0"
+                    max="99"
                     value={jerseyNumber}
-                    onChange={(e) => setJerseyNumber(Number(e.target.value))}
-                    className="w-20 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-mono focus:border-emerald-500 focus:outline-none"
+                    onChange={(e) => {
+                      setJerseyNumber(Number(e.target.value));
+                      if (fieldErrors.jerseyNumber) {
+                        setFieldErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.jerseyNumber;
+                          return next;
+                        });
+                      }
+                    }}
+                    className={`w-20 px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 font-mono focus:outline-none transition-colors ${
+                      fieldErrors.jerseyNumber
+                        ? 'border-red-500 focus:border-red-400'
+                        : 'border-slate-800 focus:border-emerald-500'
+                    }`}
                   />
                   <select
                     value={position}
@@ -251,6 +322,9 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
                     <option value="DH">DH (Designado)</option>
                   </select>
                 </div>
+                {fieldErrors.jerseyNumber && (
+                  <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.jerseyNumber}</p>
+                )}
               </div>
 
               <div>
@@ -292,20 +366,56 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
                   Edad &amp; Estatura
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    value={age}
-                    onChange={(e) => setAge(Number(e.target.value))}
-                    placeholder="Edad"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={height}
-                    onChange={(e) => setHeight(e.target.value)}
-                    placeholder="Estatura (ej. 1.85 m)"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
+                  <div>
+                    <input
+                      type="number"
+                      value={age}
+                      onChange={(e) => {
+                        setAge(Number(e.target.value));
+                        if (fieldErrors.age) {
+                          setFieldErrors((prev) => {
+                            const next = { ...prev };
+                            delete next.age;
+                            return next;
+                          });
+                        }
+                      }}
+                      placeholder="Edad"
+                      className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                        fieldErrors.age
+                          ? 'border-red-500 focus:border-red-400'
+                          : 'border-slate-800 focus:border-emerald-500'
+                      }`}
+                    />
+                    {fieldErrors.age && (
+                      <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.age}</p>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={height}
+                      onChange={(e) => {
+                        setHeight(e.target.value);
+                        if (fieldErrors.height) {
+                          setFieldErrors((prev) => {
+                            const next = { ...prev };
+                            delete next.height;
+                            return next;
+                          });
+                        }
+                      }}
+                      placeholder="Estatura (ej. 1.85 m)"
+                      className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                        fieldErrors.height
+                          ? 'border-red-500 focus:border-red-400'
+                          : 'border-slate-800 focus:border-emerald-500'
+                      }`}
+                    />
+                    {fieldErrors.height && (
+                      <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.height}</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -316,10 +426,26 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
                 <input
                   type="text"
                   value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
+                  onChange={(e) => {
+                    setWeight(e.target.value);
+                    if (fieldErrors.weight) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.weight;
+                        return next;
+                      });
+                    }
+                  }}
                   placeholder="Peso (ej. 88 kg)"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-3 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 focus:outline-none transition-colors ${
+                    fieldErrors.weight
+                      ? 'border-red-500 focus:border-red-400'
+                      : 'border-slate-800 focus:border-emerald-500'
+                  }`}
                 />
+                {fieldErrors.weight && (
+                  <p className="text-[10px] text-red-400 font-semibold mt-1">{fieldErrors.weight}</p>
+                )}
               </div>
             </div>
 
