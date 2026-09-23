@@ -13,6 +13,7 @@ import { ApiClient } from '../services/api.ts';
 import { Competition, Season } from '../types/index.ts';
 import { NotificationCenterDropdown } from './NotificationCenterDropdown.tsx';
 import { HeaderSearchBar } from './HeaderSearchBar.tsx';
+import { GoogleUserAuthButton } from './GoogleUserAuthButton.tsx';
 
 export const Header: React.FC = () => {
   const {
@@ -163,6 +164,9 @@ export const Header: React.FC = () => {
 
           {/* Notification Center Dropdown */}
           <NotificationCenterDropdown />
+
+          {/* Google User Auth */}
+          <GoogleUserAuthButton />
 
           {/* Settings Menu Button */}
           <button

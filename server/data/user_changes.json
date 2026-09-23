@@ -1,0 +1,25 @@
+{
+  "teamLogos": {
+    "mtz": {
+      "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/8/87/Cocodrilos_de_Matanzas_logo.svg/200px-Cocodrilos_de_Matanzas_logo.svg.png",
+      "updatedAt": "2026-09-23T12:11:54.519Z"
+    },
+    "ind": {
+      "logo": "🦁",
+      "updatedAt": "2026-09-23T12:12:02.022Z"
+    }
+  },
+  "teams": {
+    "mtz": {
+      "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/8/87/Cocodrilos_de_Matanzas_logo.svg/200px-Cocodrilos_de_Matanzas_logo.svg.png"
+    },
+    "ind": {
+      "logo": "🦁"
+    }
+  },
+  "customTeams": [],
+  "players": {},
+  "customPlayers": [],
+  "deletedPlayerIds": [],
+  "deletedTeamIds": []
+}

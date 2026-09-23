@@ -16,6 +16,7 @@ import {
   ArticleComment,
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
+import { cloudSqlSync } from '../../src/db/cloudsql-sync.ts';
 import {
   DEMO_COMPETITIONS,
   DEMO_SEASONS,
@@ -62,6 +63,26 @@ const INITIAL_COMMENTS: ArticleComment[] = [
 export class BaseballRepository {
   private readonly dbFilePath = path.resolve(process.cwd(), 'server/data/database.json');
   private readonly backupFilePath = path.resolve(process.cwd(), 'server/data/database.backup.json');
+  private readonly userChangesFilePath = path.resolve(process.cwd(), 'server/data/user_changes.json');
+
+  private userOverrides: {
+    teamLogos: Record<string, { logo: string; primaryColor?: string; updatedAt: string }>;
+    teams: Record<string, Partial<Team>>;
+    customTeams: Team[];
+    players: Record<string, Partial<Player>>;
+    customPlayers: Player[];
+    deletedPlayerIds: string[];
+    deletedTeamIds: string[];
+  } = {
+    teamLogos: {},
+    teams: {},
+    customTeams: [],
+    players: {},
+    customPlayers: [],
+    deletedPlayerIds: [],
+    deletedTeamIds: [],
+  };
+
   private competitions: Competition[] = [...DEMO_COMPETITIONS];
   private seasons: Season[] = [...DEMO_SEASONS];
   private teams: Team[] = [...DEMO_TEAMS];
@@ -76,6 +97,159 @@ export class BaseballRepository {
 
   constructor() {
     this.loadFromDisk();
+    this.deduplicatePlayers();
+    this.initCloudSql().catch((err) => {
+      console.warn('[BaseballRepository] Cloud SQL background init warning:', err);
+    });
+  }
+
+  public async initCloudSql(): Promise<void> {
+    try {
+      const cloudData = await cloudSqlSync.loadFromCloudSql();
+      if (cloudData && cloudData.teams.length > 0) {
+        for (const t of cloudData.teams) {
+          const idx = this.teams.findIndex((item) => item.id === t.id);
+          if (idx !== -1) this.teams[idx] = t;
+          else this.teams.push(t);
+        }
+        for (const p of cloudData.players) {
+          const idx = this.players.findIndex((item) => item.id === p.id);
+          if (idx !== -1) this.players[idx] = p;
+          else this.players.push(p);
+        }
+        for (const [teamId, logoData] of Object.entries(cloudData.teamLogos)) {
+          this.userOverrides.teamLogos[teamId.toLowerCase()] = {
+            logo: logoData.logo,
+            primaryColor: logoData.primaryColor,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        this.applyUserOverrides();
+        this.saveToDisk();
+      } else {
+        await cloudSqlSync.seedIfEmpty(this.teams, this.players, this.userOverrides.teamLogos);
+      }
+    } catch (err) {
+      console.warn('[BaseballRepository] Cloud SQL initialization error (running on local persistence):', err);
+    }
+  }
+
+  private loadUserOverridesFromDisk(): void {
+    try {
+      if (fs.existsSync(this.userChangesFilePath)) {
+        const raw = fs.readFileSync(this.userChangesFilePath, 'utf-8');
+        if (raw && raw.trim().length > 0) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            this.userOverrides = {
+              teamLogos: parsed.teamLogos || {},
+              teams: parsed.teams || {},
+              customTeams: Array.isArray(parsed.customTeams) ? parsed.customTeams : [],
+              players: parsed.players || {},
+              customPlayers: Array.isArray(parsed.customPlayers) ? parsed.customPlayers : [],
+              deletedPlayerIds: Array.isArray(parsed.deletedPlayerIds) ? parsed.deletedPlayerIds : [],
+              deletedTeamIds: Array.isArray(parsed.deletedTeamIds) ? parsed.deletedTeamIds : [],
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Database] Could not read user_changes.json:', err);
+    }
+  }
+
+  public saveUserOverridesToDisk(): void {
+    try {
+      const dir = path.dirname(this.userChangesFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(this.userChangesFilePath, JSON.stringify(this.userOverrides, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[Database] Could not save user_changes.json:', err);
+    }
+  }
+
+  public applyUserOverrides(): void {
+    this.loadUserOverridesFromDisk();
+
+    // 1. Remove deleted teams
+    if (this.userOverrides.deletedTeamIds.length > 0) {
+      const deletedSet = new Set(this.userOverrides.deletedTeamIds);
+      this.teams = this.teams.filter((t) => !deletedSet.has(t.id));
+    }
+
+    // 2. Add custom teams
+    for (const ct of this.userOverrides.customTeams) {
+      const existingIdx = this.teams.findIndex((t) => t.id === ct.id);
+      if (existingIdx !== -1) {
+        this.teams[existingIdx] = { ...this.teams[existingIdx], ...ct };
+      } else {
+        this.teams.push(ct);
+      }
+    }
+
+    // 3. Apply team updates
+    for (const [id, teamUpdates] of Object.entries(this.userOverrides.teams)) {
+      const target = this.teams.find((t) => t.id === id || t.shortName.toLowerCase() === id.toLowerCase());
+      if (target) {
+        Object.assign(target, teamUpdates);
+      }
+    }
+
+    // 4. Apply custom team logos (guarantees user logos are NEVER wiped out)
+    for (const [teamId, logoData] of Object.entries(this.userOverrides.teamLogos)) {
+      if (!logoData || !logoData.logo) continue;
+      const target = this.teams.find((t) => t.id === teamId || t.shortName.toLowerCase() === teamId.toLowerCase());
+      if (target) {
+        target.logo = logoData.logo;
+        if (logoData.primaryColor) {
+          if (!target.colors) target.colors = { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' };
+          else target.colors.primary = logoData.primaryColor;
+        }
+      }
+
+      // Propagate logo to active games and standings
+      for (const g of this.games) {
+        if (g.homeTeam.id === teamId || g.homeTeam.shortName.toLowerCase() === teamId.toLowerCase()) {
+          g.homeTeam.logo = logoData.logo;
+        }
+        if (g.awayTeam.id === teamId || g.awayTeam.shortName.toLowerCase() === teamId.toLowerCase()) {
+          g.awayTeam.logo = logoData.logo;
+        }
+      }
+      for (const s of this.standings) {
+        if (s.teamId === teamId || s.teamShort.toLowerCase() === teamId.toLowerCase()) {
+          s.teamLogo = logoData.logo;
+          (s as any).logo = logoData.logo;
+        }
+      }
+    }
+
+    // 5. Remove deleted players
+    if (this.userOverrides.deletedPlayerIds.length > 0) {
+      const deletedSet = new Set(this.userOverrides.deletedPlayerIds);
+      this.players = this.players.filter((p) => !deletedSet.has(p.id));
+    }
+
+    // 6. Add custom players
+    for (const cp of this.userOverrides.customPlayers) {
+      const existingIdx = this.players.findIndex((p) => p.id === cp.id);
+      if (existingIdx !== -1) {
+        this.players[existingIdx] = { ...this.players[existingIdx], ...cp };
+      } else {
+        this.players.unshift(cp);
+      }
+    }
+
+    // 7. Apply player updates
+    for (const [id, playerUpdates] of Object.entries(this.userOverrides.players)) {
+      const target = this.players.find((p) => p.id === id);
+      if (target) {
+        Object.assign(target, playerUpdates);
+      }
+    }
+
     this.deduplicatePlayers();
   }
 
@@ -132,18 +306,18 @@ export class BaseballRepository {
     };
 
     // 1. Try primary database.json
-    if (tryLoad(this.dbFilePath)) {
-      return;
-    }
+    let loaded = tryLoad(this.dbFilePath);
 
     // 2. Try backup database.backup.json
-    if (tryLoad(this.backupFilePath)) {
+    if (!loaded && tryLoad(this.backupFilePath)) {
       console.log('[Database] Restored state from backup database.backup.json');
-      this.saveToDisk();
-      return;
+      loaded = true;
     }
 
-    // Persist initial database on first launch
+    // 3. ALWAYS apply user overrides on top (guarantees user uploaded logos and data are NEVER lost!)
+    this.applyUserOverrides();
+
+    // Persist finalized database
     this.saveToDisk();
   }
 
@@ -278,6 +452,34 @@ export class BaseballRepository {
       }
     }
 
+    // Persist in user overrides so changes (especially logo) survive any reset or container redeployment
+    if (updates.logo) {
+      const logoPayload = {
+        logo: updates.logo,
+        primaryColor: updates.colors?.primary || (updates as any).primaryColor,
+        updatedAt: new Date().toISOString(),
+      };
+      this.userOverrides.teamLogos[current.id.toLowerCase()] = logoPayload;
+      this.userOverrides.teamLogos[current.shortName.toLowerCase()] = logoPayload;
+    }
+    this.userOverrides.teams[current.id] = {
+      ...(this.userOverrides.teams[current.id] || {}),
+      ...updates,
+    };
+    this.saveUserOverridesToDisk();
+
+    // Persist immediately to Cloud SQL PostgreSQL
+    if (updates.logo) {
+      cloudSqlSync
+        .saveTeamLogo(
+          current.id,
+          updates.logo,
+          updates.colors?.primary || (updates as any).primaryColor
+        )
+        .catch(() => {});
+    }
+    cloudSqlSync.saveTeam(updated).catch(() => {});
+
     this.saveToDisk();
     return updated;
   }
@@ -358,6 +560,14 @@ export class BaseballRepository {
       } as any);
     }
 
+    // Persist in user overrides
+    this.userOverrides.customTeams = this.userOverrides.customTeams.filter((t) => t.id !== newTeam.id);
+    this.userOverrides.customTeams.push(newTeam);
+    this.saveUserOverridesToDisk();
+
+    // Persist immediately to Cloud SQL PostgreSQL
+    cloudSqlSync.saveTeam(newTeam).catch(() => {});
+
     this.saveToDisk();
     return newTeam;
   }
@@ -381,6 +591,17 @@ export class BaseballRepository {
 
     // Remove players belonging to this team or detach
     this.players = this.players.filter((p) => p.teamId !== team.id && p.teamShort !== team.shortName);
+
+    // Persist in user overrides
+    this.userOverrides.deletedTeamIds.push(team.id);
+    delete this.userOverrides.teams[team.id];
+    delete this.userOverrides.teamLogos[team.id.toLowerCase()];
+    delete this.userOverrides.teamLogos[team.shortName.toLowerCase()];
+    this.userOverrides.customTeams = this.userOverrides.customTeams.filter((t) => t.id !== team.id);
+    this.saveUserOverridesToDisk();
+
+    // Delete immediately from Cloud SQL PostgreSQL
+    cloudSqlSync.deleteTeam(team.id).catch(() => {});
 
     this.saveToDisk();
     return { success: true, deletedTeam: team };
@@ -1449,6 +1670,16 @@ export class BaseballRepository {
 
     this.players.unshift(newPlayer);
     this.deduplicatePlayers();
+
+    // Persist in user overrides
+    this.userOverrides.deletedPlayerIds = this.userOverrides.deletedPlayerIds.filter((pid) => pid !== newPlayer.id);
+    this.userOverrides.customPlayers = this.userOverrides.customPlayers.filter((p) => p.id !== newPlayer.id);
+    this.userOverrides.customPlayers.unshift(newPlayer);
+    this.saveUserOverridesToDisk();
+
+    // Persist immediately to Cloud SQL PostgreSQL
+    cloudSqlSync.savePlayer(newPlayer).catch(() => {});
+
     this.saveToDisk();
     return newPlayer;
   }
@@ -1522,7 +1753,18 @@ export class BaseballRepository {
       }
     }
 
+    // Persist in user overrides
+    this.userOverrides.players[current.id] = {
+      ...(this.userOverrides.players[current.id] || {}),
+      ...updates,
+    };
+    this.saveUserOverridesToDisk();
+
     this.deduplicatePlayers();
+
+    // Persist immediately to Cloud SQL PostgreSQL
+    cloudSqlSync.savePlayer(updated).catch(() => {});
+
     this.saveToDisk();
 
     return updated;
@@ -1628,6 +1870,14 @@ export class BaseballRepository {
       }
     }
 
+    // Persist in user overrides
+    for (const p of resultPlayers) {
+      this.userOverrides.deletedPlayerIds = this.userOverrides.deletedPlayerIds.filter((pid) => pid !== p.id);
+      this.userOverrides.customPlayers = this.userOverrides.customPlayers.filter((cp) => cp.id !== p.id);
+      this.userOverrides.customPlayers.push(p);
+    }
+    this.saveUserOverridesToDisk();
+
     this.deduplicatePlayers();
     this.saveToDisk();
 
@@ -1642,6 +1892,16 @@ export class BaseballRepository {
   deletePlayer(id: string): boolean {
     const initialLen = this.players.length;
     this.players = this.players.filter((p) => p.id !== id);
+
+    // Persist in user overrides
+    this.userOverrides.deletedPlayerIds.push(id);
+    delete this.userOverrides.players[id];
+    this.userOverrides.customPlayers = this.userOverrides.customPlayers.filter((p) => p.id !== id);
+    this.saveUserOverridesToDisk();
+
+    // Delete immediately from Cloud SQL PostgreSQL
+    cloudSqlSync.deletePlayer(id).catch(() => {});
+
     this.saveToDisk();
     return this.players.length < initialLen;
   }
@@ -1661,6 +1921,17 @@ export class BaseballRepository {
       }
       return true;
     });
+
+    // Persist in user overrides
+    for (const id of deletedIds) {
+      this.userOverrides.deletedPlayerIds.push(id);
+      delete this.userOverrides.players[id];
+      this.userOverrides.customPlayers = this.userOverrides.customPlayers.filter((p) => p.id !== id);
+    }
+    this.saveUserOverridesToDisk();
+
+    // Bulk delete immediately from Cloud SQL PostgreSQL
+    cloudSqlSync.bulkDeletePlayers(deletedIds).catch(() => {});
 
     const deletedCount = initialLen - this.players.length;
     if (deletedCount > 0) {
@@ -1784,7 +2055,19 @@ export class BaseballRepository {
     return { success: true, likes: comment.likes };
   }
 
-  resetToDefaults(): void {
+  resetToDefaults(clearUserOverrides = false): void {
+    if (clearUserOverrides) {
+      this.userOverrides = {
+        teamLogos: {},
+        teams: {},
+        customTeams: [],
+        players: {},
+        customPlayers: [],
+        deletedPlayerIds: [],
+        deletedTeamIds: [],
+      };
+      this.saveUserOverridesToDisk();
+    }
     this.competitions = [...DEMO_COMPETITIONS];
     this.seasons = [...DEMO_SEASONS];
     this.teams = [...DEMO_TEAMS];
@@ -1796,7 +2079,13 @@ export class BaseballRepository {
     this.news = [...DEMO_NEWS];
     this.videos = [...DEMO_VIDEOS];
     this.comments = [...INITIAL_COMMENTS];
-    this.deduplicatePlayers();
+
+    // Always preserve user logos and custom data unless specifically requested to clear
+    if (!clearUserOverrides) {
+      this.applyUserOverrides();
+    } else {
+      this.deduplicatePlayers();
+    }
     this.saveToDisk();
   }
 

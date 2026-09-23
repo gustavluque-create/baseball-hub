@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Check, AlertCircle, Sparkles, Image as ImageIcon, Link as LinkIcon, RefreshCw, Palette } from 'lucide-react';
 import { Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { clientPersistence } from '../../services/clientPersistence.ts';
 import { TeamLogo, isImageLogo } from '../TeamLogo.tsx';
 import { useApp } from '../../context/AppContext.tsx';
 import { teamLogoSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
@@ -183,14 +184,17 @@ export const TeamLogoEditorModal: React.FC<TeamLogoEditorModalProps> = ({
     }
 
     setIsSaving(true);
+    // Persist immediately locally so it is guaranteed to never be lost
+    clientPersistence.saveTeamLogo(team.id, validation.data.logo, validation.data.primaryColor);
+    clientPersistence.saveTeamLogo(team.shortName, validation.data.logo, validation.data.primaryColor);
     try {
       const res = await ApiClient.updateTeamLogo(team.id, validation.data.logo, validation.data.primaryColor);
       onSaveLogo(validation.data.logo, res?.team);
       triggerDataRefresh();
       onClose();
     } catch (err: any) {
-      console.error('Error saving team logo:', err);
-      // Fallback: still notify parent and refresh so user is never blocked
+      console.error('Error saving team logo to server:', err);
+      // Fallback: still notify parent and refresh with locally persisted logo
       onSaveLogo(validation.data.logo, { ...team, logo: validation.data.logo });
       triggerDataRefresh();
       onClose();

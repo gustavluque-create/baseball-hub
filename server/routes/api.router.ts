@@ -3,6 +3,8 @@ import { baseballRepo } from '../repositories/baseball.repository.ts';
 import { IngestionService } from '../services/ingestion.service.ts';
 import { notificationService } from '../services/notification.service.ts';
 import { adminAuthService } from '../services/admin-auth.service.ts';
+import { requireAuth, AuthRequest } from '../../src/middleware/auth.ts';
+import { getOrCreateUser, getUserByUid } from '../../src/db/users.ts';
 
 export const apiRouter = Router();
 
@@ -499,31 +501,98 @@ const handleUpdateTeamLogo = (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Equipo no encontrado.' });
   }
 
-  // Audit if admin session is present
+  // Audit update
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.substring(7)
     : (req.headers['x-admin-token'] as string);
   const admin = adminAuthService.verifySession(token);
-  if (admin) {
-    adminAuthService.addAuditLog(
-      admin.username,
-      'Actualización de Logo de Equipo',
-      `Logo actualizado para ${updatedTeam.name} (${updatedTeam.shortName}).`,
-      'teams'
-    );
-  }
+  adminAuthService.addAuditLog(
+    admin ? admin.username : 'Usuario Web / Gestor',
+    'Actualización de Logo de Equipo',
+    `Logo oficial persistido para ${updatedTeam.name} (${updatedTeam.shortName}).`,
+    'teams'
+  );
 
   res.json({
     success: true,
-    message: 'Logo del equipo actualizado correctamente.',
+    message: 'Logo del equipo actualizado y guardado permanentemente en la base de datos.',
     team: updatedTeam,
     logo: updatedTeam.logo,
   });
 };
 
-apiRouter.put('/teams/:id/logo', requireAdmin, handleUpdateTeamLogo);
-apiRouter.post('/teams/:id/logo', requireAdmin, handleUpdateTeamLogo);
+apiRouter.put('/teams/:id/logo', handleUpdateTeamLogo);
+apiRouter.post('/teams/:id/logo', handleUpdateTeamLogo);
+
+// Client-Server Bidirectional User Data Synchronization
+apiRouter.post('/sync-user-data', (req: Request, res: Response) => {
+  try {
+    const { teamLogos, customPlayers, customTeams, deletedPlayerIds } = req.body;
+    let logosCount = 0;
+    let playersCount = 0;
+    let teamsCount = 0;
+
+    // 1. Sync custom team logos
+    if (teamLogos && typeof teamLogos === 'object') {
+      for (const [teamId, logoData] of Object.entries(teamLogos as Record<string, any>)) {
+        if (logoData && logoData.logo) {
+          const updated = baseballRepo.updateTeam(teamId, {
+            logo: logoData.logo,
+            colors: logoData.primaryColor
+              ? { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' }
+              : undefined,
+          });
+          if (updated) logosCount++;
+        }
+      }
+    }
+
+    // 2. Sync custom teams
+    if (Array.isArray(customTeams)) {
+      for (const t of customTeams) {
+        if (t && t.id) {
+          const existing = baseballRepo.getTeamById(t.id);
+          if (!existing) {
+            try {
+              baseballRepo.createTeam(t);
+              teamsCount++;
+            } catch {
+              // Already exists or invalid
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Sync custom players
+    if (Array.isArray(customPlayers) && customPlayers.length > 0) {
+      const importRes = baseballRepo.importPlayers(customPlayers);
+      playersCount = importRes.importedCount;
+    }
+
+    // 4. Sync deleted players
+    if (Array.isArray(deletedPlayerIds)) {
+      for (const pid of deletedPlayerIds) {
+        baseballRepo.deletePlayer(pid);
+      }
+    }
+
+    baseballRepo.saveToDisk();
+
+    res.json({
+      success: true,
+      message: 'Datos de usuario sincronizados exitosamente con la base de datos persistente.',
+      synced: {
+        logos: logosCount,
+        players: playersCount,
+        teams: teamsCount,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al sincronizar datos de usuario.' });
+  }
+});
 
 const handleUpdateTeam = (req: Request, res: Response) => {
   try {
@@ -916,3 +985,36 @@ apiRouter.post('/ingest/commit', requireAdmin, (req: Request, res: Response) => 
   adminAuthService.recordIngestionSuccess(insertedCount, admin?.username || username || 'admin');
   res.json({ success: true, count: insertedCount, message: `${insertedCount} registros insertados exitosamente` });
 });
+
+// Firebase User Profile Synchronization with Cloud SQL PostgreSQL
+apiRouter.post('/auth/sync', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+    const user = await getOrCreateUser(
+      req.user.uid,
+      req.user.email || `${req.user.uid}@app.internal`,
+      req.body?.displayName || (req.user as any).name || null,
+      req.body?.photoUrl || (req.user as any).picture || null
+    );
+    res.json({ success: true, user });
+  } catch (error: any) {
+    console.error('Failed to sync authenticated user:', error);
+    res.status(500).json({ error: 'Error al sincronizar usuario con la base de datos' });
+  }
+});
+
+apiRouter.get('/users/me', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+    const user = await getUserByUid(req.user.uid);
+    res.json(user || { uid: req.user.uid, email: req.user.email });
+  } catch (error: any) {
+    console.error('Failed to fetch user:', error);
+    res.status(500).json({ error: 'Error al consultar usuario' });
+  }
+});
+

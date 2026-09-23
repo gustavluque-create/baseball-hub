@@ -20,6 +20,7 @@ import {
   DatabaseApiLogEntry,
   HttpMethod,
 } from '../types/index.ts';
+import { clientPersistence } from './clientPersistence.ts';
 
 const API_BASE = '/api';
 
@@ -187,6 +188,24 @@ export class ApiClient {
     }
   }
 
+  public static clearCache(): void {
+    this.cache.clear();
+    if (typeof window !== 'undefined') {
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('api_cache_')) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      } catch (err) {
+        console.warn('[ApiClient] Could not clear api cache from localStorage', err);
+      }
+    }
+  }
+
   private static async request<T>(endpoint: string, options?: RequestInit & { context?: string }): Promise<T> {
     const method = ((options?.method || 'GET').toUpperCase()) as HttpMethod;
     const isWrite = method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
@@ -322,6 +341,9 @@ export class ApiClient {
         // Cache successful read data
         if (!isWrite && data) {
           this.setCached(endpoint, data);
+        } else if (isWrite) {
+          // Immediately purge cached queries on any write to guarantee UI shows the latest database state
+          this.clearCache();
         }
 
         // Record successful log entry
@@ -433,24 +455,49 @@ export class ApiClient {
   }
 
   // Teams
-  static getTeams(competitionId?: string): Promise<Team[]> {
+  static async getTeams(competitionId?: string): Promise<Team[]> {
     const q = competitionId ? `?competition=${encodeURIComponent(competitionId)}` : '';
-    return this.request<Team[]>(`/teams${q}`);
+    const teams = await this.request<Team[]>(`/teams${q}`);
+    const merged = clientPersistence.mergeTeamsWithCustomData(teams);
+    clientPersistence.syncWithServer().catch(() => {});
+    return merged;
   }
 
-  static getTeamDetail(id: string): Promise<{ team: Team; roster: Player[]; games: Game[] }> {
-    return this.request<{ team: Team; roster: Player[]; games: Game[] }>(`/teams/${id}`);
+  static async getTeamDetail(id: string): Promise<{ team: Team; roster: Player[]; games: Game[] }> {
+    const res = await this.request<{ team: Team; roster: Player[]; games: Game[] }>(`/teams/${id}`);
+    const logoData = clientPersistence.getTeamLogoData(res.team.id) || clientPersistence.getTeamLogoData(res.team.shortName);
+    if (logoData) {
+      res.team.logo = logoData.logo;
+      if (logoData.primaryColor) {
+        if (!res.team.colors) res.team.colors = { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' };
+        else res.team.colors.primary = logoData.primaryColor;
+      }
+    }
+    return res;
   }
 
-  static updateTeamLogo(id: string, logo: string, primaryColor?: string): Promise<{ success: boolean; message: string; team: Team; logo: string }> {
-    return this.request<{ success: boolean; message: string; team: Team; logo: string }>(`/teams/${id}/logo`, {
+  static async updateTeamLogo(id: string, logo: string, primaryColor?: string): Promise<{ success: boolean; message: string; team: Team; logo: string }> {
+    // 1. Immediately cache in client persistence so it can never be lost
+    clientPersistence.saveTeamLogo(id, logo, primaryColor);
+    this.clearCache();
+
+    // 2. Persist to server database
+    const res = await this.request<{ success: boolean; message: string; team: Team; logo: string }>(`/teams/${id}/logo`, {
       method: 'PUT',
       body: JSON.stringify({ logo, primaryColor }),
     });
+
+    // 3. Keep client persistence in sync with response
+    if (res?.team) {
+      clientPersistence.saveTeamLogo(res.team.id, res.team.logo, primaryColor);
+      clientPersistence.saveTeamLogo(res.team.shortName, res.team.logo, primaryColor);
+    }
+    this.clearCache();
+    return res;
   }
 
   // Players
-  static getPlayers(params?: {
+  static async getPlayers(params?: {
     teamId?: string;
     position?: string;
     search?: string;
@@ -464,7 +511,25 @@ export class ApiClient {
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.limit) searchParams.set('limit', params.limit.toString());
 
-    return this.request<{ items: Player[]; total: number }>(`/players?${searchParams.toString()}`);
+    const res = await this.request<{ items: Player[]; total: number }>(`/players?${searchParams.toString()}`);
+    // Merge with client-side persistent custom players
+    let mergedItems = clientPersistence.mergePlayersWithCustomData(res.items);
+    if (params?.teamId) {
+      const targetTeamId = params.teamId;
+      const lowerTeamId = targetTeamId.toLowerCase();
+      mergedItems = mergedItems.filter((p) => p.teamId === targetTeamId || p.teamShort.toLowerCase() === lowerTeamId);
+    }
+    if (params?.position && params.position !== 'ALL') {
+      mergedItems = mergedItems.filter((p) => p.position === params.position);
+    }
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      mergedItems = mergedItems.filter((p) => p.fullName.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q));
+    }
+    return {
+      items: mergedItems,
+      total: Math.max(res.total, mergedItems.length),
+    };
   }
 
   static getPlayerDetail(id: string): Promise<{ player: Player; batting?: BattingStats; pitching?: PitchingStats }> {
@@ -744,32 +809,48 @@ export class ApiClient {
     });
   }
 
-  static createAdminPlayer(playerData: Partial<Player>): Promise<Player> {
-    return this.request<Player>('/admin/players', {
+  static async createAdminPlayer(playerData: Partial<Player>): Promise<Player> {
+    const res = await this.request<Player>('/admin/players', {
       method: 'POST',
       body: JSON.stringify(playerData),
     });
+    if (res) {
+      clientPersistence.savePlayer(res);
+    }
+    this.clearCache();
+    return res;
   }
 
-  static updateAdminPlayer(id: string, updates: Partial<Player>): Promise<Player> {
-    return this.request<Player>(`/admin/players/${encodeURIComponent(id)}`, {
+  static async updateAdminPlayer(id: string, updates: Partial<Player>): Promise<Player> {
+    const res = await this.request<Player>(`/admin/players/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+    if (res) {
+      clientPersistence.savePlayer(res);
+    }
+    this.clearCache();
+    return res;
   }
 
-  static deleteAdminPlayer(id: string): Promise<{ success: boolean; message: string }> {
+  static async deleteAdminPlayer(id: string): Promise<{ success: boolean; message: string }> {
+    clientPersistence.recordDeletedPlayer(id);
+    this.clearCache();
     return this.request<{ success: boolean; message: string }>(`/admin/players/${id}`, {
       method: 'DELETE',
     });
   }
 
-  static bulkDeleteAdminPlayers(ids: string[]): Promise<{
+  static async bulkDeleteAdminPlayers(ids: string[]): Promise<{
     success: boolean;
     deletedCount: number;
     deletedIds: string[];
     message: string;
   }> {
+    for (const id of ids) {
+      clientPersistence.recordDeletedPlayer(id);
+    }
+    this.clearCache();
     return this.request('/admin/players/bulk-delete', {
       method: 'POST',
       body: JSON.stringify({ ids }),
@@ -788,21 +869,33 @@ export class ApiClient {
     });
   }
 
-  static createAdminTeam(teamData: Partial<Team>): Promise<Team> {
-    return this.request<Team>('/teams', {
+  static async createAdminTeam(teamData: Partial<Team>): Promise<Team> {
+    const res = await this.request<Team>('/teams', {
       method: 'POST',
       body: JSON.stringify(teamData),
     });
+    if (res) {
+      clientPersistence.saveTeam(res);
+    }
+    this.clearCache();
+    return res;
   }
 
-  static updateAdminTeam(id: string, updates: Partial<Team>): Promise<Team> {
-    return this.request<Team>(`/teams/${id}`, {
+  static async updateAdminTeam(id: string, updates: Partial<Team>): Promise<Team> {
+    const res = await this.request<Team>(`/teams/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+    if (res) {
+      clientPersistence.saveTeam(res);
+    }
+    this.clearCache();
+    return res;
   }
 
-  static deleteAdminTeam(id: string): Promise<{ success: boolean; message: string; deletedTeam?: Team }> {
+  static async deleteAdminTeam(id: string): Promise<{ success: boolean; message: string; deletedTeam?: Team }> {
+    clientPersistence.recordDeletedTeam(id);
+    this.clearCache();
     return this.request<{ success: boolean; message: string; deletedTeam?: Team }>(`/teams/${id}`, {
       method: 'DELETE',
     });

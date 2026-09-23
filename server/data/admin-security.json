@@ -1,0 +1,60 @@
+{
+  "sessions": [
+    {
+      "token": "adm_912a7500c302197c958ed929c0416fd878c3fec26ee5db22",
+      "admin": {
+        "id": "admin_1",
+        "username": "admin",
+        "name": "Administrador General",
+        "email": "admin@baseballhub.cu",
+        "role": "superadmin",
+        "lastLogin": "2026-09-23T12:04:06.064Z"
+      },
+      "createdAt": 1790165046064,
+      "expiresAt": 1790251446064
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "log_1790165514521_sjnn",
+      "timestamp": 1790165514521,
+      "username": "Usuario Web / Gestor",
+      "action": "Actualización de Logo de Equipo",
+      "details": "Logo oficial persistido para Cocodrilos de Matanzas (MTZ).",
+      "category": "teams"
+    },
+    {
+      "id": "log_1790165048704_k6gq",
+      "timestamp": 1790165048704,
+      "username": "admin",
+      "action": "Actualización de Logo de Equipo",
+      "details": "Logo actualizado para Cocodrilos de Matanzas (MTZ).",
+      "category": "teams"
+    },
+    {
+      "id": "log_1790165046064_52q3",
+      "timestamp": 1790165046064,
+      "username": "admin",
+      "action": "Inicio de Sesión Exitoso",
+      "details": "Acceso concedido con rol SUPERADMIN al panel de administración.",
+      "category": "auth"
+    },
+    {
+      "id": "log_1790161541741_zfpf",
+      "timestamp": 1790161541741,
+      "username": "admin",
+      "action": "Ingesta Inicial de Temporada",
+      "details": "Carga de roster y estadísticas para 63 SNB y Élite 2026.",
+      "category": "etl"
+    },
+    {
+      "id": "log_1790161541741_iy91",
+      "timestamp": 1790161541741,
+      "username": "SISTEMA",
+      "action": "Inicialización de Seguridad",
+      "details": "Módulo de autenticación administrativa activo con control de sesiones seguras y RBAC.",
+      "category": "system"
+    }
+  ],
+  "lastIngestionTime": "2026-09-20 10:30:00 UTC"
+}
