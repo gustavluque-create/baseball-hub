@@ -30,6 +30,7 @@ import {
   Swords,
 } from 'lucide-react';
 import { Game } from '../types/index.ts';
+import { TeamLogo } from './TeamLogo.tsx';
 import { useApp } from '../context/AppContext.tsx';
 
 interface LiveGamesDashboardProps {
@@ -287,7 +288,9 @@ export const LiveGamesDashboard: React.FC<LiveGamesDashboardProps> = ({
         <div className="flex items-center justify-around md:justify-start w-full md:w-auto gap-6 sm:gap-10">
           {/* Away Team */}
           <div className="flex items-center gap-3 min-w-0">
-            <span className="text-3xl sm:text-4xl select-none">{selectedGame.awayTeam.logo}</span>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center p-1 rounded-xl bg-slate-950 border border-slate-800">
+              <TeamLogo logo={selectedGame.awayTeam.logo} name={selectedGame.awayTeam.name} className="w-full h-full text-2xl sm:text-3xl" />
+            </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-white text-base sm:text-lg">
@@ -322,7 +325,9 @@ export const LiveGamesDashboard: React.FC<LiveGamesDashboardProps> = ({
               </div>
               <span className="text-xs text-slate-400">Home Club</span>
             </div>
-            <span className="text-3xl sm:text-4xl select-none">{selectedGame.homeTeam.logo}</span>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center p-1 rounded-xl bg-slate-950 border border-slate-800">
+              <TeamLogo logo={selectedGame.homeTeam.logo} name={selectedGame.homeTeam.name} className="w-full h-full text-2xl sm:text-3xl" />
+            </div>
           </div>
         </div>
 

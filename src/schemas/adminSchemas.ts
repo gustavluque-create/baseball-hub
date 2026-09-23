@@ -107,14 +107,22 @@ export const teamLogoSchema = z.object({
     .trim()
     .min(1, 'El logo no puede estar vacío.')
     .refine(
-      (val) =>
-        val.startsWith('http://') ||
-        val.startsWith('https://') ||
-        val.startsWith('data:image/') ||
-        val.startsWith('/') ||
-        /\p{Extended_Pictographic}/u.test(val) ||
-        val.length <= 4,
-      'El logo debe ser una URL de imagen, imagen base64 o un emoji del equipo.'
+      (val) => {
+        const trimmed = val.trim();
+        return (
+          trimmed.startsWith('http://') ||
+          trimmed.startsWith('https://') ||
+          trimmed.startsWith('data:image/') ||
+          trimmed.startsWith('data:image%2F') ||
+          trimmed.startsWith('blob:') ||
+          trimmed.startsWith('/') ||
+          trimmed.startsWith('./') ||
+          /\.(svg|png|jpg|jpeg|webp|gif|bmp|avif)(\?.*)?$/i.test(trimmed) ||
+          /\p{Extended_Pictographic}/u.test(trimmed) ||
+          trimmed.length <= 8
+        );
+      },
+      'El logo debe ser una URL de imagen válida, imagen base64 o un emoji del equipo.'
     ),
   primaryColor: z
     .string()

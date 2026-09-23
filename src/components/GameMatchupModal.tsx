@@ -23,6 +23,7 @@ import { TeamRadarChart } from './comparison/TeamRadarChart.tsx';
 import { TeamLeadersComparison } from './comparison/TeamLeadersComparison.tsx';
 import { HeadToHeadHistory } from './comparison/HeadToHeadHistory.tsx';
 import { GameMatchupSkeleton } from './LoadingSkeleton.tsx';
+import { TeamLogo } from './TeamLogo.tsx';
 
 interface GameMatchupModalProps {
   gameId: string | null;
@@ -781,7 +782,9 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
                           {/* Away */}
                           <tr>
                             <td className="py-2.5 px-3 text-left font-sans font-bold flex items-center gap-2">
-                              <span>{data.awayTeam.logo}</span>
+                              <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                                <TeamLogo logo={data.awayTeam.logo} name={data.awayTeam.name} className="w-full h-full" />
+                              </div>
                               <span className="text-white">{data.awayTeam.name}</span>
                             </td>
                             {Array.from({ length: 9 }).map((_, i) => (
@@ -805,7 +808,9 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
                           {/* Home */}
                           <tr>
                             <td className="py-2.5 px-3 text-left font-sans font-bold flex items-center gap-2">
-                              <span>{data.homeTeam.logo}</span>
+                              <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                                <TeamLogo logo={data.homeTeam.logo} name={data.homeTeam.name} className="w-full h-full" />
+                              </div>
                               <span className="text-white">{data.homeTeam.name}</span>
                             </td>
                             {Array.from({ length: 9 }).map((_, i) => (

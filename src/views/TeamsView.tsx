@@ -24,7 +24,7 @@ export const TeamsView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[TeamsView] Could not load teams:', err?.message || err);
         setLoading(false);
       });
   }, [activeCompetitionId, dataVersion]);

@@ -35,7 +35,9 @@ export const Header: React.FC = () => {
   const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState<boolean>(false);
 
   useEffect(() => {
-    ApiClient.getCompetitions().then(setCompetitions).catch(console.error);
+    ApiClient.getCompetitions().then(setCompetitions).catch((err) => {
+      console.warn('[Header] Competitions unavailable, retrying in background...', err?.message || err);
+    });
   }, []);
 
   useEffect(() => {
@@ -44,7 +46,9 @@ export const Header: React.FC = () => {
       if (data.length > 0 && !data.some((s) => s.id === activeSeasonId)) {
         setActiveSeasonId(data[0].id);
       }
-    }).catch(console.error);
+    }).catch((err) => {
+      console.warn('[Header] Seasons unavailable, retrying in background...', err?.message || err);
+    });
   }, [activeCompetitionId]);
 
   const navItems: { id: ActiveNavTab; label: string }[] = [

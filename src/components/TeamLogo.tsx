@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface TeamLogoProps {
   logo?: string;
@@ -14,9 +14,12 @@ export const isImageLogo = (logo?: string): boolean => {
     trimmed.startsWith('http://') ||
     trimmed.startsWith('https://') ||
     trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('data:image%2F') ||
     trimmed.startsWith('blob:') ||
     trimmed.startsWith('/') ||
-    /\.(svg|png|jpg|jpeg|webp|gif|bmp)(\?.*)?$/i.test(trimmed)
+    trimmed.startsWith('./') ||
+    trimmed.startsWith('../') ||
+    /\.(svg|png|jpg|jpeg|webp|gif|bmp|avif)(\?.*)?$/i.test(trimmed)
   );
 };
 
@@ -28,8 +31,12 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
 }) => {
   const [hasError, setHasError] = useState(false);
 
+  useEffect(() => {
+    setHasError(false);
+  }, [logo]);
+
   if (!logo) {
-    return <span className={`select-none leading-none ${className}`}>⚾</span>;
+    return <span className={`select-none leading-none inline-flex items-center justify-center ${className}`}>⚾</span>;
   }
 
   const isImg = isImageLogo(logo);
@@ -40,14 +47,17 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
         src={logo}
         alt={`Logo ${name}`}
         onError={() => setHasError(true)}
-        className={`w-full h-full object-contain select-none rounded-lg ${className}`}
+        className={`w-full h-full object-contain select-none rounded-md ${className}`}
         referrerPolicy="no-referrer"
+        loading="lazy"
       />
     );
   }
 
-  // If it had an error or is an emoji/text character
-  const displayContent = hasError ? '⚾' : logo;
+  // Safety: If it's a long string (e.g. data URI or URL that failed to load or wasn't caught),
+  // NEVER render raw base64 or long URLs into the DOM text!
+  const isSafeShortText = logo.trim().length <= 6 && !logo.includes('/') && !logo.includes(':') && !logo.includes(';');
+  const displayContent = (!hasError && isSafeShortText) ? logo.trim() : '⚾';
 
   return (
     <span

@@ -381,7 +381,7 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
         }, 5000);
       };
     } catch (err) {
-      console.error('Failed to create EventSource:', err);
+      console.warn('Failed to create EventSource:', err);
       setConnectionStatus('error');
     }
   }, [connectionMode, handleIncomingScoreEvent]);
@@ -448,7 +448,7 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
         handleIncomingScoreEvent(res.event);
       }
     } catch (err) {
-      console.error('Error triggering test notification:', err);
+      console.warn('Error triggering test notification:', err);
     }
   };
 
@@ -467,7 +467,7 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
         'color: inherit;'
       );
     } catch (err: any) {
-      console.error(
+      console.warn(
         `%c[STATE HOOK: useScoreNotifications]%c simulateScoreChange() failed to persist score: ${err.message}`,
         'color: #ef4444; font-weight: bold;',
         'color: inherit;'
@@ -501,7 +501,7 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
       );
       return { success: res.success, message: res.message };
     } catch (err: any) {
-      console.error(
+      console.warn(
         `%c[STATE HOOK: useScoreNotifications]%c sendWebhookUpdate() write failed: ${err.message}`,
         'color: #ef4444; font-weight: bold;',
         'color: inherit;'

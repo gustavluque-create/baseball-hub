@@ -4,6 +4,7 @@ import { Game } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { BoxScoreSkeleton } from './LoadingSkeleton.tsx';
+import { TeamLogo } from './TeamLogo.tsx';
 
 interface BoxScoreModalProps {
   gameId: string | null;
@@ -84,7 +85,9 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                   {/* Away Team */}
                   <div className="flex items-center gap-4 text-center sm:text-left">
-                    <span className="text-4xl">{game.awayTeam.logo}</span>
+                    <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+                      <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full text-4xl" />
+                    </div>
                     <div>
                       <h3 className="text-lg font-black text-slate-100">{game.awayTeam.name}</h3>
                       <p className="text-xs text-slate-400">{game.awayTeam.city} • Visitante</p>
@@ -126,7 +129,9 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                       <h3 className="text-lg font-black text-slate-100">{game.homeTeam.name}</h3>
                       <p className="text-xs text-slate-400">{game.homeTeam.city} • Local</p>
                     </div>
-                    <span className="text-4xl">{game.homeTeam.logo}</span>
+                    <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+                      <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full text-4xl" />
+                    </div>
                   </div>
                 </div>
 
@@ -175,8 +180,10 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                     <tbody className="divide-y divide-slate-800/60">
                       {/* Away row */}
                       <tr>
-                        <td className="text-left py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-1.5">
-                          <span>{game.awayTeam.logo}</span>
+                        <td className="text-left py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-2">
+                          <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                            <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full" />
+                          </div>
                           <span>{game.awayTeam.shortName}</span>
                         </td>
                         {game.lineScore.map((ls) => (
@@ -192,8 +199,10 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                       </tr>
                       {/* Home row */}
                       <tr>
-                        <td className="text-left py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-1.5">
-                          <span>{game.homeTeam.logo}</span>
+                        <td className="text-left py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-2">
+                          <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                            <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full" />
+                          </div>
                           <span>{game.homeTeam.shortName}</span>
                         </td>
                         {game.lineScore.map((ls) => (
@@ -262,7 +271,9 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                       {/* Away Batters */}
                       <div className="bg-slate-950/60 rounded-xl border border-slate-800 p-3">
                         <div className="flex items-center gap-2 font-bold text-xs text-slate-200 pb-2 mb-2 border-b border-slate-800">
-                          <span>{game.awayTeam.logo}</span>
+                          <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                            <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full" />
+                          </div>
                           <span>{game.awayTeam.name}</span>
                         </div>
                         <div className="overflow-x-auto">
@@ -310,7 +321,9 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                       {/* Home Batters */}
                       <div className="bg-slate-950/60 rounded-xl border border-slate-800 p-3">
                         <div className="flex items-center gap-2 font-bold text-xs text-slate-200 pb-2 mb-2 border-b border-slate-800">
-                          <span>{game.homeTeam.logo}</span>
+                          <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                            <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full" />
+                          </div>
                           <span>{game.homeTeam.name}</span>
                         </div>
                         <div className="overflow-x-auto">

@@ -48,7 +48,7 @@ export const LeadersView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[LeadersView] Could not load leaders:', err?.message || err);
         setLoading(false);
       });
   }, [limit, activeSeasonId]);

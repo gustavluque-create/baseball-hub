@@ -37,7 +37,7 @@ export const NewsView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[NewsView] Could not load news articles:', err?.message || err);
         setLoading(false);
       });
   }, [selectedCategory]);

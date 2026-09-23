@@ -25,7 +25,9 @@ export const PlayersView: React.FC = () => {
   const [comparePlayerBId, setComparePlayerBId] = useState<string | null>(null);
 
   useEffect(() => {
-    ApiClient.getTeams(activeCompetitionId).then(setTeams).catch(console.error);
+    ApiClient.getTeams(activeCompetitionId).then(setTeams).catch((err) => {
+      console.warn('[PlayersView] Could not load teams:', err?.message || err);
+    });
   }, [activeCompetitionId]);
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export const PlayersView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[PlayersView] Could not load players:', err?.message || err);
         setLoading(false);
       });
   }, [search, selectedPosition, selectedTeamId, dataVersion]);

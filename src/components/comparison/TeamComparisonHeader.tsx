@@ -1,6 +1,7 @@
 import React from 'react';
 import { Star, MapPin, Calendar, Trophy, Swords, Shield } from 'lucide-react';
 import { Team, Standing, Game } from '../../types/index.ts';
+import { TeamLogo } from '../TeamLogo.tsx';
 
 export interface TeamComparisonHeaderProps {
   game: Game;
@@ -55,11 +56,11 @@ export const TeamComparisonHeader: React.FC<TeamComparisonHeaderProps> = ({
             {/* Logo */}
             <div
               onClick={() => onSelectTeam?.(awayTeam.id)}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-3xl sm:text-4xl shadow-lg border border-slate-700/80 shrink-0 cursor-pointer hover:scale-105 transition-transform"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center p-2 shadow-lg border border-slate-700/80 shrink-0 cursor-pointer hover:scale-105 transition-transform"
               style={{ backgroundColor: `${awayColor}25` }}
               title={`Ver perfil de ${awayTeam.name}`}
             >
-              {awayTeam.logo}
+              <TeamLogo logo={awayTeam.logo} name={awayTeam.name} className="w-full h-full text-3xl sm:text-4xl" />
             </div>
 
             {/* Info */}
@@ -242,11 +243,11 @@ export const TeamComparisonHeader: React.FC<TeamComparisonHeaderProps> = ({
             {/* Logo */}
             <div
               onClick={() => onSelectTeam?.(homeTeam.id)}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-3xl sm:text-4xl shadow-lg border border-slate-700/80 shrink-0 cursor-pointer hover:scale-105 transition-transform order-1 md:order-2"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center p-2 shadow-lg border border-slate-700/80 shrink-0 cursor-pointer hover:scale-105 transition-transform order-1 md:order-2"
               style={{ backgroundColor: `${homeColor}25` }}
               title={`Ver perfil de ${homeTeam.name}`}
             >
-              {homeTeam.logo}
+              <TeamLogo logo={homeTeam.logo} name={homeTeam.name} className="w-full h-full text-3xl sm:text-4xl" />
             </div>
           </div>
         </div>

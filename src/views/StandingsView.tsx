@@ -26,7 +26,7 @@ export const StandingsView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[StandingsView] Could not load standings:', err?.message || err);
         setLoading(false);
       });
   }, [activeCompetitionId, activeSeasonId, division, dataVersion]);

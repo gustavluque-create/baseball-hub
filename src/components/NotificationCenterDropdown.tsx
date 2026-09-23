@@ -23,6 +23,7 @@ import {
 import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
 import { useApp } from '../context/AppContext.tsx';
 import { ScoreNotificationEvent } from '../types/index.ts';
+import { TeamLogo } from './TeamLogo.tsx';
 
 export const NotificationCenterDropdown: React.FC = () => {
   const {
@@ -378,13 +379,17 @@ export const NotificationCenterDropdown: React.FC = () => {
                     {/* Score summary line */}
                     <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono bg-slate-950/40 px-2 py-1 rounded-md border border-slate-800/80 mb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <span>{item.awayTeam.logo}</span>
+                        <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center">
+                          <TeamLogo logo={item.awayTeam.logo} name={item.awayTeam.name} className="w-full h-full" />
+                        </div>
                         <span className="font-bold text-slate-200">{item.awayTeam.shortName}</span>
                         <span className="text-emerald-400 font-bold">{item.awayScore}</span>
                         <span className="text-slate-600">-</span>
                         <span className="text-emerald-400 font-bold">{item.homeScore}</span>
                         <span className="font-bold text-slate-200">{item.homeTeam.shortName}</span>
-                        <span>{item.homeTeam.logo}</span>
+                        <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center">
+                          <TeamLogo logo={item.homeTeam.logo} name={item.homeTeam.name} className="w-full h-full" />
+                        </div>
                       </div>
 
                       <span className="text-[10px] text-slate-500">

@@ -155,6 +155,38 @@ export class ApiClient {
     return body;
   }
 
+  private static cache: Map<string, { timestamp: number; data: any }> = new Map();
+
+  private static getCached<T>(key: string, maxAgeMs = 120000): T | null {
+    const entry = this.cache.get(key);
+    if (entry && Date.now() - entry.timestamp < maxAgeMs) {
+      return entry.data as T;
+    }
+    try {
+      const local = localStorage.getItem(`api_cache_${key}`);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed && Date.now() - parsed.timestamp < maxAgeMs) {
+          this.cache.set(key, parsed);
+          return parsed.data as T;
+        }
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    return null;
+  }
+
+  private static setCached(key: string, data: any): void {
+    const entry = { timestamp: Date.now(), data };
+    this.cache.set(key, entry);
+    try {
+      localStorage.setItem(`api_cache_${key}`, JSON.stringify(entry));
+    } catch {
+      // Ignore quota errors
+    }
+  }
+
   private static async request<T>(endpoint: string, options?: RequestInit & { context?: string }): Promise<T> {
     const method = ((options?.method || 'GET').toUpperCase()) as HttpMethod;
     const isWrite = method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
@@ -171,52 +203,129 @@ export class ApiClient {
         'color: #0f172a; font-weight: 600;'
       );
       console.log('⏰ Timestamp:', new Date().toISOString());
-      console.log('📦 Request Payload:', requestPayload);
+      if (requestPayload !== undefined) {
+        console.log('📦 Request Payload:', requestPayload);
+      }
       console.groupEnd();
     }
 
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(options?.headers as Record<string, string> || {}),
-      };
+    const headers: Record<string, string> = {
+      ...(options?.headers as Record<string, string> || {}),
+    };
 
-      if (this.adminToken && !headers['Authorization']) {
-        headers['Authorization'] = `Bearer ${this.adminToken}`;
-      }
+    if (options?.body && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
 
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        headers,
-        ...options,
-      });
+    if (this.adminToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${this.adminToken}`;
+    }
 
-      const durationMs = Math.round(performance.now() - startTime);
+    const maxRetries = isWrite ? 1 : 3;
+    let lastNetworkError: any = null;
 
-      if (!res.ok) {
-        let serverErrorData: any = null;
-        let errorMessage = `Error HTTP ${res.status}: ${res.statusText}`;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+          headers,
+          ...options,
+        });
 
-        try {
-          const text = await res.text();
-          if (text) {
-            try {
-              serverErrorData = JSON.parse(text);
-              if (serverErrorData.error) {
-                errorMessage = serverErrorData.error;
-              } else if (serverErrorData.message) {
-                errorMessage = serverErrorData.message;
+        const durationMs = Math.round(performance.now() - startTime);
+
+        if (!res.ok) {
+          let serverErrorData: any = null;
+          let errorMessage = `Error HTTP ${res.status}: ${res.statusText}`;
+
+          try {
+            const text = await res.text();
+            if (text) {
+              try {
+                serverErrorData = JSON.parse(text);
+                if (serverErrorData.error) {
+                  errorMessage = serverErrorData.error;
+                } else if (serverErrorData.message) {
+                  errorMessage = serverErrorData.message;
+                }
+              } catch {
+                serverErrorData = text;
+                errorMessage = text;
               }
-            } catch {
-              serverErrorData = text;
-              errorMessage = text;
             }
+          } catch (readErr) {
+            console.warn('[ApiLogger] Could not read error response body:', readErr);
           }
-        } catch (readErr) {
-          console.warn('[ApiLogger] Could not read error response body:', readErr);
+
+          // Expected 401 for session checks does not need loud logs
+          const isExpectedAuthCheck = endpoint === '/admin/session' && res.status === 401;
+
+          // Record failed log entry
+          const failedEntry: DatabaseApiLogEntry = {
+            id: logId,
+            timestamp: new Date().toISOString(),
+            epochMs: Date.now(),
+            method,
+            endpoint,
+            isWriteOperation: isWrite,
+            status: res.status,
+            statusText: res.statusText,
+            durationMs,
+            success: false,
+            requestPayload,
+            error: {
+              message: errorMessage,
+              code: res.status,
+              details: serverErrorData,
+            },
+            context: options?.context,
+          };
+          this.recordLog(failedEntry);
+
+          if (!isExpectedAuthCheck) {
+            console.groupCollapsed(
+              `%c❌ [DB ${isWrite ? 'WRITE' : 'READ'} FAILED]${contextTag} %c${method} ${endpoint} %c(HTTP ${res.status}: ${errorMessage})`,
+              'color: #ffffff; font-weight: bold; background: #dc2626; padding: 2px 6px; border-radius: 4px;',
+              'color: #b91c1c; font-weight: bold;',
+              'color: #ef4444;'
+            );
+            console.warn('⚠️ Server Response Message:', errorMessage);
+            console.warn('📊 HTTP Status:', `${res.status} ${res.statusText}`);
+            console.warn('⏱️ Latency:', `${durationMs}ms`);
+            if (isWrite && requestPayload !== undefined) {
+              console.warn('📦 Write Payload:', requestPayload);
+            }
+            console.groupEnd();
+          }
+
+          throw new DatabaseApiError(
+            errorMessage,
+            res.status,
+            res.statusText,
+            method,
+            endpoint,
+            serverErrorData,
+            requestPayload
+          );
         }
 
-        // Record failed log entry
-        const failedEntry: DatabaseApiLogEntry = {
+        // Success response handling
+        let data: any = null;
+        const text = await res.text();
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = text;
+          }
+        }
+
+        // Cache successful read data
+        if (!isWrite && data) {
+          this.setCached(endpoint, data);
+        }
+
+        // Record successful log entry
+        const successEntry: DatabaseApiLogEntry = {
           id: logId,
           timestamp: new Date().toISOString(),
           epochMs: Date.now(),
@@ -226,141 +335,91 @@ export class ApiClient {
           status: res.status,
           statusText: res.statusText,
           durationMs,
-          success: false,
+          success: true,
           requestPayload,
-          error: {
-            message: errorMessage,
-            code: res.status,
-            details: serverErrorData,
-          },
+          responsePreview: typeof data === 'object' ? data : { raw: data },
           context: options?.context,
         };
-        this.recordLog(failedEntry);
+        this.recordLog(successEntry);
 
-        // Detailed Console Logging for Error
-        console.group(
-          `%c❌ [DB ${isWrite ? 'WRITE' : 'READ'} FAILED]${contextTag} %c${method} ${endpoint} %c(HTTP ${res.status}: ${errorMessage})`,
-          'color: #ffffff; font-weight: bold; background: #dc2626; padding: 2px 6px; border-radius: 4px;',
-          'color: #b91c1c; font-weight: bold;',
-          'color: #ef4444;'
-        );
-        console.error('🚨 Error Message:', errorMessage);
-        console.error('📊 HTTP Status:', `${res.status} ${res.statusText}`);
-        console.error('⏱️ Latency:', `${durationMs}ms`);
         if (isWrite) {
-          console.error('📦 Rejected Write Payload:', requestPayload);
+          console.groupCollapsed(
+            `%c✅ [DB WRITE SUCCESS]${contextTag} %c${method} ${endpoint} %c(${durationMs}ms, HTTP ${res.status})`,
+            'color: #ffffff; font-weight: bold; background: #16a34a; padding: 2px 6px; border-radius: 4px;',
+            'color: #15803d; font-weight: 600;',
+            'color: #64748b; font-size: 11px;'
+          );
+          console.log('⏱️ Duration:', `${durationMs}ms`);
+          if (requestPayload !== undefined) {
+            console.log('📦 Saved Payload:', requestPayload);
+          }
+          console.log('📬 Response Data:', data);
+          console.groupEnd();
         }
-        console.error('📄 Server Response Body:', serverErrorData);
-        console.groupEnd();
 
-        throw new DatabaseApiError(
-          errorMessage,
-          res.status,
-          res.statusText,
-          method,
-          endpoint,
-          serverErrorData,
-          requestPayload
-        );
-      }
+        return data as T;
+      } catch (err: any) {
+        if (err instanceof DatabaseApiError) {
+          throw err;
+        }
 
-      // Success response handling
-      let data: any = null;
-      const text = await res.text();
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = text;
+        lastNetworkError = err;
+        // If it's a network error and we have retries left, wait and retry
+        if (attempt < maxRetries) {
+          const delayMs = attempt * 300;
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
         }
       }
-
-      // Record successful log entry
-      const successEntry: DatabaseApiLogEntry = {
-        id: logId,
-        timestamp: new Date().toISOString(),
-        epochMs: Date.now(),
-        method,
-        endpoint,
-        isWriteOperation: isWrite,
-        status: res.status,
-        statusText: res.statusText,
-        durationMs,
-        success: true,
-        requestPayload,
-        responsePreview: typeof data === 'object' ? data : { raw: data },
-        context: options?.context,
-      };
-      this.recordLog(successEntry);
-
-      if (isWrite) {
-        console.groupCollapsed(
-          `%c✅ [DB WRITE SUCCESS]${contextTag} %c${method} ${endpoint} %c(${durationMs}ms, HTTP ${res.status})`,
-          'color: #ffffff; font-weight: bold; background: #16a34a; padding: 2px 6px; border-radius: 4px;',
-          'color: #15803d; font-weight: 600;',
-          'color: #64748b; font-size: 11px;'
-        );
-        console.log('⏱️ Duration:', `${durationMs}ms`);
-        console.log('📦 Saved Payload:', requestPayload);
-        console.log('📬 Response Data:', data);
-        console.groupEnd();
-      } else {
-        console.debug(
-          `%c🔍 [DB READ]${contextTag} %c${method} ${endpoint} %c(${durationMs}ms, HTTP ${res.status})`,
-          'color: #0284c7; font-weight: bold;',
-          'color: #334155;',
-          'color: #94a3b8; font-size: 11px;'
-        );
-      }
-
-      return data as T;
-    } catch (err: any) {
-      if (err instanceof DatabaseApiError) {
-        throw err;
-      }
-      const durationMs = Math.round(performance.now() - startTime);
-      const networkErrorMessage = err.message || 'Error de red o conexión al servidor';
-
-      const networkFailEntry: DatabaseApiLogEntry = {
-        id: logId,
-        timestamp: new Date().toISOString(),
-        epochMs: Date.now(),
-        method,
-        endpoint,
-        isWriteOperation: isWrite,
-        status: 0,
-        statusText: 'Network / Client Error',
-        durationMs,
-        success: false,
-        requestPayload,
-        error: {
-          message: networkErrorMessage,
-          code: 'CLIENT_NETWORK_ERROR',
-          details: err,
-        },
-        context: options?.context,
-      };
-      this.recordLog(networkFailEntry);
-
-      console.group(
-        `%c⚠️ [DB NETWORK/CLIENT ERROR]${contextTag} %c${method} ${endpoint}`,
-        'color: #ffffff; font-weight: bold; background: #ea580c; padding: 2px 6px; border-radius: 4px;',
-        'color: #c2410c;'
-      );
-      console.error('🚨 Network Exception:', networkErrorMessage);
-      console.error('📦 Request Payload:', requestPayload);
-      console.groupEnd();
-
-      throw new DatabaseApiError(
-        networkErrorMessage,
-        0,
-        'Network Error',
-        method,
-        endpoint,
-        err,
-        requestPayload
-      );
     }
+
+    // All retries failed due to network error
+    const durationMs = Math.round(performance.now() - startTime);
+    const networkErrorMessage = lastNetworkError?.message || 'Error de conexión con el servidor';
+
+    // If it's a GET request and we have cached data, return the cache to prevent UI crash
+    if (!isWrite) {
+      const cached = this.getCached<T>(endpoint);
+      if (cached !== null) {
+        console.warn(`[ApiClient] Conexión temporalmente no disponible para ${endpoint}. Usando datos en caché.`);
+        return cached;
+      }
+    }
+
+    const networkFailEntry: DatabaseApiLogEntry = {
+      id: logId,
+      timestamp: new Date().toISOString(),
+      epochMs: Date.now(),
+      method,
+      endpoint,
+      isWriteOperation: isWrite,
+      status: 0,
+      statusText: 'Network / Client Error',
+      durationMs,
+      success: false,
+      requestPayload,
+      error: {
+        message: networkErrorMessage,
+        code: 'CLIENT_NETWORK_ERROR',
+        details: lastNetworkError,
+      },
+      context: options?.context,
+    };
+    this.recordLog(networkFailEntry);
+
+    console.warn(
+      `[ApiClient] Advertencia de red en ${method} ${endpoint}: ${networkErrorMessage}`
+    );
+
+    throw new DatabaseApiError(
+      networkErrorMessage,
+      0,
+      'Network Error',
+      method,
+      endpoint,
+      lastNetworkError,
+      requestPayload
+    );
   }
 
   // Competitions

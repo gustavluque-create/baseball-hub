@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ExternalLink, Volume2, VolumeX, Flame, Bell, Trash2, Check, Eye, Zap } from 'lucide-react';
 import { Team } from '../types/index.ts';
+import { TeamLogo } from './TeamLogo.tsx';
 
 export interface ScoreToastEvent {
   id: string;
@@ -171,7 +172,9 @@ export const ScoreChangeToastItem: React.FC<ScoreChangeToastItemProps> = ({
             }`}
           >
             <div className="flex items-center gap-1.5 truncate">
-              <span className="text-base">{toast.awayTeam.logo}</span>
+              <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                <TeamLogo logo={toast.awayTeam.logo} name={toast.awayTeam.name} className="w-full h-full" />
+              </div>
               <span className="font-bold truncate">{toast.awayTeam.shortName}</span>
             </div>
             <span
@@ -192,7 +195,9 @@ export const ScoreChangeToastItem: React.FC<ScoreChangeToastItemProps> = ({
             }`}
           >
             <div className="flex items-center gap-1.5 truncate">
-              <span className="text-base">{toast.homeTeam.logo}</span>
+              <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                <TeamLogo logo={toast.homeTeam.logo} name={toast.homeTeam.name} className="w-full h-full" />
+              </div>
               <span className="font-bold truncate">{toast.homeTeam.shortName}</span>
             </div>
             <span

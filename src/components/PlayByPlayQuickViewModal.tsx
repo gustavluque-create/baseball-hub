@@ -18,6 +18,7 @@ import {
   Share2,
 } from 'lucide-react';
 import { Game, PlayEvent } from '../types/index.ts';
+import { TeamLogo } from './TeamLogo.tsx';
 import { ApiClient } from '../services/api.ts';
 import { ScoreToastEvent } from './ScoreChangeToast.tsx';
 
@@ -216,7 +217,9 @@ export const PlayByPlayQuickViewModal: React.FC<PlayByPlayQuickViewModalProps> =
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
               {/* Away Team */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-3 text-center sm:text-left min-w-0">
-                <span className="text-3xl sm:text-4xl shrink-0">{toast.awayTeam.logo}</span>
+                <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+                  <TeamLogo logo={toast.awayTeam.logo} name={toast.awayTeam.name} className="w-full h-full text-2xl sm:text-3xl" />
+                </div>
                 <div className="min-w-0">
                   <h3 className="text-xs sm:text-sm font-black text-white truncate">
                     {toast.awayTeam.name}
@@ -259,7 +262,9 @@ export const PlayByPlayQuickViewModal: React.FC<PlayByPlayQuickViewModalProps> =
 
               {/* Home Team */}
               <div className="flex flex-col sm:flex-row-reverse items-center sm:items-start gap-2 sm:gap-3 text-center sm:text-right min-w-0">
-                <span className="text-3xl sm:text-4xl shrink-0">{toast.homeTeam.logo}</span>
+                <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+                  <TeamLogo logo={toast.homeTeam.logo} name={toast.homeTeam.name} className="w-full h-full text-2xl sm:text-3xl" />
+                </div>
                 <div className="min-w-0">
                   <h3 className="text-xs sm:text-sm font-black text-white truncate">
                     {toast.homeTeam.name}
@@ -338,8 +343,10 @@ export const PlayByPlayQuickViewModal: React.FC<PlayByPlayQuickViewModalProps> =
                 <tbody className="divide-y divide-slate-800/50">
                   {/* Away */}
                   <tr>
-                    <td className="text-left font-sans font-bold text-slate-300 py-1 pl-1 flex items-center gap-1">
-                      <span>{toast.awayTeam.logo}</span>
+                    <td className="text-left font-sans font-bold text-slate-300 py-1 pl-1 flex items-center gap-1.5">
+                      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                        <TeamLogo logo={toast.awayTeam.logo} name={toast.awayTeam.name} className="w-full h-full" />
+                      </div>
                       <span>{toast.awayTeam.shortName}</span>
                     </td>
                     {game.lineScore.map((ls) => (
@@ -363,8 +370,10 @@ export const PlayByPlayQuickViewModal: React.FC<PlayByPlayQuickViewModalProps> =
 
                   {/* Home */}
                   <tr>
-                    <td className="text-left font-sans font-bold text-slate-300 py-1 pl-1 flex items-center gap-1">
-                      <span>{toast.homeTeam.logo}</span>
+                    <td className="text-left font-sans font-bold text-slate-300 py-1 pl-1 flex items-center gap-1.5">
+                      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                        <TeamLogo logo={toast.homeTeam.logo} name={toast.homeTeam.name} className="w-full h-full" />
+                      </div>
                       <span>{toast.homeTeam.shortName}</span>
                     </td>
                     {game.lineScore.map((ls) => (

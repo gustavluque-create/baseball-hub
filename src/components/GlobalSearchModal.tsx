@@ -3,6 +3,7 @@ import { Search, X, Users, Shield, Trophy, ArrowRight, FileText } from 'lucide-r
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { Player, Team, Competition, NewsArticle } from '../types/index.ts';
+import { TeamLogo } from './TeamLogo.tsx';
 
 export const GlobalSearchModal: React.FC = () => {
   const {
@@ -192,7 +193,9 @@ export const GlobalSearchModal: React.FC = () => {
                     className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-colors group"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl">{t.logo}</span>
+                      <div className="w-8 h-8 shrink-0 flex items-center justify-center p-1 rounded-lg bg-slate-900 border border-slate-750">
+                        <TeamLogo logo={t.logo} name={t.name} className="w-full h-full text-xl" />
+                      </div>
                       <div>
                         <p className="text-sm font-bold text-slate-100 group-hover:text-amber-400 transition-colors">
                           {t.name}

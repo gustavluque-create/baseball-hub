@@ -12,6 +12,7 @@ import {
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { GameCard } from '../components/GameCard.tsx';
+import { TeamLogo } from '../components/TeamLogo.tsx';
 import { MyTeamsSection } from '../components/MyTeamsSection.tsx';
 import {
   GameCardSkeleton,
@@ -69,7 +70,7 @@ export const HomeView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[HomeView] Could not load initial dashboard data:', err?.message || err);
         setLoading(false);
       });
   }, [activeCompetitionId, activeSeasonId]);
@@ -285,7 +286,9 @@ export const HomeView: React.FC = () => {
                         {s.rank ?? (idx + 1)}
                       </td>
                       <td className="py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-2">
-                        <span className="text-lg">{s.teamLogo || s.logo}</span>
+                        <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                          <TeamLogo logo={s.teamLogo || s.logo} name={s.teamName} className="w-full h-full" />
+                        </div>
                         <span className="hover:text-emerald-400 transition-colors">
                           {s.teamName}
                         </span>

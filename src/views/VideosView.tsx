@@ -17,7 +17,7 @@ export const VideosView: React.FC = () => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.warn('[VideosView] Could not load videos:', err?.message || err);
         setLoading(false);
       });
   }, []);

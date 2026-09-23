@@ -36,8 +36,10 @@ export const useDatabaseLogs = () => {
             'color: #ffffff; background: #b91c1c; font-weight: bold; padding: 2px 8px; border-radius: 4px;',
             'color: #ef4444; font-weight: bold;'
           );
-          console.error('[STATE HOOK MONITOR] Error details:', latest.error);
-          console.error('[STATE HOOK MONITOR] Rejected payload:', latest.requestPayload);
+          console.warn('[STATE HOOK MONITOR] Error details:', latest.error);
+          if (latest.requestPayload !== undefined) {
+            console.warn('[STATE HOOK MONITOR] Rejected payload:', latest.requestPayload);
+          }
         }
       }
     });
