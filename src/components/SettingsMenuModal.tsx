@@ -58,9 +58,40 @@ export const SettingsMenuModal: React.FC = () => {
     setPollingIntervalMs,
     connectionStatus,
     triggerTestNotification,
+    fcmEnabled,
+    fcmSupported,
+    fcmToken,
+    fcmLoading,
+    enableFcmPush,
+    disableFcmPush,
+    testFcmPush,
   } = useScoreNotifications();
 
+  const { favoriteTeamIds } = useApp();
+
   const [testAlertTriggered, setTestAlertTriggered] = useState(false);
+  const [fcmTestStatus, setFcmTestStatus] = useState<string | null>(null);
+  const [fcmRegisterError, setFcmRegisterError] = useState<string | null>(null);
+
+  const handleEnableFcm = async () => {
+    setFcmRegisterError(null);
+    const res = await enableFcmPush();
+    if (!res.success) {
+      setFcmRegisterError(res.error || 'Error al activar notificaciones push');
+    }
+  };
+
+  const handleTestFcm = async () => {
+    setFcmTestStatus('Enviando push FCM...');
+    try {
+      const res = await testFcmPush();
+      setFcmTestStatus(res.message);
+      setTimeout(() => setFcmTestStatus(null), 5000);
+    } catch {
+      setFcmTestStatus('Error al enviar prueba');
+      setTimeout(() => setFcmTestStatus(null), 3500);
+    }
+  };
 
   const handleTriggerTest = async () => {
     setTestAlertTriggered(true);
@@ -401,11 +432,99 @@ export const SettingsMenuModal: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-2">
                 <Bell className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Notificaciones en Tiempo Real (Webhooks &amp; Polling)</span>
+                <span>Notificaciones en Tiempo Real (Firebase Cloud Messaging &amp; Webhooks)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 Configura cómo quieres recibir las alertas de cambios de marcador, jonrones y jugadas clave durante los partidos.
               </p>
+            </div>
+
+            {/* FCM Push Notifications Feature Card */}
+            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-emerald-500/40 shadow-lg relative overflow-hidden">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                      <span>Alertas Push FCM en Vivo</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                        Firebase Cloud Messaging
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Recibe alertas instantáneas en tu dispositivo cada vez que tu equipo favorito anote una carrera.
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold whitespace-nowrap ${
+                    fcmEnabled
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  }`}
+                >
+                  {fcmEnabled ? '● FCM Activo' : '○ Desactivado'}
+                </span>
+              </div>
+
+              {/* Subscribed Teams Info */}
+              <div className="my-2.5 p-2 rounded-lg bg-slate-950/80 border border-slate-800/80 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-slate-300">
+                  <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                  <span className="text-[11px]">
+                    Equipos suscritos a push:{' '}
+                    <strong className="text-white">
+                      {favoriteTeamIds && favoriteTeamIds.length > 0
+                        ? favoriteTeamIds.map((id) => id.toUpperCase()).join(', ')
+                        : 'Todos los equipos'}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {!fcmEnabled ? (
+                  <button
+                    onClick={handleEnableFcm}
+                    disabled={fcmLoading || !fcmSupported}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow cursor-pointer disabled:opacity-50"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>{fcmLoading ? 'Activando...' : 'Activar Alertas Push (FCM)'}</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleTestFcm}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/30 transition-all cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Probar Alerta Push (FCM)</span>
+                    </button>
+                    <button
+                      onClick={disableFcmPush}
+                      className="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Desactivar
+                    </button>
+                  </>
+                )}
+
+                {fcmTestStatus && (
+                  <span className="text-[11px] text-emerald-400 font-medium animate-pulse">
+                    {fcmTestStatus}
+                  </span>
+                )}
+                {fcmRegisterError && (
+                  <span className="text-[11px] text-red-400 font-medium">
+                    {fcmRegisterError}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Notification Options Grid */}

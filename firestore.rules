@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // FCM Device Tokens for push notifications
+    match /fcmTokens/{tokenId} {
+      allow read: if request.auth != null;
+      allow write: if true; // allow client device registration
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

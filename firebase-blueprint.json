@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "fcmToken": {
+      "title": "FCM Device Token",
+      "description": "Registered FCM push token with user device and team subscription preferences",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "Firebase Cloud Messaging registration token"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user, or anonymous device ID"
+        },
+        "favoriteTeamIds": {
+          "type": "array",
+          "description": "List of team IDs the user wants score alert push notifications for",
+          "items": {
+            "type": "string"
+          }
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "User device agent"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of registration"
+        }
+      },
+      "required": ["token", "favoriteTeamIds", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/fcmTokens/{tokenId}": {
+      "schema": "fcmToken",
+      "description": "Stores active push notification device tokens and subscribed favorite teams"
+    }
+  }
+}

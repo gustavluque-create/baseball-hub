@@ -50,9 +50,13 @@ export const NotificationCenterDropdown: React.FC = () => {
     simulateScoreChange,
     sendWebhookUpdate,
     refreshNotificationFeed,
+    fcmEnabled,
+    fcmLoading,
+    enableFcmPush,
+    testFcmPush,
   } = useScoreNotifications();
 
-  const { isFavoriteTeam, navigateToGame, language, setIsSettingsOpen } = useApp();
+  const { isFavoriteTeam, navigateToGame, language, setIsSettingsOpen, favoriteTeamIds } = useApp();
 
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [filterMode, setFilterMode] = useState<'all' | 'favorites'>('all');
@@ -61,6 +65,7 @@ export const NotificationCenterDropdown: React.FC = () => {
   const [testSide, setTestSide] = useState<'home' | 'away'>('home');
   const [testRuns, setTestRuns] = useState<number>(1);
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
+  const [isTestingFcm, setIsTestingFcm] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -298,6 +303,62 @@ export const NotificationCenterDropdown: React.FC = () => {
               <Sparkles className="w-3 h-3" />
               <span>{isTriggering ? 'Probando...' : language === 'es' ? 'Probar' : 'Test'}</span>
             </button>
+          </div>
+
+          {/* FCM Push Notification Quick Status Bar */}
+          <div className="mx-2 mt-2 p-2 rounded-xl bg-slate-950/80 border border-emerald-500/25 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  fcmEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-[11px] text-slate-200">
+                    {fcmEnabled ? 'FCM Push Activo' : 'Push FCM en Vivo'}
+                  </span>
+                  <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-400 font-mono">
+                    Firebase
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 truncate">
+                  {fcmEnabled
+                    ? `${favoriteTeamIds?.length || 0} equipos con alertas en vivo`
+                    : 'Alertas push cuando anote tu equipo'}
+                </p>
+              </div>
+            </div>
+
+            <div className="shrink-0 flex items-center gap-1">
+              {!fcmEnabled ? (
+                <button
+                  onClick={async () => {
+                    await enableFcmPush();
+                  }}
+                  disabled={fcmLoading}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[10px] cursor-pointer shadow-sm disabled:opacity-50"
+                >
+                  {fcmLoading ? 'Activando...' : 'Activar Push'}
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    setIsTestingFcm(true);
+                    try {
+                      await testFcmPush();
+                    } finally {
+                      setTimeout(() => setIsTestingFcm(false), 2000);
+                    }
+                  }}
+                  disabled={isTestingFcm}
+                  className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] border border-emerald-500/30 cursor-pointer disabled:opacity-50"
+                  title="Enviar alerta push de prueba mediante Firebase Cloud Messaging"
+                >
+                  {isTestingFcm ? 'Enviando...' : 'Probar Push'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Notifications Scrollable List */}

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { EventEmitter } from 'events';
 import { baseballRepo } from '../repositories/baseball.repository.ts';
 import { ScoreNotificationEvent } from '../../src/types/index.ts';
+import { fcmServer } from './fcm.service.ts';
 
 class NotificationService extends EventEmitter {
   private sseClients: Set<Response> = new Set();
@@ -62,6 +63,11 @@ class NotificationService extends EventEmitter {
         this.sseClients.delete(client);
       }
     }
+
+    // Dispatch Push Notification via Firebase Cloud Messaging (FCM)
+    fcmServer.notifyScoreChange(fullEvent).catch((err) => {
+      console.warn('[NotificationService] FCM push dispatch warning:', err?.message || err);
+    });
 
     return fullEvent;
   }

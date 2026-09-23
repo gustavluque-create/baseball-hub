@@ -3,6 +3,7 @@ import { baseballRepo } from '../repositories/baseball.repository.ts';
 import { IngestionService } from '../services/ingestion.service.ts';
 import { notificationService } from '../services/notification.service.ts';
 import { adminAuthService } from '../services/admin-auth.service.ts';
+import { fcmServer } from '../services/fcm.service.ts';
 import { requireAuth, AuthRequest } from '../../src/middleware/auth.ts';
 import { getOrCreateUser, getUserByUid } from '../../src/db/users.ts';
 
@@ -1017,4 +1018,80 @@ apiRouter.get('/users/me', requireAuth, async (req: AuthRequest, res: Response) 
     res.status(500).json({ error: 'Error al consultar usuario' });
   }
 });
+
+// ==========================================
+// Firebase Cloud Messaging (FCM) Push Routes
+// ==========================================
+
+// Register or update device token with favorite teams
+apiRouter.post('/notifications/fcm/register', (req: Request, res: Response) => {
+  try {
+    const { token, favoriteTeamIds = [], userAgent } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Token FCM requerido' });
+    }
+
+    const subscriber = fcmServer.registerDevice(
+      token,
+      Array.isArray(favoriteTeamIds) ? favoriteTeamIds : [],
+      undefined,
+      userAgent || req.headers['user-agent']
+    );
+
+    res.json({
+      success: true,
+      message: 'Dispositivo registrado exitosamente para alertas push',
+      subscribedTeams: subscriber.favoriteTeamIds,
+      totalDevices: fcmServer.getSubscribersCount(),
+    });
+  } catch (err: any) {
+    console.error('Error registering FCM token:', err);
+    res.status(500).json({ error: 'Error al registrar token FCM' });
+  }
+});
+
+// Unregister device token
+apiRouter.post('/notifications/fcm/unregister', (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Token FCM requerido' });
+    }
+    const success = fcmServer.unregisterDevice(token);
+    res.json({ success, totalDevices: fcmServer.getSubscribersCount() });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Error al desregistrar token FCM' });
+  }
+});
+
+// Send a test push notification to a device
+apiRouter.post('/notifications/fcm/test', async (req: Request, res: Response) => {
+  try {
+    const { token, teamId } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Token FCM requerido' });
+    }
+
+    let teamName = 'Cocodrilos de Matanzas';
+    if (teamId) {
+      const team = baseballRepo.getTeamById(teamId);
+      if (team) teamName = team.name;
+    }
+
+    const result = await fcmServer.sendTestAlert(token, teamName);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Error in FCM test alert:', err);
+    res.status(500).json({ success: false, error: err.message || 'Error en prueba push' });
+  }
+});
+
+// Get FCM status
+apiRouter.get('/notifications/fcm/status', (_req: Request, res: Response) => {
+  res.json({
+    enabled: true,
+    totalDevices: fcmServer.getSubscribersCount(),
+  });
+});
+
 

@@ -15,6 +15,7 @@ import {
 import { ApiClient } from '../services/api.ts';
 import { useApp } from './AppContext.tsx';
 import { playBaseballScoreChime } from '../utils/scoreNotification.ts';
+import { fcmClient } from '../services/fcm.service.ts';
 
 export interface ScoreNotificationContextType {
   // Settings & Status
@@ -22,6 +23,16 @@ export interface ScoreNotificationContextType {
   setDesktopNotificationsEnabled: (enabled: boolean) => void;
   browserPermission: NotificationPermission | 'unsupported';
   requestBrowserPermission: () => Promise<NotificationPermission | 'unsupported'>;
+
+  // Firebase Cloud Messaging (FCM) Push Notifications
+  fcmEnabled: boolean;
+  fcmSupported: boolean;
+  fcmToken: string | null;
+  fcmLoading: boolean;
+  enableFcmPush: () => Promise<{ success: boolean; error?: string }>;
+  disableFcmPush: () => Promise<void>;
+  testFcmPush: (teamId?: string) => Promise<{ success: boolean; message: string }>;
+
   soundEnabled: boolean;
   setSoundEnabled: (enabled: boolean) => void;
   notifyOnlyFavorites: boolean;
@@ -65,7 +76,7 @@ export interface ScoreNotificationContextType {
 const ScoreNotificationContext = createContext<ScoreNotificationContextType | undefined>(undefined);
 
 export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isFavoriteTeam, navigateToGame } = useApp();
+  const { isFavoriteTeam, navigateToGame, favoriteTeamIds } = useApp();
 
   // Desktop notification permission
   const [browserPermission, setBrowserPermission] = useState<NotificationPermission | 'unsupported'>(() => {
@@ -74,6 +85,24 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
     }
     return 'unsupported';
   });
+
+  // Firebase Cloud Messaging (FCM) state
+  const [fcmSupported, setFcmSupported] = useState<boolean>(true);
+  const [fcmToken, setFcmToken] = useState<string | null>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('fcm_device_token') : null;
+  });
+  const [fcmLoading, setFcmLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    fcmClient.checkSupport().then(setFcmSupported);
+  }, []);
+
+  // Sync favorite teams with backend whenever they change and FCM is active
+  useEffect(() => {
+    if (fcmToken && favoriteTeamIds && favoriteTeamIds.length > 0) {
+      fcmClient.syncFavoriteTeams(favoriteTeamIds);
+    }
+  }, [favoriteTeamIds, fcmToken]);
 
   // Persisted desktop notification enabled preference
   const [desktopNotificationsEnabled, setDesktopNotificationsEnabledState] = useState<boolean>(() => {
@@ -510,6 +539,89 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
     }
   };
 
+  // Setup foreground listener for Firebase Cloud Messaging push alerts
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    fcmClient
+      .setupForegroundListener((payload) => {
+        const data = payload?.data;
+        if (data && data.gameId) {
+          handleIncomingScoreEvent({
+            id: `fcm-${data.timestamp || Date.now()}`,
+            timestamp: Number(data.timestamp || Date.now()),
+            gameId: data.gameId,
+            homeTeam: {
+              id: data.scoringTeamId || 'home',
+              name: data.scoringTeamName || 'Equipo',
+              shortName: data.scoringTeamId || 'EQP',
+            } as any,
+            awayTeam: { id: 'rival', name: 'Rival', shortName: 'RIV' } as any,
+            scoringTeam: {
+              id: data.scoringTeamId || 'fav',
+              name: data.scoringTeamName || 'Mi Equipo',
+              shortName: data.scoringTeamId || 'FAV',
+            } as any,
+            scoringTeamSide: 'home',
+            runsScored: Number(data.runsScored || 1),
+            homeScore: Number(data.homeScore || 1),
+            awayScore: Number(data.awayScore || 0),
+            inning: Number(data.inning || 1),
+            isTopInning: false,
+            outs: 1,
+            title: payload.notification?.title || data.title || '¡Carrera de tu equipo!',
+            description: payload.notification?.body || data.body || 'Se ha anotado una carrera en vivo.',
+            playType: (data.playType as any) || 'hit',
+            autoDismissMs: 6500,
+            read: false,
+          });
+        }
+      })
+      .then((unsub) => {
+        if (unsub) cleanup = unsub;
+      });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [handleIncomingScoreEvent]);
+
+  const enableFcmPush = async (): Promise<{ success: boolean; error?: string }> => {
+    setFcmLoading(true);
+    try {
+      const res = await fcmClient.requestPermissionAndRegister(favoriteTeamIds || []);
+      if (res.success && res.token) {
+        setFcmToken(res.token);
+        setDesktopNotificationsEnabled(true);
+        setBrowserPermission('granted');
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'No se pudo activar FCM' };
+    } finally {
+      setFcmLoading(false);
+    }
+  };
+
+  const disableFcmPush = async (): Promise<void> => {
+    const token = fcmToken || localStorage.getItem('fcm_device_token');
+    if (token) {
+      fetch('/api/notifications/fcm/unregister', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      }).catch(() => {});
+    }
+    localStorage.removeItem('fcm_device_token');
+    localStorage.removeItem('fcm_subscribed_teams');
+    setFcmToken(null);
+  };
+
+  const testFcmPush = async (teamId?: string): Promise<{ success: boolean; message: string }> => {
+    const target = teamId || (favoriteTeamIds && favoriteTeamIds[0]) || 'mtz';
+    return fcmClient.sendTestPush(target);
+  };
+
+  const fcmEnabled = Boolean(fcmToken && browserPermission === 'granted');
+
   const refreshNotificationFeed = async (): Promise<void> => {
     try {
       const items = await ApiClient.getNotificationsHistory(30);
@@ -526,6 +638,13 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
         setDesktopNotificationsEnabled,
         browserPermission,
         requestBrowserPermission,
+        fcmEnabled,
+        fcmSupported,
+        fcmToken,
+        fcmLoading,
+        enableFcmPush,
+        disableFcmPush,
+        testFcmPush,
         soundEnabled,
         setSoundEnabled,
         notifyOnlyFavorites,
