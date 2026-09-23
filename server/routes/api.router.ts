@@ -235,6 +235,52 @@ apiRouter.delete('/admin/players/:id', requireAdmin, (req: Request, res: Respons
   res.json({ success: true, message: 'Jugador eliminado' });
 });
 
+// Bulk Player Operations
+apiRouter.post('/admin/players/bulk-delete', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const ids: string[] = Array.isArray(req.body.ids) ? req.body.ids : [];
+  if (ids.length === 0) {
+    return res.status(400).json({ error: 'Se requiere una lista de IDs de jugadores a eliminar.' });
+  }
+
+  const result = baseballRepo.bulkDeletePlayers(ids);
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Baja Masiva de Jugadores',
+    `Se eliminaron ${result.deletedCount} jugadores de forma masiva del sistema.`,
+    'players'
+  );
+  res.json({
+    success: true,
+    deletedCount: result.deletedCount,
+    deletedIds: result.deletedIds,
+    message: `Se eliminaron exitosamente ${result.deletedCount} jugadores.`,
+  });
+});
+
+apiRouter.post('/admin/players/bulk-update', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const ids: string[] = Array.isArray(req.body.ids) ? req.body.ids : [];
+  const updates = req.body.updates;
+  if (ids.length === 0 || !updates || typeof updates !== 'object') {
+    return res.status(400).json({ error: 'Se requiere una lista de IDs y los campos a actualizar.' });
+  }
+
+  const result = baseballRepo.bulkUpdatePlayers(ids, updates);
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Actualización Masiva de Jugadores',
+    `Se actualizaron ${result.updatedCount} jugadores en lote.`,
+    'players'
+  );
+  res.json({
+    success: true,
+    updatedCount: result.updatedCount,
+    updatedPlayers: result.updatedPlayers,
+    message: `Se actualizaron exitosamente ${result.updatedCount} jugadores.`,
+  });
+});
+
 // Admin News Management
 apiRouter.post('/admin/news', requireAdmin, (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
@@ -301,6 +347,63 @@ apiRouter.post('/admin/system/persist', requireAdmin, (req: Request, res: Respon
     message: 'Base de datos guardada en disco exitosamente.',
     info,
   });
+});
+
+// Full Database Export Backup
+apiRouter.get('/admin/system/backup', requireAdmin, (req: Request, res: Response) => {
+  const db = baseballRepo.getFullDatabase();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="baseball_hub_backup.json"');
+  res.json(db);
+});
+
+// Full Database Restore from Backup
+apiRouter.post('/admin/system/restore', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  try {
+    const payload = req.body;
+    const result = baseballRepo.restoreFullDatabase(payload);
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Restauración de Base de Datos',
+      `Se restauró la base de datos completa (${result.counts.players} jugadores, ${result.counts.teams} equipos).`,
+      'system'
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al restaurar la base de datos.' });
+  }
+});
+
+// Client Automatic Sync Backup (Syncs client's offline / local changes to server if needed)
+apiRouter.post('/admin/system/sync-client', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  try {
+    const { players, teams } = req.body;
+    let restoredCount = 0;
+    if (Array.isArray(players) && players.length > 0) {
+      // Import players into current repo
+      const importRes = baseballRepo.importPlayers(players);
+      restoredCount = importRes.importedCount;
+    }
+    baseballRepo.saveToDisk();
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Sincronización Cliente-Servidor',
+      `Sincronizados ${restoredCount} jugadores desde el almacenamiento local del navegador.`,
+      'system'
+    );
+    res.json({
+      success: true,
+      message: `Se sincronizaron ${restoredCount} jugadores exitosamente con el servidor.`,
+      counts: {
+        players: baseballRepo.getPlayers().total,
+        teams: baseballRepo.getTeams().length,
+      },
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error durante la sincronización.' });
+  }
 });
 
 // Real-Time Browser Webhooks & Streaming (Server-Sent Events)

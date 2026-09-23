@@ -61,6 +61,7 @@ const INITIAL_COMMENTS: ArticleComment[] = [
 
 export class BaseballRepository {
   private readonly dbFilePath = path.resolve(process.cwd(), 'server/data/database.json');
+  private readonly backupFilePath = path.resolve(process.cwd(), 'server/data/database.backup.json');
   private competitions: Competition[] = [...DEMO_COMPETITIONS];
   private seasons: Season[] = [...DEMO_SEASONS];
   private teams: Team[] = [...DEMO_TEAMS];
@@ -82,49 +83,64 @@ export class BaseballRepository {
    * Load persistent database state from disk if it exists, otherwise initialize and persist seed data
    */
   private loadFromDisk(): void {
-    try {
-      if (fs.existsSync(this.dbFilePath)) {
-        const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
-        if (raw && raw.trim().length > 0) {
-          const data = JSON.parse(raw);
-          if (Array.isArray(data.competitions) && data.competitions.length > 0) {
-            this.competitions = data.competitions;
+    const tryLoad = (filePath: string): boolean => {
+      try {
+        if (fs.existsSync(filePath)) {
+          const raw = fs.readFileSync(filePath, 'utf-8');
+          if (raw && raw.trim().length > 0) {
+            const data = JSON.parse(raw);
+            if (Array.isArray(data.competitions) && data.competitions.length > 0) {
+              this.competitions = data.competitions;
+            }
+            if (Array.isArray(data.seasons) && data.seasons.length > 0) {
+              this.seasons = data.seasons;
+            }
+            if (Array.isArray(data.teams) && data.teams.length > 0) {
+              this.teams = data.teams;
+            }
+            if (Array.isArray(data.players) && data.players.length > 0) {
+              this.players = data.players;
+            }
+            if (Array.isArray(data.games) && data.games.length > 0) {
+              this.games = data.games;
+            }
+            if (Array.isArray(data.battingStats) && data.battingStats.length > 0) {
+              this.battingStats = data.battingStats;
+            }
+            if (Array.isArray(data.pitchingStats) && data.pitchingStats.length > 0) {
+              this.pitchingStats = data.pitchingStats;
+            }
+            if (Array.isArray(data.standings) && data.standings.length > 0) {
+              this.standings = data.standings;
+            }
+            if (Array.isArray(data.news) && data.news.length > 0) {
+              this.news = data.news;
+            }
+            if (Array.isArray(data.videos) && data.videos.length > 0) {
+              this.videos = data.videos;
+            }
+            if (Array.isArray(data.comments) && data.comments.length > 0) {
+              this.comments = data.comments;
+            }
+            return true;
           }
-          if (Array.isArray(data.seasons) && data.seasons.length > 0) {
-            this.seasons = data.seasons;
-          }
-          if (Array.isArray(data.teams) && data.teams.length > 0) {
-            this.teams = data.teams;
-          }
-          if (Array.isArray(data.players) && data.players.length > 0) {
-            this.players = data.players;
-          }
-          if (Array.isArray(data.games) && data.games.length > 0) {
-            this.games = data.games;
-          }
-          if (Array.isArray(data.battingStats) && data.battingStats.length > 0) {
-            this.battingStats = data.battingStats;
-          }
-          if (Array.isArray(data.pitchingStats) && data.pitchingStats.length > 0) {
-            this.pitchingStats = data.pitchingStats;
-          }
-          if (Array.isArray(data.standings) && data.standings.length > 0) {
-            this.standings = data.standings;
-          }
-          if (Array.isArray(data.news) && data.news.length > 0) {
-            this.news = data.news;
-          }
-          if (Array.isArray(data.videos) && data.videos.length > 0) {
-            this.videos = data.videos;
-          }
-          if (Array.isArray(data.comments) && data.comments.length > 0) {
-            this.comments = data.comments;
-          }
-          return;
         }
+      } catch (err) {
+        console.error(`[Database] Failed to read ${filePath}:`, err);
       }
-    } catch (err) {
-      console.error('[Database] Failed to read database.json, initializing from seed data:', err);
+      return false;
+    };
+
+    // 1. Try primary database.json
+    if (tryLoad(this.dbFilePath)) {
+      return;
+    }
+
+    // 2. Try backup database.backup.json
+    if (tryLoad(this.backupFilePath)) {
+      console.log('[Database] Restored state from backup database.backup.json');
+      this.saveToDisk();
+      return;
     }
 
     // Persist initial database on first launch
@@ -132,7 +148,7 @@ export class BaseballRepository {
   }
 
   /**
-   * Atomically save the current database state to disk
+   * Atomically save the current database state to disk (with redundant backup)
    */
   public saveToDisk(): void {
     try {
@@ -155,9 +171,19 @@ export class BaseballRepository {
         videos: this.videos,
         comments: this.comments,
       };
+      const serialized = JSON.stringify(payload, null, 2);
+
+      // Primary file write
       const tempPath = `${this.dbFilePath}.tmp`;
-      fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, serialized, 'utf-8');
       fs.renameSync(tempPath, this.dbFilePath);
+
+      // Backup copy write
+      try {
+        fs.writeFileSync(this.backupFilePath, serialized, 'utf-8');
+      } catch (backupErr) {
+        console.warn('[Database] Could not write backup database file:', backupErr);
+      }
     } catch (err) {
       console.error('[Database] Error saving database to disk:', err);
     }
@@ -1620,6 +1646,64 @@ export class BaseballRepository {
     return this.players.length < initialLen;
   }
 
+  bulkDeletePlayers(ids: string[]): { deletedCount: number; deletedIds: string[] } {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { deletedCount: 0, deletedIds: [] };
+    }
+    const idSet = new Set(ids.map((id) => String(id).trim()));
+    const initialLen = this.players.length;
+    const deletedIds: string[] = [];
+
+    this.players = this.players.filter((p) => {
+      if (idSet.has(p.id)) {
+        deletedIds.push(p.id);
+        return false;
+      }
+      return true;
+    });
+
+    const deletedCount = initialLen - this.players.length;
+    if (deletedCount > 0) {
+      this.saveToDisk();
+    }
+    return { deletedCount, deletedIds };
+  }
+
+  bulkUpdatePlayers(ids: string[], updates: Partial<Player>): { updatedCount: number; updatedPlayers: Player[] } {
+    if (!Array.isArray(ids) || ids.length === 0 || !updates) {
+      return { updatedCount: 0, updatedPlayers: [] };
+    }
+    const idSet = new Set(ids.map((id) => String(id).trim()));
+    const updatedPlayers: Player[] = [];
+
+    let targetTeam: Team | undefined;
+    if (updates.teamId) {
+      targetTeam = this.getTeamById(updates.teamId);
+    }
+
+    for (const player of this.players) {
+      if (idSet.has(player.id)) {
+        if (targetTeam) {
+          player.teamId = targetTeam.id;
+          player.teamName = targetTeam.name;
+          player.teamShort = targetTeam.shortName;
+        }
+        if (updates.position !== undefined) player.position = updates.position;
+        if (updates.status !== undefined) player.status = updates.status;
+        if ((updates as any).isStar !== undefined) (player as any).isStar = (updates as any).isStar;
+        if (updates.bats !== undefined) player.bats = updates.bats;
+        if (updates.throws !== undefined) player.throws = updates.throws;
+        if (updates.jerseyNumber !== undefined) player.jerseyNumber = updates.jerseyNumber;
+        updatedPlayers.push(player);
+      }
+    }
+
+    if (updatedPlayers.length > 0) {
+      this.saveToDisk();
+    }
+    return { updatedCount: updatedPlayers.length, updatedPlayers };
+  }
+
   createNews(data: Partial<NewsArticle>): NewsArticle {
     const title = (data.title || 'Boletin Oficial').trim();
     let baseSlug = data.slug ? generateSeoSlug(data.slug) : generateSeoSlug(title);
@@ -1714,6 +1798,64 @@ export class BaseballRepository {
     this.comments = [...INITIAL_COMMENTS];
     this.deduplicatePlayers();
     this.saveToDisk();
+  }
+
+  getFullDatabase(): any {
+    return {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      competitions: this.competitions,
+      seasons: this.seasons,
+      teams: this.teams,
+      players: this.players,
+      games: this.games,
+      battingStats: this.battingStats,
+      pitchingStats: this.pitchingStats,
+      standings: this.standings,
+      news: this.news,
+      videos: this.videos,
+      comments: this.comments,
+    };
+  }
+
+  restoreFullDatabase(payload: any): { success: boolean; message: string; counts: Record<string, number> } {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('El archivo de respaldo o payload es inválido.');
+    }
+    if (Array.isArray(payload.players) && payload.players.length > 0) {
+      this.players = payload.players;
+    }
+    if (Array.isArray(payload.teams) && payload.teams.length > 0) {
+      this.teams = payload.teams;
+    }
+    if (Array.isArray(payload.games) && payload.games.length > 0) {
+      this.games = payload.games;
+    }
+    if (Array.isArray(payload.news) && payload.news.length > 0) {
+      this.news = payload.news;
+    }
+    if (Array.isArray(payload.standings) && payload.standings.length > 0) {
+      this.standings = payload.standings;
+    }
+    if (Array.isArray(payload.battingStats) && payload.battingStats.length > 0) {
+      this.battingStats = payload.battingStats;
+    }
+    if (Array.isArray(payload.pitchingStats) && payload.pitchingStats.length > 0) {
+      this.pitchingStats = payload.pitchingStats;
+    }
+    this.deduplicatePlayers();
+    this.saveToDisk();
+
+    return {
+      success: true,
+      message: 'Base de datos restaurada correctamente desde el respaldo.',
+      counts: {
+        players: this.players.length,
+        teams: this.teams.length,
+        games: this.games.length,
+        news: this.news.length,
+      },
+    };
   }
 
   getDatabaseInfo(): { filePath: string; exists: boolean; sizeBytes: number; lastModified?: string; counts: Record<string, number> } {

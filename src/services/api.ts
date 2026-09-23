@@ -705,6 +705,30 @@ export class ApiClient {
     });
   }
 
+  static bulkDeleteAdminPlayers(ids: string[]): Promise<{
+    success: boolean;
+    deletedCount: number;
+    deletedIds: string[];
+    message: string;
+  }> {
+    return this.request('/admin/players/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+
+  static bulkUpdateAdminPlayers(ids: string[], updates: Partial<Player>): Promise<{
+    success: boolean;
+    updatedCount: number;
+    updatedPlayers: Player[];
+    message: string;
+  }> {
+    return this.request('/admin/players/bulk-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, updates }),
+    });
+  }
+
   static createAdminTeam(teamData: Partial<Team>): Promise<Team> {
     return this.request<Team>('/teams', {
       method: 'POST',
@@ -783,6 +807,32 @@ export class ApiClient {
   }> {
     return this.request('/admin/system/persist', {
       method: 'POST',
+    });
+  }
+
+  static exportDatabaseBackup(): Promise<any> {
+    return this.request('/admin/system/backup');
+  }
+
+  static restoreDatabaseBackup(backupData: any): Promise<{
+    success: boolean;
+    message: string;
+    counts: Record<string, number>;
+  }> {
+    return this.request('/admin/system/restore', {
+      method: 'POST',
+      body: JSON.stringify(backupData),
+    });
+  }
+
+  static syncClientBackup(data: { players?: Player[]; teams?: Team[] }): Promise<{
+    success: boolean;
+    message: string;
+    counts: Record<string, number>;
+  }> {
+    return this.request('/admin/system/sync-client', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 }
