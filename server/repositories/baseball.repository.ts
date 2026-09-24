@@ -13,6 +13,7 @@ import {
   VideoItem,
   TeamAggregatedStats,
   MatchupComparisonData,
+  TeamDirectComparisonData,
   ArticleComment,
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
@@ -250,6 +251,25 @@ export class BaseballRepository {
       }
     }
 
+    // 8. Apply Industriales default photo for Industriales players without custom photo
+    for (const p of this.players) {
+      const isInd =
+        p.teamId === 'ind' ||
+        p.teamShort === 'IND' ||
+        (p.teamName || '').toLowerCase().includes('industriales');
+      if (isInd) {
+        if (
+          !p.photo ||
+          p.photo.trim() === '' ||
+          p.photo === 'player industriales.png' ||
+          p.photo === '/player industriales.png' ||
+          p.photo.includes('unsplash')
+        ) {
+          p.photo = '/images/industriales-player-default.svg';
+        }
+      }
+    }
+
     this.deduplicatePlayers();
   }
 
@@ -316,6 +336,16 @@ export class BaseballRepository {
 
     // 3. ALWAYS apply user overrides on top (guarantees user uploaded logos and data are NEVER lost!)
     this.applyUserOverrides();
+
+    // Apply Industriales default photo for Industriales players without custom personalized photo
+    for (const p of this.players) {
+      const isInd = p.teamId === 'ind' || p.teamShort === 'IND' || (p.teamName || '').toLowerCase().includes('industriales');
+      if (isInd) {
+        if (!p.photo || p.photo.trim() === '' || p.photo === 'player industriales.png' || p.photo === '/player industriales.png' || p.photo.includes('unsplash')) {
+          p.photo = '/images/industriales-player-default.svg';
+        }
+      }
+    }
 
     // Persist finalized database
     this.saveToDisk();
@@ -1548,6 +1578,153 @@ export class BaseballRepository {
     };
   }
 
+  // Direct Team-to-Team Head-to-Head Comparison
+  compareTeams(teamAId: string, teamBId: string): TeamDirectComparisonData | null {
+    const teamA = this.getTeamById(teamAId);
+    const teamB = this.getTeamById(teamBId);
+    if (!teamA || !teamB) return null;
+
+    const standingA = this.standings.find((s) => s.teamId === teamA.id || s.teamShort === teamA.shortName);
+    const standingB = this.standings.find((s) => s.teamId === teamB.id || s.teamShort === teamB.shortName);
+
+    const statsA = this.getTeamAggregatedStats(teamA.id);
+    const statsB = this.getTeamAggregatedStats(teamB.id);
+
+    const headToHeadGames = this.games.filter(
+      (g) =>
+        (g.homeTeam.id === teamA.id && g.awayTeam.id === teamB.id) ||
+        (g.homeTeam.id === teamB.id && g.awayTeam.id === teamA.id)
+    );
+
+    let teamAWins = 0;
+    let teamBWins = 0;
+    let teamARuns = 0;
+    let teamBRuns = 0;
+
+    for (const g of headToHeadGames) {
+      if (g.status === 'FINAL') {
+        const isAHome = g.homeTeam.id === teamA.id;
+        const aScore = isAHome ? g.homeScore : g.awayScore;
+        const bScore = isAHome ? g.awayScore : g.homeScore;
+        teamARuns += aScore;
+        teamBRuns += bScore;
+        if (aScore > bScore) teamAWins++;
+        else if (bScore > aScore) teamBWins++;
+      }
+    }
+
+    const battersA = this.battingStats.filter((b) => b.teamId === teamA.id || b.teamShort === teamA.shortName);
+    const battersB = this.battingStats.filter((b) => b.teamId === teamB.id || b.teamShort === teamB.shortName);
+    const pitchersA = this.pitchingStats.filter((p) => p.teamId === teamA.id || p.teamShort === teamA.shortName);
+    const pitchersB = this.pitchingStats.filter((p) => p.teamId === teamB.id || p.teamShort === teamB.shortName);
+
+    const bestBatterA = [...battersA].sort((a, b) => (b.avg || 0) - (a.avg || 0))[0];
+    const bestBatterB = [...battersB].sort((a, b) => (b.avg || 0) - (a.avg || 0))[0];
+    const bestPitcherA = [...pitchersA].sort((a, b) => (a.era || 99) - (b.era || 99))[0];
+    const bestPitcherB = [...pitchersB].sort((a, b) => (a.era || 99) - (b.era || 99))[0];
+
+    const topBatterA = bestBatterA
+      ? {
+          player:
+            this.getPlayerById(bestBatterA.playerId) ||
+            ({
+              id: bestBatterA.playerId,
+              fullName: bestBatterA.playerName,
+              firstName: bestBatterA.playerName.split(' ')[0],
+              lastName: bestBatterA.playerName.split(' ').slice(1).join(' '),
+              position: bestBatterA.position,
+              teamId: teamA.id,
+              teamName: teamA.name,
+              teamShort: teamA.shortName,
+              jerseyNumber: 10,
+              photo: '',
+            } as Player),
+          stats: bestBatterA,
+        }
+      : undefined;
+
+    const topBatterB = bestBatterB
+      ? {
+          player:
+            this.getPlayerById(bestBatterB.playerId) ||
+            ({
+              id: bestBatterB.playerId,
+              fullName: bestBatterB.playerName,
+              firstName: bestBatterB.playerName.split(' ')[0],
+              lastName: bestBatterB.playerName.split(' ').slice(1).join(' '),
+              position: bestBatterB.position,
+              teamId: teamB.id,
+              teamName: teamB.name,
+              teamShort: teamB.shortName,
+              jerseyNumber: 10,
+              photo: '',
+            } as Player),
+          stats: bestBatterB,
+        }
+      : undefined;
+
+    const topPitcherA = bestPitcherA
+      ? {
+          player:
+            this.getPlayerById(bestPitcherA.playerId) ||
+            ({
+              id: bestPitcherA.playerId,
+              fullName: bestPitcherA.playerName,
+              firstName: bestPitcherA.playerName.split(' ')[0],
+              lastName: bestPitcherA.playerName.split(' ').slice(1).join(' '),
+              position: bestPitcherA.position as any,
+              teamId: teamA.id,
+              teamName: teamA.name,
+              teamShort: teamA.shortName,
+              jerseyNumber: 20,
+              photo: '',
+            } as Player),
+          stats: bestPitcherA,
+        }
+      : undefined;
+
+    const topPitcherB = bestPitcherB
+      ? {
+          player:
+            this.getPlayerById(bestPitcherB.playerId) ||
+            ({
+              id: bestPitcherB.playerId,
+              fullName: bestPitcherB.playerName,
+              firstName: bestPitcherB.playerName.split(' ')[0],
+              lastName: bestPitcherB.playerName.split(' ').slice(1).join(' '),
+              position: bestPitcherB.position as any,
+              teamId: teamB.id,
+              teamName: teamB.name,
+              teamShort: teamB.shortName,
+              jerseyNumber: 20,
+              photo: '',
+            } as Player),
+          stats: bestPitcherB,
+        }
+      : undefined;
+
+    return {
+      teamA,
+      teamB,
+      standingA,
+      standingB,
+      statsA,
+      statsB,
+      headToHeadGames,
+      headToHeadSummary: {
+        totalGames: headToHeadGames.length,
+        teamAWins,
+        teamBWins,
+        teamARuns,
+        teamBRuns,
+      },
+      topBatterA,
+      topBatterB,
+      topPitcherA,
+      topPitcherB,
+    };
+  }
+
   // Administrative Mutations
   createGame(data: any): Game {
     const awayTeam = this.getTeamById(data.awayTeamId || (data.awayTeam && data.awayTeam.id) || '') || this.teams[0];
@@ -1663,7 +1840,11 @@ export class BaseballRepository {
       weight: data.weight || '88 kg',
       bats: data.bats || 'R',
       throws: data.throws || 'R',
-      photo: data.photo || 'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=150&auto=format&fit=crop&q=80',
+      photo:
+        data.photo ||
+        (team.id === 'ind' || team.shortName === 'IND' || (team.name || '').toLowerCase().includes('industriales')
+          ? '/images/industriales-player-default.svg'
+          : 'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=150&auto=format&fit=crop&q=80'),
       bio: data.bio || 'Jugador profesional de la Serie Nacional.',
       status: data.status || 'active',
     };

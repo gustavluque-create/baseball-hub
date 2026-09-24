@@ -17,9 +17,15 @@ import {
 import { Player } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { useApp } from '../../context/AppContext.tsx';
+import { resolvePlayerPhoto, INDUSTRIALES_DEFAULT_PHOTO } from '../../utils/playerPhoto.ts';
 
 // Curated authentic athletic baseball headshot presets for 1-click fallback
 export const BASEBALL_PHOTO_PRESETS = [
+  {
+    id: 'ind-default',
+    label: 'Industriales Oficial (Predeterminado)',
+    url: INDUSTRIALES_DEFAULT_PHOTO,
+  },
   {
     id: 'p1',
     label: 'Bateador Derecho',
@@ -78,7 +84,7 @@ export const PlayerImageEditorModal: React.FC<PlayerImageEditorModalProps> = ({
   onSavePhoto,
 }) => {
   const { triggerDataRefresh } = useApp();
-  const currentInitial = initialImageUrl || player?.photo || BASEBALL_PHOTO_PRESETS[0].url;
+  const currentInitial = initialImageUrl || resolvePlayerPhoto(player);
 
   const [imageUrl, setImageUrl] = useState<string>(currentInitial);
   const [inputUrl, setInputUrl] = useState<string>('');
@@ -97,7 +103,7 @@ export const PlayerImageEditorModal: React.FC<PlayerImageEditorModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      const src = initialImageUrl || player?.photo || BASEBALL_PHOTO_PRESETS[0].url;
+      const src = initialImageUrl || resolvePlayerPhoto(player);
       setImageUrl(src);
       setScale(1);
       setOffsetX(0);

@@ -7,6 +7,7 @@ import { TeamProfileSkeleton } from './LoadingSkeleton.tsx';
 import { TeamLogo } from './TeamLogo.tsx';
 import { TeamLogoEditorModal } from './admin/TeamLogoEditorModal.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 
 interface TeamProfileModalProps {
   teamId: string | null;
@@ -251,10 +252,11 @@ export const TeamProfileModal: React.FC<TeamProfileModalProps> = ({ teamId, onCl
                               className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all group"
                             >
                               <img
-                                src={p.photo}
+                                src={resolvePlayerPhoto(p)}
                                 alt={p.fullName}
                                 className="w-10 h-10 rounded-full object-cover border border-slate-700 shrink-0"
                                 referrerPolicy="no-referrer"
+                                onError={(e) => handlePlayerImgError(e, p)}
                               />
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold text-slate-200 group-hover:text-emerald-400 truncate transition-colors">

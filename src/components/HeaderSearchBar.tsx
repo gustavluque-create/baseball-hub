@@ -15,6 +15,7 @@ import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { Team, Player, NewsArticle } from '../types/index.ts';
 import { TeamLogo } from './TeamLogo.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 
 type SearchCategory = 'all' | 'teams' | 'players' | 'articles';
 
@@ -522,13 +523,11 @@ export const HeaderSearchBar: React.FC<{ className?: string }> = ({ className = 
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <img
-                            src={player.photo}
+                            src={resolvePlayerPhoto(player)}
                             alt={player.fullName}
                             className="w-8 h-8 rounded-full object-cover border border-slate-700 bg-slate-800 shrink-0"
                             referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
+                            onError={(e) => handlePlayerImgError(e, player)}
                           />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">

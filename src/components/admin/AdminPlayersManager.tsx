@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../../utils/playerPhoto.ts';
 import { playerCreateSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { PlayerImageEditorModal, BASEBALL_PHOTO_PRESETS } from './PlayerImageEditorModal.tsx';
 import { AdminPlayerImportModal } from './AdminPlayerImportModal.tsx';
@@ -1196,13 +1197,11 @@ export const AdminPlayersManager: React.FC = () => {
                           title="Haz clic para subir o editar la foto"
                         >
                           <img
-                            src={player.photo}
+                            src={resolvePlayerPhoto(player)}
                             alt={player.fullName}
                             className="w-full h-full object-cover group-hover/photo:scale-110 transition-transform"
                             referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
+                            onError={(e) => handlePlayerImgError(e, player)}
                           />
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/photo:opacity-100 flex items-center justify-center text-white transition-opacity">
                             <Camera className="w-3.5 h-3.5 text-emerald-300" />

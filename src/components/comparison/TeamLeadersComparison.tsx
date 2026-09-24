@@ -1,6 +1,7 @@
 import React from 'react';
 import { Award, Zap, ChevronRight, User } from 'lucide-react';
 import { Team, Player, BattingStats, PitchingStats } from '../../types/index.ts';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../../utils/playerPhoto.ts';
 
 export interface TeamLeadersComparisonProps {
   awayTeam: Team;
@@ -47,16 +48,13 @@ export const TeamLeadersComparison: React.FC<TeamLeadersComparisonProps> = ({
                   className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-slate-300 border border-slate-700 overflow-hidden shrink-0"
                   style={{ backgroundColor: `${awayColor}20` }}
                 >
-                  {awayTopBatter.player.photo ? (
-                    <img
-                      src={awayTopBatter.player.photo}
-                      alt={awayTopBatter.player.fullName}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User className="w-5 h-5 text-slate-400" />
-                  )}
+                  <img
+                    src={resolvePlayerPhoto(awayTopBatter.player)}
+                    alt={awayTopBatter.player.fullName}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handlePlayerImgError(e, awayTopBatter.player)}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -98,16 +96,13 @@ export const TeamLeadersComparison: React.FC<TeamLeadersComparisonProps> = ({
                   className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-slate-300 border border-slate-700 overflow-hidden shrink-0"
                   style={{ backgroundColor: `${homeColor}20` }}
                 >
-                  {homeTopBatter.player.photo ? (
-                    <img
-                      src={homeTopBatter.player.photo}
-                      alt={homeTopBatter.player.fullName}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User className="w-5 h-5 text-slate-400" />
-                  )}
+                  <img
+                    src={resolvePlayerPhoto(homeTopBatter.player)}
+                    alt={homeTopBatter.player.fullName}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handlePlayerImgError(e, homeTopBatter.player)}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -161,16 +156,13 @@ export const TeamLeadersComparison: React.FC<TeamLeadersComparisonProps> = ({
                   className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-slate-300 border border-slate-700 overflow-hidden shrink-0"
                   style={{ backgroundColor: `${awayColor}20` }}
                 >
-                  {awayTopPitcher.player.photo ? (
-                    <img
-                      src={awayTopPitcher.player.photo}
-                      alt={awayTopPitcher.player.fullName}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User className="w-5 h-5 text-slate-400" />
-                  )}
+                  <img
+                    src={resolvePlayerPhoto(awayTopPitcher.player)}
+                    alt={awayTopPitcher.player.fullName}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handlePlayerImgError(e, awayTopPitcher.player)}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -212,16 +204,13 @@ export const TeamLeadersComparison: React.FC<TeamLeadersComparisonProps> = ({
                   className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-slate-300 border border-slate-700 overflow-hidden shrink-0"
                   style={{ backgroundColor: `${homeColor}20` }}
                 >
-                  {homeTopPitcher.player.photo ? (
-                    <img
-                      src={homeTopPitcher.player.photo}
-                      alt={homeTopPitcher.player.fullName}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User className="w-5 h-5 text-slate-400" />
-                  )}
+                  <img
+                    src={resolvePlayerPhoto(homeTopPitcher.player)}
+                    alt={homeTopPitcher.player.fullName}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handlePlayerImgError(e, homeTopPitcher.player)}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">

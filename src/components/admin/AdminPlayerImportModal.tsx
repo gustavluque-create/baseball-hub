@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { resolvePlayerPhoto, handlePlayerImgError, INDUSTRIALES_DEFAULT_PHOTO } from '../../utils/playerPhoto.ts';
 
 const SAMPLE_CSV_PLAYERS = `Nombre,Equipo,Numero,Posicion,Batea,Lanza,FotoURL,Edad,Bio
 Yurisbel Gracial,MTZ,47,3B,R,R,https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=256,36,Tercera base estelar con experiencia internacional
@@ -105,7 +106,9 @@ export const AdminPlayerImportModal: React.FC<AdminPlayerImportModalProps> = ({
           rowObj.foto ||
           rowObj.photo ||
           rowObj.imageUrl ||
-          'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=256&auto=format&fit=crop&q=80',
+          (String(rowObj.Equipo || rowObj.equipo || rowObj.team || rowObj.teamId || '').toUpperCase().includes('IND')
+            ? INDUSTRIALES_DEFAULT_PHOTO
+            : 'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=256&auto=format&fit=crop&q=80'),
         age: Number(rowObj.Edad || rowObj.edad || rowObj.age || 26),
         bio: rowObj.Bio || rowObj.bio || rowObj.biografia || 'Jugador profesional de la Serie Nacional.',
       };
@@ -142,7 +145,9 @@ export const AdminPlayerImportModal: React.FC<AdminPlayerImportModalProps> = ({
         item.imageUrl ||
         item.Foto ||
         item.foto ||
-        'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=256&auto=format&fit=crop&q=80',
+        (String(item.team || item.teamId || item.teamShort || item.Equipo || item.equipo || '').toUpperCase().includes('IND')
+          ? INDUSTRIALES_DEFAULT_PHOTO
+          : 'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=256&auto=format&fit=crop&q=80'),
       age: Number(item.age || item.Edad || item.edad || 26),
       bio: item.bio || item.Bio || item.biografia || 'Jugador importado.',
     }));
@@ -472,13 +477,11 @@ export const AdminPlayerImportModal: React.FC<AdminPlayerImportModalProps> = ({
                         <td className="py-2 px-3">
                           <div className="w-8 h-8 rounded-full overflow-hidden border border-emerald-500/40 bg-slate-800">
                             <img
-                              src={p.photo}
+                              src={resolvePlayerPhoto({ photo: p.photo, teamId: p.matchedTeam || p.team })}
                               alt={p.fullName}
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
+                              onError={(e) => handlePlayerImgError(e, { photo: p.photo, teamId: p.matchedTeam || p.team })}
                             />
                           </div>
                         </td>

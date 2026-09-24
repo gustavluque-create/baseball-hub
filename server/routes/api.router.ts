@@ -475,6 +475,23 @@ apiRouter.get('/teams', (req: Request, res: Response) => {
   res.json(teams);
 });
 
+// Compare two teams side-by-side
+apiRouter.get('/teams/compare', (req: Request, res: Response) => {
+  const teamAId = (req.query.teamA || req.query.teamAId || req.query.idA) as string;
+  const teamBId = (req.query.teamB || req.query.teamBId || req.query.idB) as string;
+
+  if (!teamAId || !teamBId) {
+    return res.status(400).json({ error: 'Se requieren dos identificadores de equipos (teamA y teamB).' });
+  }
+
+  const comparison = baseballRepo.compareTeams(teamAId, teamBId);
+  if (!comparison) {
+    return res.status(404).json({ error: 'Uno o ambos equipos no fueron encontrados para la comparativa.' });
+  }
+
+  res.json(comparison);
+});
+
 apiRouter.get('/teams/:id', (req: Request, res: Response) => {
   const team = baseballRepo.getTeamById(req.params.id);
   if (!team) {

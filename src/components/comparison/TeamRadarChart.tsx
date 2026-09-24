@@ -12,24 +12,34 @@ import {
 import { Team, TeamAggregatedStats, Standing } from '../../types/index.ts';
 
 export interface TeamRadarChartProps {
-  awayTeam: Team;
-  homeTeam: Team;
-  awayStats: TeamAggregatedStats;
-  homeStats: TeamAggregatedStats;
+  awayTeam?: Team;
+  homeTeam?: Team;
+  teamA?: Team;
+  teamB?: Team;
+  awayStats?: TeamAggregatedStats;
+  homeStats?: TeamAggregatedStats;
+  statsA?: TeamAggregatedStats;
+  statsB?: TeamAggregatedStats;
   awayStanding?: Standing;
   homeStanding?: Standing;
+  standingA?: Standing;
+  standingB?: Standing;
 }
 
-export const TeamRadarChart: React.FC<TeamRadarChartProps> = ({
-  awayTeam,
-  homeTeam,
-  awayStats,
-  homeStats,
-  awayStanding,
-  homeStanding,
-}) => {
-  const awayColor = awayTeam.colors?.primary || awayTeam.primaryColor || '#3b82f6';
-  const homeColor = homeTeam.colors?.primary || homeTeam.primaryColor || '#10b981';
+export const TeamRadarChart: React.FC<TeamRadarChartProps> = (props) => {
+  const team1 = props.teamA || props.awayTeam;
+  const team2 = props.teamB || props.homeTeam;
+  const stats1 = props.statsA || props.awayStats;
+  const stats2 = props.statsB || props.homeStats;
+  const stand1 = props.standingA || props.awayStanding;
+  const stand2 = props.standingB || props.homeStanding;
+
+  if (!team1 || !team2 || !stats1 || !stats2) {
+    return null;
+  }
+
+  const team1Color = team1.colors?.primary || team1.primaryColor || '#3b82f6';
+  const team2Color = team2.colors?.primary || team2.primaryColor || '#10b981';
 
   // Normalize stats to 0-100 scale for intuitive radar comparison
   // 1. Bateo (.AVG): league range ~ .220 to .340
@@ -53,45 +63,45 @@ export const TeamRadarChart: React.FC<TeamRadarChartProps> = ({
   const radarData = [
     {
       subject: 'Contacto (.AVG)',
-      awayValue: Math.round(normAVG(awayStats.batting.avg)),
-      homeValue: Math.round(normAVG(homeStats.batting.avg)),
-      awayRaw: awayStats.batting.avg.toFixed(3).replace(/^0/, ''),
-      homeRaw: homeStats.batting.avg.toFixed(3).replace(/^0/, ''),
+      team1Value: Math.round(normAVG(stats1.batting.avg)),
+      team2Value: Math.round(normAVG(stats2.batting.avg)),
+      team1Raw: stats1.batting.avg.toFixed(3).replace(/^0/, ''),
+      team2Raw: stats2.batting.avg.toFixed(3).replace(/^0/, ''),
     },
     {
       subject: 'Poder (.SLG)',
-      awayValue: Math.round(normPower(awayStats.batting.slg)),
-      homeValue: Math.round(normPower(homeStats.batting.slg)),
-      awayRaw: awayStats.batting.slg.toFixed(3).replace(/^0/, ''),
-      homeRaw: homeStats.batting.slg.toFixed(3).replace(/^0/, ''),
+      team1Value: Math.round(normPower(stats1.batting.slg)),
+      team2Value: Math.round(normPower(stats2.batting.slg)),
+      team1Raw: stats1.batting.slg.toFixed(3).replace(/^0/, ''),
+      team2Raw: stats2.batting.slg.toFixed(3).replace(/^0/, ''),
     },
     {
       subject: 'Pitcheo (PCL)',
-      awayValue: Math.round(normERA(awayStats.pitching.era)),
-      homeValue: Math.round(normERA(homeStats.pitching.era)),
-      awayRaw: awayStats.pitching.era.toFixed(2),
-      homeRaw: homeStats.pitching.era.toFixed(2),
+      team1Value: Math.round(normERA(stats1.pitching.era)),
+      team2Value: Math.round(normERA(stats2.pitching.era)),
+      team1Raw: stats1.pitching.era.toFixed(2),
+      team2Raw: stats2.pitching.era.toFixed(2),
     },
     {
       subject: 'Control (WHIP)',
-      awayValue: Math.round(normWHIP(awayStats.pitching.whip)),
-      homeValue: Math.round(normWHIP(homeStats.pitching.whip)),
-      awayRaw: awayStats.pitching.whip.toFixed(2),
-      homeRaw: homeStats.pitching.whip.toFixed(2),
+      team1Value: Math.round(normWHIP(stats1.pitching.whip)),
+      team2Value: Math.round(normWHIP(stats2.pitching.whip)),
+      team1Raw: stats1.pitching.whip.toFixed(2),
+      team2Raw: stats2.pitching.whip.toFixed(2),
     },
     {
       subject: 'Ponches (K/9)',
-      awayValue: Math.round(normK(awayStats.pitching.k9)),
-      homeValue: Math.round(normK(homeStats.pitching.k9)),
-      awayRaw: awayStats.pitching.k9.toFixed(1),
-      homeRaw: homeStats.pitching.k9.toFixed(1),
+      team1Value: Math.round(normK(stats1.pitching.k9)),
+      team2Value: Math.round(normK(stats2.pitching.k9)),
+      team1Raw: stats1.pitching.k9.toFixed(1),
+      team2Raw: stats2.pitching.k9.toFixed(1),
     },
     {
       subject: 'Victoria (PCT)',
-      awayValue: Math.round(normPCT(awayStanding?.pct || awayTeam.record?.pct || 0.5)),
-      homeValue: Math.round(normPCT(homeStanding?.pct || homeTeam.record?.pct || 0.5)),
-      awayRaw: `${((awayStanding?.pct || awayTeam.record?.pct || 0.5) * 100).toFixed(1)}%`,
-      homeRaw: `${((homeStanding?.pct || homeTeam.record?.pct || 0.5) * 100).toFixed(1)}%`,
+      team1Value: Math.round(normPCT(stand1?.pct || team1.record?.pct || 0.5)),
+      team2Value: Math.round(normPCT(stand2?.pct || team2.record?.pct || 0.5)),
+      team1Raw: `${((stand1?.pct || team1.record?.pct || 0.5) * 100).toFixed(1)}%`,
+      team2Raw: `${((stand2?.pct || team2.record?.pct || 0.5) * 100).toFixed(1)}%`,
     },
   ];
 
@@ -102,18 +112,18 @@ export const TeamRadarChart: React.FC<TeamRadarChartProps> = ({
         <div className="bg-slate-950 border border-slate-700/90 p-3 rounded-xl shadow-2xl text-xs space-y-1.5 z-50">
           <p className="font-bold text-white border-b border-slate-800 pb-1">{data.subject}</p>
           <div className="flex items-center justify-between gap-4">
-            <span className="flex items-center gap-1.5" style={{ color: awayColor }}>
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: awayColor }} />
-              {awayTeam.shortName}:
+            <span className="flex items-center gap-1.5" style={{ color: team1Color }}>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: team1Color }} />
+              {team1.shortName}:
             </span>
-            <span className="font-mono font-bold text-white">{data.awayRaw}</span>
+            <span className="font-mono font-bold text-white">{data.team1Raw}</span>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <span className="flex items-center gap-1.5" style={{ color: homeColor }}>
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: homeColor }} />
-              {homeTeam.shortName}:
+            <span className="flex items-center gap-1.5" style={{ color: team2Color }}>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: team2Color }} />
+              {team2.shortName}:
             </span>
-            <span className="font-mono font-bold text-white">{data.homeRaw}</span>
+            <span className="font-mono font-bold text-white">{data.team2Raw}</span>
           </div>
         </div>
       );
@@ -132,18 +142,18 @@ export const TeamRadarChart: React.FC<TeamRadarChartProps> = ({
           />
           <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#475569" tick={false} />
           <Radar
-            name={awayTeam.name}
-            dataKey="awayValue"
-            stroke={awayColor}
-            fill={awayColor}
+            name={team1.name}
+            dataKey="team1Value"
+            stroke={team1Color}
+            fill={team1Color}
             fillOpacity={0.35}
             strokeWidth={2}
           />
           <Radar
-            name={homeTeam.name}
-            dataKey="homeValue"
-            stroke={homeColor}
-            fill={homeColor}
+            name={team2.name}
+            dataKey="team2Value"
+            stroke={team2Color}
+            fill={team2Color}
             fillOpacity={0.35}
             strokeWidth={2}
           />

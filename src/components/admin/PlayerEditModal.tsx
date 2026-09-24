@@ -12,6 +12,7 @@ import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { playerEditSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { PlayerImageEditorModal } from './PlayerImageEditorModal.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError, INDUSTRIALES_DEFAULT_PHOTO } from '../../utils/playerPhoto.ts';
 
 interface PlayerEditModalProps {
   player: Player | null;
@@ -81,7 +82,10 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
       position,
       bats,
       throws,
-      photo: photo || player.photo || 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=256',
+      photo:
+        photo ||
+        player.photo ||
+        resolvePlayerPhoto({ photo, teamId }),
       bio: bio.trim(),
       age: Number(age),
       height: height.trim(),
@@ -163,13 +167,11 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
               <div className="relative group">
                 <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-emerald-500/40 bg-slate-900 shadow-md">
                   <img
-                    src={photo}
+                    src={resolvePlayerPhoto({ photo, teamId })}
                     alt={fullName}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
+                    onError={(e) => handlePlayerImgError(e, { photo, teamId })}
                   />
                 </div>
                 <button

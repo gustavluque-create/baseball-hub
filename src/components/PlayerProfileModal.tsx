@@ -6,6 +6,7 @@ import { useApp } from '../context/AppContext.tsx';
 import { PlayerProfileSkeleton } from './LoadingSkeleton.tsx';
 import { PlayerImageEditorModal } from './admin/PlayerImageEditorModal.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 import {
   LineChart,
   Line,
@@ -92,10 +93,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-5 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-slate-800">
                 <div className="relative group shrink-0">
                   <img
-                    src={data.player.photo}
+                    src={resolvePlayerPhoto(data.player)}
                     alt={data.player.fullName}
                     className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-xl"
                     referrerPolicy="no-referrer"
+                    onError={(e) => handlePlayerImgError(e, data.player)}
                   />
                   {isAdminAuthenticated && (
                     <>

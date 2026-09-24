@@ -28,6 +28,7 @@ import {
 import { Player, BattingStats, PitchingStats } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 
 interface PlayerComparisonViewProps {
   allPlayers: Player[];
@@ -411,10 +412,11 @@ export const PlayerComparisonView: React.FC<PlayerComparisonViewProps> = ({
                 {dataA?.player ? (
                   <>
                     <img
-                      src={dataA.player.photo}
+                      src={resolvePlayerPhoto(dataA.player)}
                       alt={dataA.player.fullName}
                       className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shrink-0"
                       referrerPolicy="no-referrer"
+                      onError={(e) => handlePlayerImgError(e, dataA.player)}
                     />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-white truncate">
@@ -458,10 +460,11 @@ export const PlayerComparisonView: React.FC<PlayerComparisonViewProps> = ({
                     }`}
                   >
                     <img
-                      src={p.photo}
+                      src={resolvePlayerPhoto(p)}
                       alt={p.fullName}
                       className="w-6 h-6 rounded-full object-cover shrink-0"
                       referrerPolicy="no-referrer"
+                      onError={(e) => handlePlayerImgError(e, p)}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold">{p.fullName}</p>
@@ -514,10 +517,11 @@ export const PlayerComparisonView: React.FC<PlayerComparisonViewProps> = ({
                 {dataB?.player ? (
                   <>
                     <img
-                      src={dataB.player.photo}
+                      src={resolvePlayerPhoto(dataB.player)}
                       alt={dataB.player.fullName}
                       className="w-8 h-8 rounded-full object-cover border border-amber-500/50 shrink-0"
                       referrerPolicy="no-referrer"
+                      onError={(e) => handlePlayerImgError(e, dataB.player)}
                     />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-white truncate">
@@ -561,10 +565,11 @@ export const PlayerComparisonView: React.FC<PlayerComparisonViewProps> = ({
                     }`}
                   >
                     <img
-                      src={p.photo}
+                      src={resolvePlayerPhoto(p)}
                       alt={p.fullName}
                       className="w-6 h-6 rounded-full object-cover shrink-0"
                       referrerPolicy="no-referrer"
+                      onError={(e) => handlePlayerImgError(e, p)}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold">{p.fullName}</p>
@@ -587,11 +592,12 @@ export const PlayerComparisonView: React.FC<PlayerComparisonViewProps> = ({
             {/* Player A Mini Card */}
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <img
-                src={dataA.player.photo}
+                src={resolvePlayerPhoto(dataA.player)}
                 alt={dataA.player.fullName}
                 className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500 shadow-md shrink-0 cursor-pointer"
                 onClick={() => navigateToPlayer(dataA.player.id)}
                 referrerPolicy="no-referrer"
+                onError={(e) => handlePlayerImgError(e, dataA.player)}
               />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -675,11 +681,12 @@ export const PlayerComparisonView: React.FC<PlayerComparisonViewProps> = ({
                 </p>
               </div>
               <img
-                src={dataB.player.photo}
+                src={resolvePlayerPhoto(dataB.player)}
                 alt={dataB.player.fullName}
                 className="w-14 h-14 rounded-2xl object-cover border-2 border-amber-500 shadow-md shrink-0 cursor-pointer"
                 onClick={() => navigateToPlayer(dataB.player.id)}
                 referrerPolicy="no-referrer"
+                onError={(e) => handlePlayerImgError(e, dataB.player)}
               />
             </div>
           </div>

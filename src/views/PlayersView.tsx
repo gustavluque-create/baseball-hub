@@ -7,6 +7,7 @@ import { Player, Team } from '../types/index.ts';
 import { PlayerComparisonView } from '../components/PlayerComparisonView.tsx';
 import { PlayerImageEditorModal } from '../components/admin/PlayerImageEditorModal.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 
 export const PlayersView: React.FC = () => {
   const { navigateToPlayer, activeCompetitionId, dataVersion, triggerDataRefresh } = useApp();
@@ -237,7 +238,7 @@ export const PlayersView: React.FC = () => {
               >
                 <div className="relative group/avatar shrink-0">
                   <img
-                    src={player.photo}
+                    src={resolvePlayerPhoto(player)}
                     alt={player.fullName}
                     className={`w-14 h-14 rounded-full object-cover border shrink-0 group-hover:scale-105 transition-transform ${
                       isPlayerA
@@ -247,6 +248,7 @@ export const PlayersView: React.FC = () => {
                         : 'border-slate-700'
                     }`}
                     referrerPolicy="no-referrer"
+                    onError={(e) => handlePlayerImgError(e, player)}
                   />
                   {isAdminAuthenticated && (
                     <button
@@ -321,10 +323,11 @@ export const PlayersView: React.FC = () => {
             {playerA ? (
               <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-emerald-500/50">
                 <img
-                  src={playerA.photo}
+                  src={resolvePlayerPhoto(playerA)}
                   alt={playerA.fullName}
                   className="w-6 h-6 rounded-full object-cover border border-emerald-400"
                   referrerPolicy="no-referrer"
+                  onError={(e) => handlePlayerImgError(e, playerA)}
                 />
                 <span className="text-xs font-bold text-white truncate max-w-[100px]">
                   {playerA.fullName.split(' ')[0]}
@@ -346,10 +349,11 @@ export const PlayersView: React.FC = () => {
             {playerB ? (
               <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-amber-500/50">
                 <img
-                  src={playerB.photo}
+                  src={resolvePlayerPhoto(playerB)}
                   alt={playerB.fullName}
                   className="w-6 h-6 rounded-full object-cover border border-amber-400"
                   referrerPolicy="no-referrer"
+                  onError={(e) => handlePlayerImgError(e, playerB)}
                 />
                 <span className="text-xs font-bold text-white truncate max-w-[100px]">
                   {playerB.fullName.split(' ')[0]}

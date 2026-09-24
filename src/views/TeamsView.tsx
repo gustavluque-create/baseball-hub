@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, MapPin, Users, Trophy, Star, Camera } from 'lucide-react';
+import { Shield, MapPin, Users, Trophy, Star, Camera, Swords, ArrowLeftRight, LayoutGrid } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { TeamsGridSkeleton } from '../components/LoadingSkeleton.tsx';
 import { Team } from '../types/index.ts';
 import { TeamLogo } from '../components/TeamLogo.tsx';
 import { TeamLogoEditorModal } from '../components/admin/TeamLogoEditorModal.tsx';
+import { TeamComparisonSection } from '../components/comparison/TeamComparisonSection.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 
 export const TeamsView: React.FC = () => {
-  const { activeCompetitionId, navigateToTeam, favoriteTeamIds, toggleFavoriteTeam, dataVersion, triggerDataRefresh } = useApp();
+  const {
+    activeCompetitionId,
+    navigateToTeam,
+    navigateToPlayer,
+    favoriteTeamIds,
+    toggleFavoriteTeam,
+    dataVersion,
+    triggerDataRefresh,
+  } = useApp();
   const { isAdminAuthenticated } = useAdminAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'list' | 'compare'>('list');
+  const [comparisonTeamA, setComparisonTeamA] = useState<string>('ind');
+  const [comparisonTeamB, setComparisonTeamB] = useState<string>('mtz');
   const [filterFavoritesOnly, setFilterFavoritesOnly] = useState(false);
   const [selectedLogoTeam, setSelectedLogoTeam] = useState<Team | null>(null);
 
@@ -21,6 +33,21 @@ export const TeamsView: React.FC = () => {
     ApiClient.getTeams(activeCompetitionId)
       .then((res) => {
         setTeams(res);
+        if (res.length >= 2) {
+          // If favorite teams exist, default comparison to them
+          const favs = res.filter((t) => favoriteTeamIds.includes(t.id));
+          if (favs.length >= 2) {
+            setComparisonTeamA(favs[0].id);
+            setComparisonTeamB(favs[1].id);
+          } else if (favs.length === 1) {
+            setComparisonTeamA(favs[0].id);
+            const other = res.find((t) => t.id !== favs[0].id);
+            if (other) setComparisonTeamB(other.id);
+          } else {
+            setComparisonTeamA(res[0].id);
+            setComparisonTeamB(res[1].id);
+          }
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -35,6 +62,17 @@ export const TeamsView: React.FC = () => {
 
   const favoriteCount = teams.filter((t) => favoriteTeamIds.includes(t.id)).length;
 
+  const handleStartCompare = (teamId: string) => {
+    setComparisonTeamA(teamId);
+    // Select a good rival for Team B
+    const alternate = teams.find((t) => t.id !== teamId);
+    if (alternate && comparisonTeamB === teamId) {
+      setComparisonTeamB(alternate.id);
+    }
+    setActiveTab('compare');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
@@ -45,37 +83,83 @@ export const TeamsView: React.FC = () => {
             Equipos y Franquicias Participantes
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Explora los equipos de la competición, guárdalos en tus favoritos y consulta sus rosters y palmarés.
+            Explora las franquicias de la Serie Nacional, analiza duelos cara a cara con gráficos interactivos y gestiona tus favoritos.
           </p>
         </div>
 
-        {/* Filter Toggle */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 self-start sm:self-auto">
-          <button
-            onClick={() => setFilterFavoritesOnly(false)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-              !filterFavoritesOnly
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Todos ({teams.length})
-          </button>
-          <button
-            onClick={() => setFilterFavoritesOnly(true)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-              filterFavoritesOnly
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Star className={`w-3.5 h-3.5 ${filterFavoritesOnly ? 'fill-slate-950' : 'text-amber-400'}`} />
-            <span>Favoritos ({favoriteCount})</span>
-          </button>
+        {/* View Mode & Filter Controls */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {/* Main View Mode Switcher */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTab('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'list'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Lista de Equipos</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('compare')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'compare'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Swords className="w-3.5 h-3.5 text-amber-400" />
+              <span>Comparador H2H</span>
+            </button>
+          </div>
+
+          {/* Favorites Filter (only in list mode) */}
+          {activeTab === 'list' && (
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setFilterFavoritesOnly(false)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  !filterFavoritesOnly
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Todos ({teams.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterFavoritesOnly(true)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  filterFavoritesOnly
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Star className={`w-3.5 h-3.5 ${filterFavoritesOnly ? 'fill-slate-950' : 'text-amber-400'}`} />
+                <span>Favoritos ({favoriteCount})</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {loading ? (
+      {/* Main Tab Content */}
+      {activeTab === 'compare' ? (
+        <div className="space-y-4">
+          <TeamComparisonSection
+            initialTeamAId={comparisonTeamA}
+            initialTeamBId={comparisonTeamB}
+            allTeams={teams}
+            onSelectTeam={navigateToTeam}
+            onSelectPlayer={navigateToPlayer}
+          />
+        </div>
+      ) : loading ? (
         <TeamsGridSkeleton count={8} />
       ) : displayedTeams.length === 0 ? (
         <div className="text-center py-16 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-8 space-y-3">
@@ -188,8 +272,8 @@ export const TeamsView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Record Footer */}
-                <div className="mt-4 flex items-center justify-between">
+                {/* Record Footer & Action Buttons */}
+                <div className="mt-4 flex items-center justify-between gap-2">
                   <div>
                     <span className="text-[10px] text-slate-500 block uppercase font-semibold">Récord</span>
                     <span className="font-mono text-sm font-bold text-slate-200">
@@ -197,9 +281,28 @@ export const TeamsView: React.FC = () => {
                     </span>
                   </div>
 
-                  <button className="px-3 py-1.5 rounded-lg bg-slate-800 group-hover:bg-emerald-500 group-hover:text-slate-950 text-slate-200 text-xs font-bold transition-colors">
-                    Ver Roster
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {/* Compare Quick Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartCompare(team.id);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-emerald-500 hover:text-slate-950 text-slate-300 text-xs font-bold transition-all flex items-center gap-1 border border-slate-700/80 cursor-pointer"
+                      title={`Comparar ${team.shortName} con otro equipo`}
+                    >
+                      <ArrowLeftRight className="w-3 h-3 text-emerald-400 group-hover:text-slate-950" />
+                      <span className="hidden sm:inline">Comparar</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 group-hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors"
+                    >
+                      Roster
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -232,3 +335,4 @@ export const TeamsView: React.FC = () => {
     </div>
   );
 };
+

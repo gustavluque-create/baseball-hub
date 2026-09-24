@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { Player, Team, Competition, NewsArticle } from '../types/index.ts';
 import { TeamLogo } from './TeamLogo.tsx';
+import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 
 export const GlobalSearchModal: React.FC = () => {
   const {
@@ -153,10 +154,11 @@ export const GlobalSearchModal: React.FC = () => {
                   >
                     <div className="flex items-center gap-3">
                       <img
-                        src={p.photo}
+                        src={resolvePlayerPhoto(p)}
                         alt={p.fullName}
                         className="w-9 h-9 rounded-full object-cover border border-slate-700"
                         referrerPolicy="no-referrer"
+                        onError={(e) => handlePlayerImgError(e, p)}
                       />
                       <div>
                         <p className="text-sm font-bold text-slate-100 group-hover:text-emerald-400 transition-colors">

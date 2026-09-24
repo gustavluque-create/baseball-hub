@@ -374,6 +374,27 @@ export interface MatchupComparisonData {
   homeTopPitcher?: { player: Player; stats: PitchingStats };
 }
 
+export interface TeamDirectComparisonData {
+  teamA: Team;
+  teamB: Team;
+  standingA?: Standing;
+  standingB?: Standing;
+  statsA: TeamAggregatedStats;
+  statsB: TeamAggregatedStats;
+  headToHeadGames: Game[];
+  headToHeadSummary: {
+    totalGames: number;
+    teamAWins: number;
+    teamBWins: number;
+    teamARuns: number;
+    teamBRuns: number;
+  };
+  topBatterA?: { player: Player; stats: BattingStats };
+  topBatterB?: { player: Player; stats: BattingStats };
+  topPitcherA?: { player: Player; stats: PitchingStats };
+  topPitcherB?: { player: Player; stats: PitchingStats };
+}
+
 export interface ScoreNotificationEvent {
   id: string;
   gameId: string;

@@ -1,0 +1,412 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradients -->
+    <radialGradient id="bgGrad" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#f1f5f9"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </radialGradient>
+
+    <linearGradient id="blueJersey" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e40af"/>
+      <stop offset="50%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#172554"/>
+    </linearGradient>
+
+    <linearGradient id="capGrad" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="45%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#172554"/>
+    </linearGradient>
+
+    <linearGradient id="brimShadow" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" stop-opacity="0.95"/>
+      <stop offset="65%" stop-color="#1e293b" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#334155" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="skinBase" x1="30%" y1="0%" x2="70%" y2="100%">
+      <stop offset="0%" stop-color="#e2a87a"/>
+      <stop offset="50%" stop-color="#d49464"/>
+      <stop offset="100%" stop-color="#ba7b4d"/>
+    </linearGradient>
+
+    <linearGradient id="skinShadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a8693d"/>
+      <stop offset="100%" stop-color="#7a4925"/>
+    </linearGradient>
+
+    <linearGradient id="shieldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+
+    <linearGradient id="redAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#b91c1c"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.25"/>
+    </filter>
+
+    <filter id="textGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#091e42" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Clean Canvas Backdrop -->
+  <rect width="800" height="800" fill="url(#bgGrad)"/>
+
+  <!-- Speed Brushstrokes / Cuban Flag Stripes Flanking Shield -->
+  <!-- Left Flags/Stripes -->
+  <g opacity="0.95">
+    <!-- Diagonal Blue -->
+    <path d="M 40 520 L 140 430 L 155 450 L 55 540 Z" fill="#1e40af"/>
+    <path d="M 20 575 L 120 485 L 135 505 L 35 595 Z" fill="#1d4ed8"/>
+    <!-- Diagonal White -->
+    <path d="M 30 550 L 130 460 L 145 478 L 45 568 Z" fill="#ffffff"/>
+    <!-- Diagonal Red -->
+    <path d="M 15 625 L 105 540 L 120 560 L 30 645 Z" fill="#dc2626"/>
+    <path d="M 50 670 L 95 625 L 105 640 L 60 685 Z" fill="#ef4444"/>
+  </g>
+
+  <!-- Right Flags/Stripes -->
+  <g opacity="0.95">
+    <!-- Diagonal Blue -->
+    <path d="M 760 520 L 660 430 L 645 450 L 745 540 Z" fill="#1e40af"/>
+    <path d="M 780 575 L 680 485 L 665 505 L 765 595 Z" fill="#1d4ed8"/>
+    <!-- Diagonal White -->
+    <path d="M 770 550 L 670 460 L 655 478 L 755 568 Z" fill="#ffffff"/>
+    <!-- Diagonal Red -->
+    <path d="M 785 625 L 695 540 L 680 560 L 770 645 Z" fill="#dc2626"/>
+    <path d="M 750 670 L 705 625 L 695 640 L 740 685 Z" fill="#ef4444"/>
+  </g>
+
+  <!-- Giant Background Shield Crest -->
+  <g filter="url(#softGlow)">
+    <!-- Outer Navy / Blue Shield -->
+    <path d="M 400 30
+             C 480 30, 580 45, 630 110
+             C 655 145, 655 260, 690 320
+             C 715 365, 700 480, 680 580
+             C 660 670, 540 730, 400 760
+             C 260 730, 140 670, 120 580
+             C 100 480, 85 365, 110 320
+             C 145 260, 145 145, 170 110
+             C 220 45, 320 30, 400 30 Z"
+          fill="none" stroke="#1e3a8a" stroke-width="26" stroke-linejoin="round"/>
+
+    <!-- Red Inner Border Trim -->
+    <path d="M 400 48
+             C 475 48, 565 62, 612 120
+             C 635 152, 635 258, 668 315
+             C 690 355, 678 465, 660 560
+             C 642 645, 530 705, 400 735
+             C 270 705, 158 645, 140 560
+             C 122 465, 110 355, 132 315
+             C 165 258, 165 152, 188 120
+             C 235 62, 325 48, 400 48 Z"
+          fill="#f8fafc" stroke="#dc2626" stroke-width="8" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Crossed Bats and Circular Emblem in Shield Interior -->
+  <g opacity="0.35">
+    <!-- Crossed Bats Motif -->
+    <path d="M 480 200 L 590 310 L 570 330 L 460 220 Z" fill="#94a3b8"/>
+    <path d="M 580 200 L 470 310 L 490 330 L 600 220 Z" fill="#94a3b8"/>
+    <!-- Subtle Baseball Seams -->
+    <circle cx="535" cy="265" r="55" fill="none" stroke="#94a3b8" stroke-width="3" stroke-dasharray="6,4"/>
+  </g>
+
+  <!-- PLAYER BODY AND UNIFORM -->
+  <g>
+    <!-- Base Arms / Deltoids / Trapezius -->
+    <path d="M 230 500 C 170 540, 120 620, 80 750 L 140 800 L 250 800 L 260 700 Z" fill="url(#skinBase)"/>
+    <path d="M 570 500 C 630 540, 680 620, 720 750 L 660 800 L 550 800 L 540 700 Z" fill="url(#skinBase)"/>
+
+    <!-- Left Arm Muscle Definition Shadow -->
+    <path d="M 120 720 C 135 670, 165 600, 210 550 L 195 540 C 150 590, 115 670, 100 725 Z" fill="url(#skinShadow)" opacity="0.6"/>
+    <!-- Right Arm Muscle Definition Shadow -->
+    <path d="M 680 720 C 665 670, 635 600, 590 550 L 605 540 C 650 590, 685 670, 700 725 Z" fill="url(#skinShadow)" opacity="0.6"/>
+
+    <!-- White Raglan Sleeves & Jersey Shoulders -->
+    <!-- Left Shoulder/Sleeve -->
+    <path d="M 330 350
+             C 270 360, 180 430, 140 540
+             C 120 600, 110 680, 130 730
+             L 240 680
+             C 255 580, 280 480, 310 430
+             Z"
+          fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+    <!-- Sleeve Trim Dark Blue Band -->
+    <path d="M 125 710 L 245 660 L 248 678 L 132 725 Z" fill="#1e3a8a"/>
+
+    <!-- Right Shoulder/Sleeve -->
+    <path d="M 470 350
+             C 530 360, 620 430, 660 540
+             C 680 600, 690 680, 670 730
+             L 560 680
+             C 545 580, 520 480, 490 430
+             Z"
+          fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+    <!-- Sleeve Trim Dark Blue Band -->
+    <path d="M 675 710 L 555 660 L 552 678 L 668 725 Z" fill="#1e3a8a"/>
+
+    <!-- Sleeve Patch on Right Arm (Viewer's Right): Industriales Shield Emblem -->
+    <g transform="translate(620, 520) scale(0.65)">
+      <!-- Shield Base -->
+      <path d="M 40 10 C 60 10, 75 15, 80 30 C 85 55, 80 85, 40 115 C 0 85, -5 55, 0 30 C 5 15, 20 10, 40 10 Z"
+            fill="#ffffff" stroke="#dc2626" stroke-width="6"/>
+      <!-- Blue Gothic I on Patch -->
+      <text x="40" y="75" font-family="'Times New Roman', serif" font-size="64" font-weight="900" font-style="italic" fill="#1e40af" text-anchor="middle">
+        I
+      </text>
+    </g>
+
+    <!-- Torso Jersey Front (Deep Royal Blue) -->
+    <path d="M 310 420
+             C 325 365, 360 350, 400 350
+             C 440 350, 475 365, 490 420
+             C 515 480, 560 620, 570 800
+             L 230 800
+             C 240 620, 285 480, 310 420 Z"
+          fill="url(#blueJersey)"/>
+
+    <!-- White Jersey Piping along Raglan Seams -->
+    <path d="M 320 355 C 280 430, 255 530, 240 640" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+    <path d="M 480 355 C 520 430, 545 530, 560 640" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- White Placket Center Band -->
+    <path d="M 388 385 L 412 385 L 415 800 L 385 800 Z" fill="#ffffff" opacity="0.95"/>
+
+    <!-- Realistic Jersey Buttons down placket -->
+    <g fill="#f8fafc" stroke="#94a3b8" stroke-width="2">
+      <circle cx="400" cy="425" r="7"/>
+      <circle cx="400" cy="515" r="7"/>
+      <circle cx="400" cy="610" r="7"/>
+      <circle cx="400" cy="710" r="7"/>
+    </g>
+    <!-- Button thread cross accents -->
+    <g stroke="#64748b" stroke-width="1.5">
+      <line x1="397" y1="425" x2="403" y2="425"/>
+      <line x1="400" y1="422" x2="400" y2="428"/>
+      <line x1="397" y1="515" x2="403" y2="515"/>
+      <line x1="400" y1="512" x2="400" y2="518"/>
+      <line x1="397" y1="610" x2="403" y2="610"/>
+      <line x1="400" y1="607" x2="400" y2="613"/>
+      <line x1="397" y1="710" x2="403" y2="710"/>
+      <line x1="400" y1="707" x2="400" y2="713"/>
+    </g>
+
+    <!-- ICONIC "Industriales" SCRIPT TYPOGRAPHY ACROSS CHEST -->
+    <!-- Drop Shadow / Outline for 3D Athletic Pop -->
+    <g filter="url(#textGlow)">
+      <!-- Outer Stroke/Shadow Layer -->
+      <path d="M 235 565
+               C 245 535, 275 520, 310 525
+               C 340 530, 360 550, 380 550
+               C 400 550, 420 530, 450 525
+               C 500 515, 545 535, 565 565"
+            fill="none" stroke="#0f172a" stroke-width="32" stroke-linecap="round" opacity="0.6"/>
+
+      <!-- Styled Script Text -->
+      <text x="395" y="555"
+            font-family="'Brush Script MT', 'Lucida Handwriting', 'Segoe Script', cursive, sans-serif"
+            font-size="82"
+            font-weight="900"
+            font-style="italic"
+            letter-spacing="1"
+            fill="#ffffff"
+            stroke="#0f172a"
+            stroke-width="5"
+            paint-order="stroke fill"
+            text-anchor="middle">
+        Industriales
+      </text>
+
+      <!-- Front Pure White Clean Layer -->
+      <text x="395" y="555"
+            font-family="'Brush Script MT', 'Lucida Handwriting', 'Segoe Script', cursive, sans-serif"
+            font-size="82"
+            font-weight="900"
+            font-style="italic"
+            letter-spacing="1"
+            fill="#ffffff"
+            text-anchor="middle">
+        Industriales
+      </text>
+
+      <!-- Flourish Tail under the word -->
+      <path d="M 250 568
+               C 320 595, 480 590, 550 565
+               C 510 580, 360 588, 270 575 Z"
+            fill="#ffffff"/>
+    </g>
+
+    <!-- Undershirt Collar -->
+    <path d="M 360 345
+             C 380 375, 420 375, 440 345
+             C 455 365, 470 380, 475 390
+             C 435 410, 365 410, 325 390
+             Z"
+          fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+    <path d="M 360 348 C 385 378, 415 378, 440 348" fill="none" stroke="#1e3a8a" stroke-width="3"/>
+
+    <!-- Muscular Neck -->
+    <path d="M 350 250
+             L 345 350
+             C 380 370, 420 370, 455 350
+             L 450 250 Z"
+          fill="url(#skinBase)"/>
+
+    <!-- Neck Muscle Tendons & Deep Shadow under Chin -->
+    <path d="M 345 250
+             C 375 285, 425 285, 455 250
+             C 435 320, 365 320, 345 250 Z"
+          fill="url(#skinShadow)" opacity="0.75"/>
+    <!-- Sternocleidomastoid cords -->
+    <path d="M 370 280 C 375 315, 385 345, 395 355" fill="none" stroke="url(#skinShadow)" stroke-width="4" stroke-linecap="round"/>
+    <path d="M 430 280 C 425 315, 415 345, 405 355" fill="none" stroke="url(#skinShadow)" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- HEAD & JAW -->
+    <!-- Jaw and Ears Base -->
+    <path d="M 315 175
+             C 305 185, 300 215, 310 235
+             C 320 250, 335 240, 340 230
+             L 345 255
+             C 355 295, 380 315, 400 315
+             C 420 315, 445 295, 455 255
+             L 460 230
+             C 465 240, 480 250, 490 235
+             C 500 215, 495 185, 485 175
+             Z"
+          fill="url(#skinBase)"/>
+
+    <!-- Ear Details -->
+    <!-- Left Ear -->
+    <path d="M 312 195 C 308 208, 312 225, 320 228 C 322 220, 318 205, 325 198" fill="none" stroke="url(#skinShadow)" stroke-width="3"/>
+    <!-- Right Ear -->
+    <path d="M 488 195 C 492 208, 488 225, 480 228 C 478 220, 482 205, 475 198" fill="none" stroke="url(#skinShadow)" stroke-width="3"/>
+
+    <!-- Jaw Contour Shadows -->
+    <path d="M 345 255 C 360 295, 380 310, 400 310 C 420 310, 440 295, 455 255 L 450 265 C 435 305, 415 318, 400 318 C 385 318, 365 305, 350 265 Z" fill="url(#skinShadow)"/>
+
+    <!-- Chin Dimple / Chiseled Cleft -->
+    <path d="M 395 295 C 398 298, 402 298, 405 295" fill="none" stroke="#7a4925" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Lips -->
+    <!-- Upper Lip -->
+    <path d="M 382 265 C 392 262, 408 262, 418 265 C 410 268, 390 268, 382 265 Z" fill="#9e5630"/>
+    <!-- Lower Lip with Shadow -->
+    <path d="M 385 269 C 395 273, 405 273, 415 269 C 405 277, 395 277, 385 269 Z" fill="#c47a50"/>
+    <path d="M 390 279 C 396 281, 404 281, 410 279" fill="none" stroke="url(#skinShadow)" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Nose -->
+    <path d="M 396 210 L 394 245 C 388 248, 385 251, 388 254 C 392 257, 408 257, 412 254 C 415 251, 412 248, 406 245 L 404 210 Z" fill="url(#skinShadow)" opacity="0.6"/>
+    <!-- Nostrils -->
+    <ellipse cx="393" cy="251" rx="2.5" ry="1.5" fill="#451a03"/>
+    <ellipse cx="407" cy="251" rx="2.5" ry="1.5" fill="#451a03"/>
+    <!-- Nose Bridge Highlight -->
+    <path d="M 399 215 L 400 244" stroke="#fed7aa" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+
+    <!-- DRAMATIC CAP BRIM SHADOW OVER EYES (Exactly like the uploaded illustration) -->
+    <path d="M 320 160
+             C 320 160, 345 228, 400 228
+             C 455 228, 480 160, 480 160
+             L 485 180
+             C 475 240, 435 250, 400 250
+             C 365 250, 325 240, 315 180 Z"
+          fill="url(#brimShadow)"/>
+
+    <!-- Piercing Eyes visible through shadow edge -->
+    <!-- Left Eye -->
+    <g opacity="0.85">
+      <ellipse cx="365" cy="208" rx="14" ry="6" fill="#f8fafc"/>
+      <circle cx="366" cy="208" r="5" fill="#1e293b"/>
+      <circle cx="367" cy="206" r="1.5" fill="#ffffff"/>
+      <!-- Brow -->
+      <path d="M 345 196 C 355 192, 375 192, 382 198" stroke="#0f172a" stroke-width="6" stroke-linecap="round"/>
+    </g>
+
+    <!-- Right Eye -->
+    <g opacity="0.85">
+      <ellipse cx="435" cy="208" rx="14" ry="6" fill="#f8fafc"/>
+      <circle cx="434" cy="208" r="5" fill="#1e293b"/>
+      <circle cx="435" cy="206" r="1.5" fill="#ffffff"/>
+      <!-- Brow -->
+      <path d="M 455 196 C 445 192, 425 192, 418 198" stroke="#0f172a" stroke-width="6" stroke-linecap="round"/>
+    </g>
+
+    <!-- BASEBALL CAP (BLUE WITH GOTHIC 'I') -->
+    <!-- Cap Crown -->
+    <path d="M 320 165
+             C 315 125, 340 45, 400 45
+             C 460 45, 485 125, 480 165
+             C 455 175, 345 175, 320 165 Z"
+          fill="url(#capGrad)" stroke="#172554" stroke-width="4"/>
+
+    <!-- Cap Top Button -->
+    <ellipse cx="400" cy="46" rx="9" ry="5" fill="#1d4ed8" stroke="#172554" stroke-width="2"/>
+
+    <!-- Cap Seam Lines -->
+    <path d="M 400 48 C 398 90, 396 140, 396 168" fill="none" stroke="#1e3a8a" stroke-width="3"/>
+    <path d="M 400 48 C 365 75, 340 120, 330 160" fill="none" stroke="#1e3a8a" stroke-width="2"/>
+    <path d="M 400 48 C 435 75, 460 120, 470 160" fill="none" stroke="#1e3a8a" stroke-width="2"/>
+
+    <!-- Cap Visor / Brim (Forward Angled Bill) -->
+    <!-- Bill Upper Surface with Highlight -->
+    <path d="M 310 160
+             C 315 140, 360 135, 400 135
+             C 440 135, 485 140, 490 160
+             C 485 185, 445 195, 400 195
+             C 355 195, 315 185, 310 160 Z"
+          fill="#1e40af" stroke="#0f172a" stroke-width="4"/>
+
+    <!-- Bill Bottom Underside Shadow Edge -->
+    <path d="M 312 165
+             C 340 185, 370 192, 400 192
+             C 430 192, 460 185, 488 165
+             C 475 198, 435 208, 400 208
+             C 365 208, 325 198, 312 165 Z"
+          fill="#0f172a"/>
+
+    <!-- White Piping trim on front edge of cap brim -->
+    <path d="M 325 168 C 360 186, 400 188, 440 186 C 455 182, 470 174, 475 168"
+          fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+
+    <!-- ORNATE WHITE GOTHIC / CALLIGRAPHIC 'I' ON FRONT OF CAP -->
+    <g filter="url(#textGlow)">
+      <!-- Gothic 'I' Silhouette -->
+      <path d="M 388 78
+               C 385 70, 395 65, 408 65
+               C 420 65, 426 72, 418 82
+               C 410 92, 396 95, 396 105
+               C 396 112, 404 116, 412 118
+               L 412 128
+               C 400 126, 388 120, 388 110
+               C 388 100, 400 95, 406 88
+               C 410 82, 405 76, 398 76
+               C 392 76, 388 80, 388 78 Z"
+            fill="#ffffff"/>
+
+      <!-- Main Vertical Stem with Serifs -->
+      <path d="M 398 85
+               L 412 85
+               L 410 135
+               C 414 138, 420 136, 424 132
+               L 426 138
+               C 418 144, 406 145, 398 140
+               C 392 135, 392 125, 398 85 Z"
+            fill="#ffffff"/>
+
+      <!-- Elaborate Flourish Crossbar on I -->
+      <path d="M 378 108
+               C 390 102, 420 102, 432 108
+               C 420 114, 390 114, 378 108 Z"
+            fill="#ffffff"/>
+      <!-- Inner Drop Cutout Accent -->
+      <circle cx="405" cy="74" r="2.5" fill="#1e3a8a"/>
+    </g>
+  </g>
+</svg>

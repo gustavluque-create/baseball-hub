@@ -11,6 +11,7 @@ import {
   VideoItem,
   IngestionValidationSummary,
   MatchupComparisonData,
+  TeamDirectComparisonData,
   ScoreNotificationEvent,
   AdminUser,
   AdminAuthResponse,
@@ -471,6 +472,30 @@ export class ApiClient {
       if (logoData.primaryColor) {
         if (!res.team.colors) res.team.colors = { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' };
         else res.team.colors.primary = logoData.primaryColor;
+      }
+    }
+    return res;
+  }
+
+  static async getTeamComparison(teamA: string, teamB: string): Promise<TeamDirectComparisonData> {
+    const res = await this.request<TeamDirectComparisonData>(
+      `/teams/compare?teamA=${encodeURIComponent(teamA)}&teamB=${encodeURIComponent(teamB)}`
+    );
+    // Apply client persistence logos and colors if available
+    const logoA = clientPersistence.getTeamLogoData(res.teamA.id) || clientPersistence.getTeamLogoData(res.teamA.shortName);
+    if (logoA) {
+      res.teamA.logo = logoA.logo;
+      if (logoA.primaryColor) {
+        if (!res.teamA.colors) res.teamA.colors = { primary: logoA.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' };
+        else res.teamA.colors.primary = logoA.primaryColor;
+      }
+    }
+    const logoB = clientPersistence.getTeamLogoData(res.teamB.id) || clientPersistence.getTeamLogoData(res.teamB.shortName);
+    if (logoB) {
+      res.teamB.logo = logoB.logo;
+      if (logoB.primaryColor) {
+        if (!res.teamB.colors) res.teamB.colors = { primary: logoB.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' };
+        else res.teamB.colors.primary = logoB.primaryColor;
       }
     }
     return res;
