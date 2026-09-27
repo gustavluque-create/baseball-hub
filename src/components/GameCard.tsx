@@ -1,7 +1,8 @@
 import React from 'react';
 import { Game } from '../types/index.ts';
 import { useApp } from '../context/AppContext.tsx';
-import { ChevronRight, Star } from 'lucide-react';
+import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
+import { ChevronRight, Star, Bell, BellRing } from 'lucide-react';
 import { TeamLogo } from './TeamLogo.tsx';
 
 interface GameCardProps {
@@ -11,6 +12,9 @@ interface GameCardProps {
 
 export const GameCard: React.FC<GameCardProps> = ({ game, compact = false }) => {
   const { openGameComparison, navigateToGame, t, isFavoriteTeam } = useApp();
+  const { isGameSubscribed, toggleGameSubscription } = useScoreNotifications();
+
+  const isSubscribed = isGameSubscribed(game.id);
 
   const statusLower = (game.status || '').toLowerCase();
   const isLive = statusLower === 'live';
@@ -49,10 +53,48 @@ export const GameCard: React.FC<GameCardProps> = ({ game, compact = false }) => 
     >
       {/* Top Header info */}
       <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-800/80 text-xs">
-        <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
+        <span className="text-[11px] text-slate-400 truncate max-w-[120px]" title={game.stadium}>
           {game.stadium}
         </span>
-        {getStatusBadge()}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {getStatusBadge()}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleGameSubscription(game.id);
+            }}
+            title={
+              isSubscribed
+                ? 'Notificaciones push en vivo activadas para este partido (clic para desactivar)'
+                : 'Suscribirse a notificaciones push en vivo de este partido'
+            }
+            aria-label={
+              isSubscribed
+                ? `Desactivar notificaciones push para ${game.awayTeam.shortName} vs ${game.homeTeam.shortName}`
+                : `Activar notificaciones push para ${game.awayTeam.shortName} vs ${game.homeTeam.shortName}`
+            }
+            className={`p-1.5 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer flex items-center gap-1 relative ${
+              isSubscribed
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm shadow-amber-500/20 ring-1 ring-amber-500/30 hover:bg-amber-500/30'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-750 border border-slate-700/80'
+            }`}
+          >
+            {isSubscribed ? (
+              <>
+                <BellRing className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
+                <span className="text-[10px] font-bold text-amber-300 hidden sm:inline">Push ON</span>
+                <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-slate-900 animate-ping" />
+                <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-slate-900" />
+              </>
+            ) : (
+              <>
+                <Bell className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[10px] text-slate-400 hidden sm:inline">Alertas</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Teams & Scores */}

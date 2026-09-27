@@ -4,6 +4,7 @@ import { ScoreNotificationEvent } from '../../src/types/index.ts';
 export interface FcmSubscriber {
   token: string;
   favoriteTeamIds: string[];
+  subscribedGameIds?: string[];
   userId?: string;
   userAgent?: string;
   updatedAt: number;
@@ -21,20 +22,25 @@ class FcmServerService {
   }
 
   /**
-   * Register or update an FCM device token with subscribed favorite teams
+   * Register or update an FCM device token with subscribed favorite teams and specific games
    */
   public registerDevice(
     token: string,
     favoriteTeamIds: string[] = [],
+    subscribedGameIds: string[] = [],
     userId?: string,
     userAgent?: string
   ): FcmSubscriber {
     const cleanToken = token.trim();
     const normalizedTeams = favoriteTeamIds.map((t) => t.toLowerCase().trim());
+    const cleanGameIds = (Array.isArray(subscribedGameIds) ? subscribedGameIds : []).map((g) =>
+      String(g).trim()
+    );
 
     const subscriber: FcmSubscriber = {
       token: cleanToken,
       favoriteTeamIds: normalizedTeams,
+      subscribedGameIds: cleanGameIds,
       userId,
       userAgent,
       updatedAt: Date.now(),
@@ -42,8 +48,35 @@ class FcmServerService {
 
     this.subscribers.set(cleanToken, subscriber);
     console.log(
-      `📲 [FCM Server] Registered device token. Subscribed teams: [${normalizedTeams.join(', ') || 'Todas'}]. Total devices: ${this.subscribers.size}`
+      `📲 [FCM Server] Registered device token. Subscribed teams: [${normalizedTeams.join(', ') || 'Todas'}], Games: [${cleanGameIds.join(', ') || 'Ninguno'}]. Total devices: ${this.subscribers.size}`
     );
+    return subscriber;
+  }
+
+  /**
+   * Update game subscription for a token
+   */
+  public updateGameSubscription(token: string, gameId: string, subscribed: boolean): FcmSubscriber | null {
+    const cleanToken = token.trim();
+    let subscriber = this.subscribers.get(cleanToken);
+    if (!subscriber) {
+      subscriber = {
+        token: cleanToken,
+        favoriteTeamIds: [],
+        subscribedGameIds: [],
+        updatedAt: Date.now(),
+      };
+      this.subscribers.set(cleanToken, subscriber);
+    }
+
+    const currentGames = new Set(subscriber.subscribedGameIds || []);
+    if (subscribed) {
+      currentGames.add(gameId.trim());
+    } else {
+      currentGames.delete(gameId.trim());
+    }
+    subscriber.subscribedGameIds = Array.from(currentGames);
+    subscriber.updatedAt = Date.now();
     return subscriber;
   }
 
@@ -66,7 +99,7 @@ class FcmServerService {
   }
 
   /**
-   * Send live score alert via FCM push to devices whose favorite team scored
+   * Send live score alert via FCM push to devices whose favorite team scored or who are subscribed to this game
    */
   public async notifyScoreChange(event: ScoreNotificationEvent): Promise<{
     sent: number;
@@ -81,21 +114,28 @@ class FcmServerService {
     const scoringTeamName = event.scoringTeam.name;
     const runsText = event.runsScored === 1 ? '1 carrera' : `${event.runsScored} carreras`;
     const inningSide = event.isTopInning ? '▲ Alta' : '▼ Baja';
+    const eventGameId = String(event.gameId || '').trim();
 
-    // Find subscribers interested in this team (or subscribed to all teams)
+    // Find subscribers interested in this team OR explicitly subscribed to this game
     const targetTokens: string[] = [];
     for (const [token, subscriber] of this.subscribers.entries()) {
-      if (
+      const isSubscribedToGame = Boolean(
+        subscriber.subscribedGameIds &&
+        subscriber.subscribedGameIds.some((gId) => gId === eventGameId)
+      );
+      const isSubscribedToTeam = (
         subscriber.favoriteTeamIds.length === 0 ||
         subscriber.favoriteTeamIds.includes('*') ||
         subscriber.favoriteTeamIds.includes(scoringTeamId)
-      ) {
+      );
+
+      if (isSubscribedToGame || isSubscribedToTeam) {
         targetTokens.push(token);
       }
     }
 
     if (targetTokens.length === 0) {
-      console.log(`📲 [FCM Server] No subscribers configured for scoring team "${scoringTeamId}".`);
+      console.log(`📲 [FCM Server] No subscribers configured for team "${scoringTeamId}" or game "${eventGameId}".`);
       return { sent: 0, failed: 0, matchedSubscribers: 0 };
     }
 

@@ -6,6 +6,7 @@ export interface FcmRegistrationStatus {
   permission: NotificationPermission | 'unsupported';
   token: string | null;
   subscribedTeams: string[];
+  subscribedGames: string[];
   registeredAt?: string;
 }
 
@@ -69,19 +70,23 @@ class FcmClientService {
         permission: 'unsupported',
         token: null,
         subscribedTeams: [],
+        subscribedGames: [],
       };
     }
 
     const permission = Notification.permission;
     const storedToken = localStorage.getItem('fcm_device_token');
     const storedTeams = localStorage.getItem('fcm_subscribed_teams');
+    const storedGames = localStorage.getItem('fcm_subscribed_games');
     const subscribedTeams = storedTeams ? JSON.parse(storedTeams) : currentFavoriteTeams;
+    const subscribedGames = storedGames ? JSON.parse(storedGames) : [];
 
     return {
       isSupported: true,
       permission,
       token: storedToken,
       subscribedTeams,
+      subscribedGames,
       registeredAt: localStorage.getItem('fcm_registered_at') || undefined,
     };
   }
@@ -89,7 +94,10 @@ class FcmClientService {
   /**
    * Request browser permission and obtain FCM device token
    */
-  public async requestPermissionAndRegister(favoriteTeams: string[]): Promise<{
+  public async requestPermissionAndRegister(
+    favoriteTeams: string[],
+    subscribedGames: string[] = []
+  ): Promise<{
     success: boolean;
     token?: string;
     permission: NotificationPermission | 'unsupported';
@@ -140,10 +148,11 @@ class FcmClientService {
       this.token = token;
       localStorage.setItem('fcm_device_token', token);
       localStorage.setItem('fcm_subscribed_teams', JSON.stringify(favoriteTeams));
+      localStorage.setItem('fcm_subscribed_games', JSON.stringify(subscribedGames));
       localStorage.setItem('fcm_registered_at', new Date().toISOString());
 
-      // Send token and favorite teams to backend
-      await this.sendTokenToBackend(token, favoriteTeams);
+      // Send token and subscriptions to backend
+      await this.sendTokenToBackend(token, favoriteTeams, subscribedGames);
 
       return {
         success: true,
@@ -161,9 +170,13 @@ class FcmClientService {
   }
 
   /**
-   * Send the token and favorite teams list to the server API
+   * Send the token and subscriptions to the server API
    */
-  public async sendTokenToBackend(token: string, favoriteTeams: string[]): Promise<boolean> {
+  public async sendTokenToBackend(
+    token: string,
+    favoriteTeams: string[],
+    subscribedGames: string[] = []
+  ): Promise<boolean> {
     try {
       const response = await fetch('/api/notifications/fcm/register', {
         method: 'POST',
@@ -171,6 +184,7 @@ class FcmClientService {
         body: JSON.stringify({
           token,
           favoriteTeamIds: favoriteTeams,
+          subscribedGameIds: subscribedGames,
           userAgent: navigator.userAgent,
         }),
       });
@@ -190,10 +204,49 @@ class FcmClientService {
    */
   public async syncFavoriteTeams(favoriteTeams: string[]): Promise<boolean> {
     const token = this.token || localStorage.getItem('fcm_device_token');
+    localStorage.setItem('fcm_subscribed_teams', JSON.stringify(favoriteTeams));
     if (!token) return false;
 
-    localStorage.setItem('fcm_subscribed_teams', JSON.stringify(favoriteTeams));
-    return this.sendTokenToBackend(token, favoriteTeams);
+    const storedGames = localStorage.getItem('fcm_subscribed_games');
+    const subscribedGames = storedGames ? JSON.parse(storedGames) : [];
+    return this.sendTokenToBackend(token, favoriteTeams, subscribedGames);
+  }
+
+  /**
+   * Update specific games subscribed for live push alerts
+   */
+  public async syncSubscribedGames(subscribedGames: string[]): Promise<boolean> {
+    const token = this.token || localStorage.getItem('fcm_device_token');
+    localStorage.setItem('fcm_subscribed_games', JSON.stringify(subscribedGames));
+    if (!token) return false;
+
+    const storedTeams = localStorage.getItem('fcm_subscribed_teams');
+    const favoriteTeams = storedTeams ? JSON.parse(storedTeams) : [];
+    return this.sendTokenToBackend(token, favoriteTeams, subscribedGames);
+  }
+
+  /**
+   * Toggle subscription for a single game and sync with backend
+   */
+  public async updateGamePushSubscription(gameId: string, subscribed: boolean): Promise<boolean> {
+    const token = this.token || localStorage.getItem('fcm_device_token');
+    if (!token) return false;
+
+    try {
+      const res = await fetch('/api/notifications/fcm/subscribe-game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          gameId,
+          subscribed,
+        }),
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('[FCM] Failed to update game push subscription:', err);
+      return false;
+    }
   }
 
   /**

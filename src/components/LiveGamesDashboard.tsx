@@ -28,10 +28,13 @@ import {
   ArrowRight,
   RefreshCw,
   Swords,
+  Bell,
+  BellRing,
 } from 'lucide-react';
 import { Game } from '../types/index.ts';
 import { TeamLogo } from './TeamLogo.tsx';
 import { useApp } from '../context/AppContext.tsx';
+import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
 
 interface LiveGamesDashboardProps {
   games: Game[];
@@ -59,6 +62,7 @@ export const LiveGamesDashboard: React.FC<LiveGamesDashboardProps> = ({
   onNavigateToGame,
 }) => {
   const { theme, openGameComparison } = useApp();
+  const { isGameSubscribed, toggleGameSubscription } = useScoreNotifications();
   const isDark = theme === 'dark';
 
   // Chart styling based on theme
@@ -355,6 +359,35 @@ export const LiveGamesDashboard: React.FC<LiveGamesDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Live Push Notification Toggle */}
+            <button
+              id={`dashboard-notify-game-${selectedGame.id}`}
+              type="button"
+              onClick={() => toggleGameSubscription(selectedGame.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm border ${
+                isGameSubscribed(selectedGame.id)
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40 ring-1 ring-amber-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-750'
+              }`}
+              title={
+                isGameSubscribed(selectedGame.id)
+                  ? 'Notificaciones push en vivo activadas para este partido (clic para desactivar)'
+                  : 'Suscribirse a notificaciones push en vivo para este partido'
+              }
+            >
+              {isGameSubscribed(selectedGame.id) ? (
+                <>
+                  <BellRing className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span>Push Activo</span>
+                </>
+              ) : (
+                <>
+                  <Bell className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Suscribir Push</span>
+                </>
+              )}
+            </button>
+
             <button
               id="dashboard-compare-teams-btn"
               onClick={() => openGameComparison(selectedGame.id)}

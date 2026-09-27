@@ -65,6 +65,7 @@ export const SettingsMenuModal: React.FC = () => {
     enableFcmPush,
     disableFcmPush,
     testFcmPush,
+    subscribedGameIds,
   } = useScoreNotifications();
 
   const { favoriteTeamIds } = useApp();
@@ -701,6 +702,28 @@ export const SettingsMenuModal: React.FC = () => {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Subscribed Games Status Card */}
+            <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-semibold text-xs text-slate-200 block">
+                    Partidos con Alerta Push Individual:
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {subscribedGameIds.length > 0
+                      ? `${subscribedGameIds.length} partido(s) suscritos para avisos push en vivo.`
+                      : 'Sin partidos suscritos. Usa el botón de campana en cualquier tarjeta de partido.'}
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold font-mono shrink-0">
+                {subscribedGameIds.length} {subscribedGameIds.length === 1 ? 'partido' : 'partidos'}
+              </span>
             </div>
 
             {/* Test Notification Trigger Bar */}

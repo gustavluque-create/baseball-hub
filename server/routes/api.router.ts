@@ -1040,10 +1040,10 @@ apiRouter.get('/users/me', requireAuth, async (req: AuthRequest, res: Response) 
 // Firebase Cloud Messaging (FCM) Push Routes
 // ==========================================
 
-// Register or update device token with favorite teams
+// Register or update device token with favorite teams and subscribed games
 apiRouter.post('/notifications/fcm/register', (req: Request, res: Response) => {
   try {
-    const { token, favoriteTeamIds = [], userAgent } = req.body;
+    const { token, favoriteTeamIds = [], subscribedGameIds = [], userAgent } = req.body;
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ error: 'Token FCM requerido' });
     }
@@ -1051,6 +1051,7 @@ apiRouter.post('/notifications/fcm/register', (req: Request, res: Response) => {
     const subscriber = fcmServer.registerDevice(
       token,
       Array.isArray(favoriteTeamIds) ? favoriteTeamIds : [],
+      Array.isArray(subscribedGameIds) ? subscribedGameIds : [],
       undefined,
       userAgent || req.headers['user-agent']
     );
@@ -1059,11 +1060,29 @@ apiRouter.post('/notifications/fcm/register', (req: Request, res: Response) => {
       success: true,
       message: 'Dispositivo registrado exitosamente para alertas push',
       subscribedTeams: subscriber.favoriteTeamIds,
+      subscribedGames: subscriber.subscribedGameIds,
       totalDevices: fcmServer.getSubscribersCount(),
     });
   } catch (err: any) {
     console.error('Error registering FCM token:', err);
     res.status(500).json({ error: 'Error al registrar token FCM' });
+  }
+});
+
+// Update specific game subscription
+apiRouter.post('/notifications/fcm/subscribe-game', (req: Request, res: Response) => {
+  try {
+    const { token, gameId, subscribed } = req.body;
+    if (!token || !gameId) {
+      return res.status(400).json({ error: 'Token y gameId requeridos' });
+    }
+    const subscriber = fcmServer.updateGameSubscription(token, String(gameId), Boolean(subscribed));
+    res.json({
+      success: true,
+      subscribedGames: subscriber?.subscribedGameIds || [],
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al actualizar suscripción de partido' });
   }
 });
 

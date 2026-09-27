@@ -33,6 +33,13 @@ export interface ScoreNotificationContextType {
   disableFcmPush: () => Promise<void>;
   testFcmPush: (teamId?: string) => Promise<{ success: boolean; message: string }>;
 
+  // Game-specific Push Notifications
+  subscribedGameIds: string[];
+  isGameSubscribed: (gameId: string) => boolean;
+  toggleGameSubscription: (gameId: string) => Promise<boolean>;
+  subscribeToGame: (gameId: string) => Promise<boolean>;
+  unsubscribeFromGame: (gameId: string) => Promise<boolean>;
+
   soundEnabled: boolean;
   setSoundEnabled: (enabled: boolean) => void;
   notifyOnlyFavorites: boolean;
@@ -103,6 +110,33 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
       fcmClient.syncFavoriteTeams(favoriteTeamIds);
     }
   }, [favoriteTeamIds, fcmToken]);
+
+  // Subscribed game IDs for specific live push notifications
+  const [subscribedGameIds, setSubscribedGameIds] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('baseball_hub_subscribed_games');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return Array.isArray(parsed) ? parsed : [];
+        }
+      } catch (e) {
+        console.warn('Error reading subscribed games from localStorage:', e);
+      }
+    }
+    return [];
+  });
+
+  const subscribedGameIdsRef = useRef<string[]>(subscribedGameIds);
+  useEffect(() => {
+    subscribedGameIdsRef.current = subscribedGameIds;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('baseball_hub_subscribed_games', JSON.stringify(subscribedGameIds));
+    }
+    if (fcmToken) {
+      fcmClient.syncSubscribedGames(subscribedGameIds);
+    }
+  }, [subscribedGameIds, fcmToken]);
 
   // Persisted desktop notification enabled preference
   const [desktopNotificationsEnabled, setDesktopNotificationsEnabledState] = useState<boolean>(() => {
@@ -240,6 +274,9 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
       const isFavHome = isFavoriteTeam(event.homeTeam.id);
       const isFavAway = isFavoriteTeam(event.awayTeam.id);
       const isFavMatch = isFavHome || isFavAway;
+      const isGameSubscribed = event.gameId
+        ? subscribedGameIdsRef.current.includes(String(event.gameId))
+        : false;
 
       // Always add to history log
       setHistory((prev) => {
@@ -250,8 +287,9 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
 
       setLastEventTimestamp(event.timestamp || Date.now());
 
-      // If user opted to receive alerts ONLY for favorites and this is not a favorite match, stop here
-      if (notifyOnlyFavorites && !isFavMatch) {
+      // If user opted to receive alerts ONLY for favorites and this is not a favorite match,
+      // but they explicitly subscribed to this game, allow it!
+      if (notifyOnlyFavorites && !isFavMatch && !isGameSubscribed) {
         return;
       }
 
@@ -267,16 +305,22 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
         return [event, ...filtered].slice(0, 3);
       });
 
-      // 3. Trigger Browser Desktop System Notification if enabled and permitted
-      if (
-        desktopNotificationsEnabled &&
+      // 3. Trigger Browser Desktop System Notification if enabled and permitted (or explicitly subscribed to this game)
+      const shouldShowDesktop =
+        (desktopNotificationsEnabled || isGameSubscribed) &&
         typeof window !== 'undefined' &&
         'Notification' in window &&
-        Notification.permission === 'granted'
-      ) {
+        Notification.permission === 'granted';
+
+      if (shouldShowDesktop) {
         try {
-          const scoringTeam = event.scoringTeam?.shortName || (event.scoringTeamSide === 'home' ? event.homeTeam.shortName : event.awayTeam.shortName);
-          const title = `⚾ ${event.title || '¡CARRERA ANOTADA!'} • ${scoringTeam} +${event.runsScored}`;
+          const scoringTeam =
+            event.scoringTeam?.shortName ||
+            (event.scoringTeamSide === 'home'
+              ? event.homeTeam.shortName
+              : event.awayTeam.shortName);
+          const prefix = isGameSubscribed ? '🔔 [Juego Seguido] ' : '⚾ ';
+          const title = `${prefix}${event.title || '¡CARRERA ANOTADA!'} • ${scoringTeam} +${event.runsScored}`;
           const body = `${event.awayTeam.shortName} ${event.awayScore} - ${event.homeTeam.shortName} ${event.homeScore} (${event.inning}ª ${event.isTopInning ? '▲ Alta' : '▼ Baja'})\n${event.description}`;
 
           const desktopNotif = new Notification(title, {
@@ -585,10 +629,112 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
     };
   }, [handleIncomingScoreEvent]);
 
+  const isGameSubscribed = useCallback(
+    (gameId: string): boolean => {
+      if (!gameId) return false;
+      return subscribedGameIds.includes(String(gameId));
+    },
+    [subscribedGameIds]
+  );
+
+  const subscribeToGame = useCallback(
+    async (gameId: string): Promise<boolean> => {
+      const gId = String(gameId).trim();
+      if (!gId) return false;
+
+      // 1. Request browser notification permission if not yet decided
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'default') {
+          try {
+            const p = await Notification.requestPermission();
+            setBrowserPermission(p);
+            if (p === 'granted') {
+              setDesktopNotificationsEnabled(true);
+            }
+          } catch (e) {
+            console.warn('Error requesting notification permission on game subscribe:', e);
+          }
+        }
+      }
+
+      // 2. Enable desktop notifications if previously disabled
+      if (!desktopNotificationsEnabled) {
+        setDesktopNotificationsEnabled(true);
+      }
+
+      // 3. Register or sync with FCM if available
+      const updatedList = Array.from(new Set([...subscribedGameIds, gId]));
+      setSubscribedGameIds(updatedList);
+
+      if (!fcmToken && fcmSupported) {
+        fcmClient
+          .requestPermissionAndRegister(favoriteTeamIds || [], updatedList)
+          .then((res) => {
+            if (res.success && res.token) {
+              setFcmToken(res.token);
+              setDesktopNotificationsEnabled(true);
+              setBrowserPermission('granted');
+            }
+          })
+          .catch(() => {});
+      } else if (fcmToken) {
+        fcmClient.updateGamePushSubscription(gId, true).catch(() => {});
+      }
+
+      // 4. Audio confirmation if sound enabled
+      if (soundEnabled) {
+        playBaseballScoreChime(false);
+      }
+
+      return true;
+    },
+    [
+      desktopNotificationsEnabled,
+      fcmToken,
+      fcmSupported,
+      favoriteTeamIds,
+      subscribedGameIds,
+      soundEnabled,
+    ]
+  );
+
+  const unsubscribeFromGame = useCallback(
+    async (gameId: string): Promise<boolean> => {
+      const gId = String(gameId).trim();
+      if (!gId) return false;
+
+      setSubscribedGameIds((prev) => prev.filter((id) => id !== gId));
+
+      if (fcmToken) {
+        fcmClient.updateGamePushSubscription(gId, false).catch(() => {});
+      }
+
+      return true;
+    },
+    [fcmToken]
+  );
+
+  const toggleGameSubscription = useCallback(
+    async (gameId: string): Promise<boolean> => {
+      const gId = String(gameId).trim();
+      if (subscribedGameIds.includes(gId)) {
+        await unsubscribeFromGame(gId);
+        return false;
+      } else {
+        await subscribeToGame(gId);
+        return true;
+      }
+    },
+    [subscribedGameIds, subscribeToGame, unsubscribeFromGame]
+  );
+
   const enableFcmPush = async (): Promise<{ success: boolean; error?: string }> => {
     setFcmLoading(true);
     try {
-      const res = await fcmClient.requestPermissionAndRegister(favoriteTeamIds || []);
+      const res = await fcmClient.requestPermissionAndRegister(
+        favoriteTeamIds || [],
+        subscribedGameIds || []
+      );
       if (res.success && res.token) {
         setFcmToken(res.token);
         setDesktopNotificationsEnabled(true);
@@ -645,6 +791,11 @@ export const ScoreNotificationProvider: React.FC<{ children: React.ReactNode }> 
         enableFcmPush,
         disableFcmPush,
         testFcmPush,
+        subscribedGameIds,
+        isGameSubscribed,
+        toggleGameSubscription,
+        subscribeToGame,
+        unsubscribeFromGame,
         soundEnabled,
         setSoundEnabled,
         notifyOnlyFavorites,

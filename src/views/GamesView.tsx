@@ -14,8 +14,10 @@ import {
   ExternalLink,
   ChevronRight,
   Flame,
+  BellRing,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
+import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { GameCard } from '../components/GameCard.tsx';
 import { LiveGamesDashboard } from '../components/LiveGamesDashboard.tsx';
@@ -41,8 +43,14 @@ import {
 export const GamesView: React.FC = () => {
   const { activeCompetitionId, navigateToGame } = useApp();
   const { isAdminAuthenticated } = useAdminAuth();
+  const {
+    subscribedGameIds,
+    browserPermission,
+    requestBrowserPermission,
+    desktopNotificationsEnabled,
+  } = useScoreNotifications();
   const [games, setGames] = useState<Game[]>([]);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'LIVE' | 'FINAL' | 'SCHEDULED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'LIVE' | 'FINAL' | 'SCHEDULED' | 'SUBSCRIBED'>('ALL');
   const [loading, setLoading] = useState(true);
 
   // Toast Notifications State
@@ -110,9 +118,10 @@ export const GamesView: React.FC = () => {
     async (isBackgroundUpdate = false) => {
       if (!isBackgroundUpdate) setLoading(true);
       try {
+        const apiFilter = statusFilter === 'SUBSCRIBED' ? undefined : statusFilter;
         const res = await ApiClient.getGames({
           competition: activeCompetitionId,
-          status: statusFilter,
+          status: apiFilter,
         });
 
         // Detect score changes in live games
@@ -318,6 +327,14 @@ export const GamesView: React.FC = () => {
   const liveCount = games.filter((g) => g.status === 'LIVE').length;
   const finalCount = games.filter((g) => g.status === 'FINAL').length;
   const scheduledCount = games.filter((g) => g.status === 'SCHEDULED').length;
+  const subscribedCount = games.filter((g) => subscribedGameIds.includes(g.id)).length;
+
+  const displayedGames = React.useMemo(() => {
+    if (statusFilter === 'SUBSCRIBED') {
+      return games.filter((g) => subscribedGameIds.includes(g.id));
+    }
+    return games;
+  }, [games, statusFilter, subscribedGameIds]);
 
   return (
     <div className="space-y-6 pb-12 relative">
@@ -351,17 +368,19 @@ export const GamesView: React.FC = () => {
             { id: 'LIVE', label: `En Vivo (${liveCount})` },
             { id: 'FINAL', label: `Finalizados (${finalCount})` },
             { id: 'SCHEDULED', label: `Programados (${scheduledCount})` },
+            { id: 'SUBSCRIBED', label: `Mis Alertas (${subscribedCount})` },
           ].map((f) => (
             <button
               key={f.id}
               onClick={() => setStatusFilter(f.id as any)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 statusFilter === f.id
                   ? 'bg-emerald-500 text-slate-950 shadow-sm'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800'
               }`}
             >
-              {f.label}
+              {f.id === 'SUBSCRIBED' && <Bell className="w-3 h-3 text-amber-400 shrink-0" />}
+              <span>{f.label}</span>
             </button>
           ))}
         </div>
@@ -374,23 +393,39 @@ export const GamesView: React.FC = () => {
             <Radio className="w-5 h-5 animate-pulse" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-sm text-white">
-                Sistema de Alertas en Vivo (Toast de Marcador)
+                Sistema de Alertas en Vivo (Toast & Push de Marcador)
               </span>
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
                 ACTIVO
               </span>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30">
+                <BellRing className="w-3 h-3" />
+                {subscribedGameIds.length} {subscribedGameIds.length === 1 ? 'partido con push' : 'partidos con push'}
+              </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Notificaciones emergentes automáticas con cada carrera anotada, bateador y Box Score.
+              Notificaciones emergentes y push automáticas por partido. Usa el icono de campana en cada tarjeta para suscribirte.
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center flex-wrap gap-2.5 w-full lg:w-auto">
+          {/* Browser Permission Request Button if not granted */}
+          {browserPermission !== 'granted' && (
+            <button
+              onClick={() => requestBrowserPermission()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"
+              title="Permitir notificaciones de escritorio / push del navegador"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Activar Push en Navegador</span>
+            </button>
+          )}
+
           {/* Simulate Run Button (Restricted to authenticated admin) */}
           {isAdminAuthenticated && (
             <button
@@ -471,18 +506,41 @@ export const GamesView: React.FC = () => {
       {/* Content Grid */}
       {loading ? (
         <GamesGridSkeleton count={6} />
-      ) : games.length === 0 ? (
-        <div className="py-16 text-center text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800">
-          <p className="text-base font-semibold text-slate-800 dark:text-slate-300">
-            No hay partidos con el filtro seleccionado.
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Prueba seleccionando &ldquo;Todos&rdquo; para ver el calendario completo.
-          </p>
+      ) : displayedGames.length === 0 ? (
+        <div className="py-16 text-center text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+          {statusFilter === 'SUBSCRIBED' ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <Bell className="w-6 h-6 animate-pulse" />
+              </div>
+              <p className="text-base font-semibold text-slate-800 dark:text-slate-200">
+                No tienes partidos suscritos todavía.
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Haz clic en el icono de campana <span className="inline-flex items-center gap-1 font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20"><Bell className="w-3 h-3" /> Alertas</span> en cualquier tarjeta de partido para activar sus avisos push y sonoros en vivo.
+              </p>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('ALL')}
+                className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all cursor-pointer shadow-md shadow-emerald-500/20"
+              >
+                Explorar todos los partidos
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-base font-semibold text-slate-800 dark:text-slate-300">
+                No hay partidos con el filtro seleccionado.
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                Prueba seleccionando &ldquo;Todos&rdquo; para ver el calendario completo.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {games.map((game) => (
+          {displayedGames.map((game) => (
             <GameCard key={game.id} game={game} />
           ))}
         </div>

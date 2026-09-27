@@ -24,6 +24,8 @@ import {
 import { NewsArticle } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
+import { useFirebaseAuth } from '../context/FirebaseAuthContext.tsx';
+import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { getArticleFullUrl } from '../utils/slug.ts';
 import { ArticleModalSkeleton } from '../components/LoadingSkeleton.tsx';
 import { ArticleCommentsSection } from '../components/ArticleCommentsSection.tsx';
@@ -35,6 +37,10 @@ interface ArticlePostViewProps {
 
 export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }) => {
   const { setActiveTab, navigateToNews, navigateToTeam, navigateToPlayer } = useApp();
+  const { user } = useFirebaseAuth();
+  const { isAdminAuthenticated } = useAdminAuth();
+  const isLoggedIn = Boolean(user || isAdminAuthenticated);
+
   const [article, setArticle] = useState<NewsArticle | null>(null);
   const [relatedNews, setRelatedNews] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -306,10 +312,12 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
 
         {/* Independent URL Display & Copy */}
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-400 max-w-xs truncate">
-            <span className="text-emerald-400 font-bold">URL:</span>
-            <span className="truncate">/{article.slug}</span>
-          </div>
+          {isLoggedIn && (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-400 max-w-xs truncate">
+              <span className="text-emerald-400 font-bold">URL:</span>
+              <span className="truncate">/{article.slug}</span>
+            </div>
+          )}
 
           <button
             onClick={handleCopyLink}
@@ -579,25 +587,27 @@ export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }
         </div>
       )}
 
-      {/* Permanent SEO Canonical URL Box */}
-      <div className="mt-8 p-4 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-        <div className="space-y-1">
-          <div className="font-bold text-slate-200 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Enlace Permanente &amp; Posicionamiento SEO</span>
+      {/* Permanent SEO Canonical URL Box - Visible only for logged-in users */}
+      {isLoggedIn && (
+        <div className="mt-8 p-4 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="space-y-1">
+            <div className="font-bold text-slate-200 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Enlace Permanente &amp; Posicionamiento SEO</span>
+            </div>
+            <p className="text-slate-400 text-[11px] font-mono break-all">
+              {articleUrl}
+            </p>
           </div>
-          <p className="text-slate-400 text-[11px] font-mono break-all">
-            {articleUrl}
-          </p>
+          <button
+            onClick={handleCopyLink}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap text-xs flex items-center gap-1.5"
+          >
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? 'Copiado' : 'Copiar'}</span>
+          </button>
         </div>
-        <button
-          onClick={handleCopyLink}
-          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap text-xs flex items-center gap-1.5"
-        >
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copied ? 'Copiado' : 'Copiar'}</span>
-        </button>
-      </div>
+      )}
 
       {/* Community Comments Section */}
       <ArticleCommentsSection slug={article.slug} articleTitle={article.title} />
