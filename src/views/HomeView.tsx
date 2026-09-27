@@ -106,6 +106,10 @@ export const HomeView: React.FC = () => {
                 <GameCardSkeleton />
               </div>
             ))
+          ) : games.length === 0 ? (
+            <div className="w-full py-6 px-4 text-center text-xs text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+              No hay partidos registrados actualmente en el calendario.
+            </div>
           ) : (
             games.map((game) => <GameCard key={game.id} game={game} />)
           )}
@@ -147,6 +151,10 @@ export const HomeView: React.FC = () => {
               </div>
             </div>
           </>
+        ) : news.length === 0 ? (
+          <div className="lg:col-span-3 py-10 px-4 text-center rounded-2xl bg-slate-900/40 border border-slate-800 text-slate-500 text-xs">
+            No hay artículos ni noticias publicadas actualmente.
+          </div>
         ) : (
           <>
             {/* Left 2 Cols: Main Headline Article */}
@@ -276,45 +284,53 @@ export const HomeView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {standings.slice(0, 6).map((s, idx) => (
-                    <tr
-                      key={s.id || s.teamId}
-                      onClick={() => navigateToTeam(s.teamId)}
-                      className="hover:bg-slate-800/50 cursor-pointer transition-colors"
-                    >
-                      <td className="py-2.5 px-2 text-center text-slate-400 font-bold">
-                        {s.rank ?? (idx + 1)}
-                      </td>
-                      <td className="py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-2">
-                        <div className="w-5 h-5 shrink-0 flex items-center justify-center">
-                          <TeamLogo logo={s.teamLogo || s.logo} name={s.teamName} className="w-full h-full" />
-                        </div>
-                        <span className="hover:text-emerald-400 transition-colors">
-                          {s.teamName}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-2 text-right text-slate-400">{s.gamesPlayed}</td>
-                      <td className="py-2.5 px-2 text-right font-bold text-slate-100">{s.wins}</td>
-                      <td className="py-2.5 px-2 text-right text-slate-400">{s.losses}</td>
-                      <td className="py-2.5 px-2 text-right font-bold text-emerald-400">
-                        {s.pct.toFixed(3)}
-                      </td>
-                      <td className="py-2.5 px-2 text-right text-slate-400">
-                        {typeof s.diff === 'number' ? (s.diff === 0 ? '-' : s.diff.toFixed(1)) : (s.diff || '-')}
-                      </td>
-                      <td className="py-2.5 px-2 text-right">
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            s.streak.startsWith('G')
-                              ? 'bg-emerald-500/20 text-emerald-400'
-                              : 'bg-rose-500/20 text-rose-400'
-                          }`}
-                        >
-                          {s.streak}
-                        </span>
+                  {standings.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-500 font-sans text-xs">
+                        No hay registros de posiciones para la temporada.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    standings.slice(0, 6).map((s, idx) => (
+                      <tr
+                        key={s.id || s.teamId}
+                        onClick={() => navigateToTeam(s.teamId)}
+                        className="hover:bg-slate-800/50 cursor-pointer transition-colors"
+                      >
+                        <td className="py-2.5 px-2 text-center text-slate-400 font-bold">
+                          {s.rank ?? (idx + 1)}
+                        </td>
+                        <td className="py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-2">
+                          <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                            <TeamLogo logo={s.teamLogo || s.logo} name={s.teamName} className="w-full h-full" />
+                          </div>
+                          <span className="hover:text-emerald-400 transition-colors">
+                            {s.teamName}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-2 text-right text-slate-400">{s.gamesPlayed}</td>
+                        <td className="py-2.5 px-2 text-right font-bold text-slate-100">{s.wins}</td>
+                        <td className="py-2.5 px-2 text-right text-slate-400">{s.losses}</td>
+                        <td className="py-2.5 px-2 text-right font-bold text-emerald-400">
+                          {s.pct.toFixed(3)}
+                        </td>
+                        <td className="py-2.5 px-2 text-right text-slate-400">
+                          {typeof s.diff === 'number' ? (s.diff === 0 ? '-' : s.diff.toFixed(1)) : (s.diff || '-')}
+                        </td>
+                        <td className="py-2.5 px-2 text-right">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              s.streak.startsWith('G')
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-rose-500/20 text-rose-400'
+                            }`}
+                          >
+                            {s.streak}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             )}
@@ -353,6 +369,10 @@ export const HomeView: React.FC = () => {
                   <Skeleton className="h-5 w-12 rounded" />
                 </div>
               ))}
+            </div>
+          ) : leaders.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-500 font-sans">
+              No hay líderes estadísticos registrados actualmente.
             </div>
           ) : (
             <div className="space-y-3">

@@ -312,17 +312,29 @@ apiRouter.delete('/admin/news/:id', requireAdmin, (req: Request, res: Response) 
   res.json({ success: true, message: 'Noticia eliminada' });
 });
 
-// System Reset to Demo Data
+// System Reset or Clear Data
 apiRouter.post('/admin/system/reset-demo', requireAdmin, (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  baseballRepo.resetToDefaults();
+  baseballRepo.clearAllData();
   adminAuthService.addAuditLog(
     admin.username,
-    'Restablecimiento del Sistema',
-    'Todos los datos fueron restablecidos a los valores demo de fábrica.',
+    'Limpieza de Datos',
+    'Todos los datos de prueba fueron eliminados del sistema.',
     'system'
   );
-  res.json({ success: true, message: 'Datos restablecidos exitosamente a los valores de fábrica.' });
+  res.json({ success: true, message: 'Todos los datos de prueba han sido eliminados.' });
+});
+
+apiRouter.post('/admin/system/clear-all', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  baseballRepo.clearAllData();
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Eliminación de Datos',
+    'Todos los datos fueron eliminados de la base de datos.',
+    'system'
+  );
+  res.json({ success: true, message: 'Todos los datos han sido eliminados permanentemente.' });
 });
 
 // Database Persistence Status and Manual Sync

@@ -79,64 +79,73 @@ export const LeadersView: React.FC = () => {
           </span>
         </div>
 
-        {/* #1 Leader Hero Highlight */}
-        {firstItem && (
-          <div
-            onClick={() => navigateToPlayer(firstItem.playerId)}
-            className="flex items-center gap-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all mb-3 group"
-          >
-            <div className="relative">
-              <img
-                src={firstItem.playerPhoto}
-                alt={firstItem.playerName}
-                className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500/40"
-                referrerPolicy="no-referrer"
-              />
-              <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center">
-                1
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="font-bold text-sm text-slate-100 group-hover:text-emerald-400 truncate transition-colors">
-                {firstItem.playerName}
-              </h4>
-              <p className="text-xs text-slate-400">
-                {firstItem.position} • {firstItem.teamShort}
-              </p>
-            </div>
-            <span className={`font-mono text-xl font-black ${colorClasses[themeColor]}`}>
-              {isDecimals && typeof firstItem.value === 'number'
-                ? firstItem.value.toFixed(statName === 'PCL' ? 2 : 3)
-                : firstItem.value}
-            </span>
+        {/* Card Content or Empty */}
+        {items.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-500 font-sans">
+            Sin datos registrados
           </div>
-        )}
-
-        {/* Secondary Leaders List */}
-        <div className="space-y-1.5 flex-1">
-          {items.slice(1).map((item, idx) => (
-            <div
-              key={item.playerId}
-              onClick={() => navigateToPlayer(item.playerId)}
-              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 cursor-pointer text-xs transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="font-mono text-slate-500 w-4 text-center font-bold">
-                  {idx + 2}
+        ) : (
+          <>
+            {/* #1 Leader Hero Highlight */}
+            {firstItem && (
+              <div
+                onClick={() => navigateToPlayer(firstItem.playerId)}
+                className="flex items-center gap-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all mb-3 group"
+              >
+                <div className="relative">
+                  <img
+                    src={firstItem.playerPhoto}
+                    alt={firstItem.playerName}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500/40"
+                    referrerPolicy="no-referrer"
+                  />
+                  <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center">
+                    1
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold text-sm text-slate-100 group-hover:text-emerald-400 truncate transition-colors">
+                    {firstItem.playerName}
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    {firstItem.position} • {firstItem.teamShort}
+                  </p>
+                </div>
+                <span className={`font-mono text-xl font-black ${colorClasses[themeColor]}`}>
+                  {isDecimals && typeof firstItem.value === 'number'
+                    ? firstItem.value.toFixed(statName === 'PCL' ? 2 : 3)
+                    : firstItem.value}
                 </span>
-                <span className="font-medium text-slate-300 group-hover:text-emerald-400 truncate transition-colors">
-                  {item.playerName}
-                </span>
-                <span className="text-[11px] text-slate-500">({item.teamShort})</span>
               </div>
-              <span className="font-mono font-bold text-slate-200">
-                {isDecimals && typeof item.value === 'number'
-                  ? item.value.toFixed(statName === 'PCL' ? 2 : 3)
-                  : item.value}
-              </span>
+            )}
+
+            {/* Secondary Leaders List */}
+            <div className="space-y-1.5 flex-1">
+              {items.slice(1).map((item, idx) => (
+                <div
+                  key={item.playerId}
+                  onClick={() => navigateToPlayer(item.playerId)}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 cursor-pointer text-xs transition-colors group"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="font-mono text-slate-500 w-4 text-center font-bold">
+                      {idx + 2}
+                    </span>
+                    <span className="font-medium text-slate-300 group-hover:text-emerald-400 truncate transition-colors">
+                      {item.playerName}
+                    </span>
+                    <span className="text-[11px] text-slate-500">({item.teamShort})</span>
+                  </div>
+                  <span className="font-mono font-bold text-slate-200">
+                    {isDecimals && typeof item.value === 'number'
+                      ? item.value.toFixed(statName === 'PCL' ? 2 : 3)
+                      : item.value}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
     );
   };

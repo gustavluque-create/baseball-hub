@@ -163,17 +163,23 @@ export const TeamsView: React.FC = () => {
         <TeamsGridSkeleton count={8} />
       ) : displayedTeams.length === 0 ? (
         <div className="text-center py-16 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-8 space-y-3">
-          <Star className="w-8 h-8 text-amber-400 mx-auto" />
-          <h3 className="text-base font-bold text-slate-200">No tienes equipos favoritos guardados</h3>
+          <Shield className="w-8 h-8 text-slate-500 mx-auto" />
+          <h3 className="text-base font-bold text-slate-200">
+            {filterFavoritesOnly ? 'No tienes equipos favoritos guardados' : 'No hay equipos registrados'}
+          </h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Haz clic en la estrella de cualquier equipo para agregarlo a tus favoritos y acceder rápidamente a sus marcadores en la portada.
+            {filterFavoritesOnly
+              ? 'Haz clic en la estrella de cualquier equipo para agregarlo a tus favoritos.'
+              : 'Actualmente no hay franquicias registradas en el sistema.'}
           </p>
-          <button
-            onClick={() => setFilterFavoritesOnly(false)}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition-colors cursor-pointer"
-          >
-            Ver todos los equipos
-          </button>
+          {filterFavoritesOnly && (
+            <button
+              onClick={() => setFilterFavoritesOnly(false)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition-colors cursor-pointer"
+            >
+              Ver todos los equipos
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">

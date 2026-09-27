@@ -84,17 +84,17 @@ export class BaseballRepository {
     deletedTeamIds: [],
   };
 
-  private competitions: Competition[] = [...DEMO_COMPETITIONS];
-  private seasons: Season[] = [...DEMO_SEASONS];
-  private teams: Team[] = [...DEMO_TEAMS];
-  private players: Player[] = [...DEMO_PLAYERS];
-  private games: Game[] = [...DEMO_GAMES];
-  private battingStats: BattingStats[] = [...DEMO_BATTING_STATS];
-  private pitchingStats: PitchingStats[] = [...DEMO_PITCHING_STATS];
-  private standings: Standing[] = [...DEMO_STANDINGS];
-  private news: NewsArticle[] = [...DEMO_NEWS];
-  private videos: VideoItem[] = [...DEMO_VIDEOS];
-  private comments: ArticleComment[] = [...INITIAL_COMMENTS];
+  private competitions: Competition[] = [];
+  private seasons: Season[] = [];
+  private teams: Team[] = [];
+  private players: Player[] = [];
+  private games: Game[] = [];
+  private battingStats: BattingStats[] = [];
+  private pitchingStats: PitchingStats[] = [];
+  private standings: Standing[] = [];
+  private news: NewsArticle[] = [];
+  private videos: VideoItem[] = [];
+  private comments: ArticleComment[] = [];
 
   constructor() {
     this.loadFromDisk();
@@ -127,8 +127,6 @@ export class BaseballRepository {
         }
         this.applyUserOverrides();
         this.saveToDisk();
-      } else {
-        await cloudSqlSync.seedIfEmpty(this.teams, this.players, this.userOverrides.teamLogos);
       }
     } catch (err) {
       console.warn('[BaseballRepository] Cloud SQL initialization error (running on local persistence):', err);
@@ -283,37 +281,37 @@ export class BaseballRepository {
           const raw = fs.readFileSync(filePath, 'utf-8');
           if (raw && raw.trim().length > 0) {
             const data = JSON.parse(raw);
-            if (Array.isArray(data.competitions) && data.competitions.length > 0) {
+            if (Array.isArray(data.competitions)) {
               this.competitions = data.competitions;
             }
-            if (Array.isArray(data.seasons) && data.seasons.length > 0) {
+            if (Array.isArray(data.seasons)) {
               this.seasons = data.seasons;
             }
-            if (Array.isArray(data.teams) && data.teams.length > 0) {
+            if (Array.isArray(data.teams)) {
               this.teams = data.teams;
             }
-            if (Array.isArray(data.players) && data.players.length > 0) {
+            if (Array.isArray(data.players)) {
               this.players = data.players;
             }
-            if (Array.isArray(data.games) && data.games.length > 0) {
+            if (Array.isArray(data.games)) {
               this.games = data.games;
             }
-            if (Array.isArray(data.battingStats) && data.battingStats.length > 0) {
+            if (Array.isArray(data.battingStats)) {
               this.battingStats = data.battingStats;
             }
-            if (Array.isArray(data.pitchingStats) && data.pitchingStats.length > 0) {
+            if (Array.isArray(data.pitchingStats)) {
               this.pitchingStats = data.pitchingStats;
             }
-            if (Array.isArray(data.standings) && data.standings.length > 0) {
+            if (Array.isArray(data.standings)) {
               this.standings = data.standings;
             }
-            if (Array.isArray(data.news) && data.news.length > 0) {
+            if (Array.isArray(data.news)) {
               this.news = data.news;
             }
-            if (Array.isArray(data.videos) && data.videos.length > 0) {
+            if (Array.isArray(data.videos)) {
               this.videos = data.videos;
             }
-            if (Array.isArray(data.comments) && data.comments.length > 0) {
+            if (Array.isArray(data.comments)) {
               this.comments = data.comments;
             }
             return true;
@@ -2249,17 +2247,17 @@ export class BaseballRepository {
       };
       this.saveUserOverridesToDisk();
     }
-    this.competitions = [...DEMO_COMPETITIONS];
-    this.seasons = [...DEMO_SEASONS];
-    this.teams = [...DEMO_TEAMS];
-    this.players = [...DEMO_PLAYERS];
-    this.games = [...DEMO_GAMES];
-    this.battingStats = [...DEMO_BATTING_STATS];
-    this.pitchingStats = [...DEMO_PITCHING_STATS];
-    this.standings = [...DEMO_STANDINGS];
-    this.news = [...DEMO_NEWS];
-    this.videos = [...DEMO_VIDEOS];
-    this.comments = [...INITIAL_COMMENTS];
+    this.competitions = [];
+    this.seasons = [];
+    this.teams = [];
+    this.players = [];
+    this.games = [];
+    this.battingStats = [];
+    this.pitchingStats = [];
+    this.standings = [];
+    this.news = [];
+    this.videos = [];
+    this.comments = [];
 
     // Always preserve user logos and custom data unless specifically requested to clear
     if (!clearUserOverrides) {
@@ -2268,6 +2266,24 @@ export class BaseballRepository {
       this.deduplicatePlayers();
     }
     this.saveToDisk();
+  }
+
+  clearAllData(): void {
+    this.competitions = [];
+    this.seasons = [];
+    this.teams = [];
+    this.players = [];
+    this.games = [];
+    this.battingStats = [];
+    this.pitchingStats = [];
+    this.standings = [];
+    this.news = [];
+    this.videos = [];
+    this.comments = [];
+    this.saveToDisk();
+    cloudSqlSync.clearAllTestData().catch((err) => {
+      console.error('[BaseballRepository] Failed to clear Cloud SQL test data:', err);
+    });
   }
 
   getFullDatabase(): any {

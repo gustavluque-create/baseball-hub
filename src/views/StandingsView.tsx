@@ -104,7 +104,13 @@ export const StandingsView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {standings.map((s, index) => {
+                {standings.length === 0 ? (
+                  <tr>
+                    <td colSpan={13} className="py-12 text-center text-slate-500 font-sans text-xs">
+                      No hay registros de posiciones para la temporada seleccionada.
+                    </td>
+                  </tr>
+                ) : standings.map((s, index) => {
                   const isPlayoffZone = index < 4;
                   return (
                     <tr

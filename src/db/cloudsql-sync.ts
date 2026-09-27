@@ -129,114 +129,27 @@ export class CloudSqlSyncService {
   }
 
   /**
-   * Seed Cloud SQL from initial repository data if database is empty
+   * Seed Cloud SQL - Disabled: Test data loading has been permanently disabled per user request.
    */
   public async seedIfEmpty(
-    baseTeams: Team[],
-    basePlayers: Player[],
-    customLogos: Record<string, { logo: string; primaryColor?: string }> = {}
+    _baseTeams: Team[] = [],
+    _basePlayers: Player[] = [],
+    _customLogos: Record<string, { logo: string; primaryColor?: string }> = {}
   ): Promise<boolean> {
+    console.log('[CloudSqlSync] Auto-seeding of test data is permanently disabled.');
+    return false;
+  }
+
+  /**
+   * Delete all test data from Cloud SQL tables
+   */
+  public async clearAllTestData(): Promise<void> {
     try {
-      const exists = await this.hasData();
-      if (exists) {
-        console.log('[CloudSqlSync] Cloud SQL already contains data. Skipping initial seeding.');
-        return false;
-      }
-
-      console.log(`🌱 [CloudSqlSync] Seeding Cloud SQL with ${baseTeams.length} teams and ${basePlayers.length} players...`);
-
-      // Insert teams
-      for (const t of baseTeams) {
-        const champCount = Array.isArray(t.championships) ? t.championships.length : Number(t.championships || 0);
-        await db
-          .insert(teams)
-          .values({
-            id: t.id,
-            name: t.name,
-            nickname: t.nickname || t.name,
-            shortName: t.shortName,
-            city: t.city || 'Cuba',
-            stadium: t.stadium || 'Estadio',
-            capacity: Number(t.capacity || t.stadiumCapacity || 15000),
-            manager: t.manager || 'Director Técnico',
-            foundedYear: Number(t.foundedYear || 1977),
-            championships: champCount,
-            primaryColor: t.colors?.primary || '#10B981',
-            secondaryColor: t.colors?.secondary || '#1E293B',
-            textColor: t.colors?.text || '#FFFFFF',
-            logo: t.logo || '⚾',
-            competitionId: t.competitionId || 'snb',
-            seasonId: t.seasonId || 'snb-65',
-            wins: t.record?.wins ?? 0,
-            losses: t.record?.losses ?? 0,
-            pct: (t.record?.pct ?? 0).toString(),
-            streak: t.record?.streak || 'E0',
-            lastTen: t.record?.lastTen || '0-0',
-            position: t.record?.position ?? 1,
-          })
-          .onConflictDoUpdate({
-            target: teams.id,
-            set: {
-              name: t.name,
-              logo: t.logo,
-              manager: t.manager,
-            },
-          });
-      }
-
-      // Insert players in chunks
-      const chunkSize = 50;
-      for (let i = 0; i < basePlayers.length; i += chunkSize) {
-        const chunk = basePlayers.slice(i, i + chunkSize);
-        for (const p of chunk) {
-          await db
-            .insert(players)
-            .values({
-              id: p.id,
-              slug: p.slug || p.fullName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-              fullName: p.fullName,
-              shortName: p.lastName || p.fullName,
-              number: p.jerseyNumber !== undefined ? p.jerseyNumber : 99,
-              position: p.position,
-              teamId: p.teamId,
-              teamShort: p.teamShort || '',
-              bats: p.bats || 'R',
-              throws: p.throws || 'R',
-              age: p.age || 25,
-              birthDate: p.birthDate || '1999-01-01',
-              photo: p.photo || '',
-              isFavorite: false,
-              isHallOfFame: false,
-              isAllStar: false,
-              war: '0.0',
-            })
-            .onConflictDoNothing();
-        }
-      }
-
-      // Insert custom logos
-      for (const [teamId, logoData] of Object.entries(customLogos)) {
-        await db
-          .insert(teamLogos)
-          .values({
-            teamId: teamId.toLowerCase(),
-            logo: logoData.logo,
-            primaryColor: logoData.primaryColor || null,
-          })
-          .onConflictDoUpdate({
-            target: teamLogos.teamId,
-            set: {
-              logo: logoData.logo,
-              primaryColor: logoData.primaryColor || null,
-            },
-          });
-      }
-
-      console.log('✅ [CloudSqlSync] Successfully seeded Cloud SQL PostgreSQL.');
-      return true;
+      await db.delete(players);
+      await db.delete(teams);
+      console.log('🧹 [CloudSqlSync] All test data deleted from Cloud SQL tables.');
     } catch (err) {
-      console.error('[CloudSqlSync] Error seeding Cloud SQL:', err);
-      return false;
+      console.error('[CloudSqlSync] Error clearing test data from Cloud SQL:', err);
     }
   }
 

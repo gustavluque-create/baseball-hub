@@ -41,6 +41,14 @@ export const VideosView: React.FC = () => {
             <VideoCardSkeleton key={idx} />
           ))}
         </div>
+      ) : videos.length === 0 ? (
+        <div className="py-16 text-center rounded-2xl bg-slate-900/40 border border-slate-800 p-8 space-y-2">
+          <Play className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+          <h3 className="text-base font-bold text-slate-200">No hay videos disponibles</h3>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            Actualmente no hay resúmenes ni transmisiones registradas en el sistema.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {videos.map((video) => (
