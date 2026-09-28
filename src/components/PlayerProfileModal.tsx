@@ -14,6 +14,11 @@ import {
   Table as TableIcon,
   ChevronRight,
   Plus,
+  Filter,
+  Link2,
+  Copy,
+  Check,
+  Share2,
 } from 'lucide-react';
 import { Player, BattingStats, PitchingStats, PlayerDetailResponse, Team } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
@@ -24,6 +29,8 @@ import { PlayerHistoricalStatsModal } from './admin/PlayerHistoricalStatsModal.t
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 import { PlayerPerformanceTrendChart } from './PlayerPerformanceTrendChart.tsx';
+import { SeasonBadge, getSeasonInfo } from '../utils/seasonIndicator.tsx';
+import { getPlayerCustomUrl, copyCustomUrlToClipboard } from '../utils/entityUrls.ts';
 import {
   LineChart,
   Line,
@@ -43,7 +50,7 @@ interface PlayerProfileModalProps {
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId, onClose }) => {
-  const { navigateToTeam, dataVersion, triggerDataRefresh } = useApp();
+  const { navigateToTeam, selectedTeamId, dataVersion, triggerDataRefresh } = useApp();
   const { isAdminAuthenticated } = useAdminAuth();
   const [data, setData] = useState<PlayerDetailResponse | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -51,15 +58,24 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
   const [activeTab, setActiveTab] = useState<'current' | 'recent' | 'history' | 'evolution'>('current');
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
   const [isHistoricalStatsOpen, setIsHistoricalStatsOpen] = useState(false);
+  const [historicalSeasonFilter, setHistoricalSeasonFilter] = useState<string>('ALL');
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const fetchPlayerDetails = async () => {
     if (!playerId) return;
     setLoading(true);
     try {
-      const [playerRes, teamsRes] = await Promise.all([
-        ApiClient.getPlayerDetail(playerId),
-        ApiClient.getTeams().catch(() => [] as Team[]),
-      ]);
+      let playerRes: PlayerDetailResponse;
+      if (selectedTeamId && (playerId === 'jugador' || !playerId.startsWith('p-'))) {
+        try {
+          playerRes = await ApiClient.getPlayerByTeamAndSlug(selectedTeamId, playerId);
+        } catch {
+          playerRes = await ApiClient.getPlayerDetail(playerId);
+        }
+      } else {
+        playerRes = await ApiClient.getPlayerDetail(playerId);
+      }
+      const teamsRes = await ApiClient.getTeams().catch(() => [] as Team[]);
       setData(playerRes);
       setTeams(teamsRes);
     } catch (err) {
@@ -71,7 +87,17 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
 
   useEffect(() => {
     fetchPlayerDetails();
-  }, [playerId, dataVersion]);
+  }, [playerId, selectedTeamId, dataVersion]);
+
+  // Synchronize browser address bar with canonical personalized URL
+  useEffect(() => {
+    if (data?.player && typeof window !== 'undefined') {
+      const canonical = getPlayerCustomUrl(data.player, data.player.teamShort || data.player.teamId || selectedTeamId);
+      if (canonical && window.location.pathname !== canonical && !window.location.pathname.startsWith('/admin')) {
+        window.history.replaceState({ playerId: data.player.id }, '', canonical);
+      }
+    }
+  }, [data?.player, selectedTeamId]);
 
   if (!playerId) return null;
 
@@ -84,23 +110,59 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
 
   const isPitcher = player?.position === 'SP' || player?.position === 'RP';
 
-  // Evolution chart data from historical seasons
-  const battingChartData = careerBatting.map((b) => ({
-    season: String(b.seasonYear || b.seasonId || ''),
-    avg: Number((b.avg || 0).toFixed(3)),
-    ops: Number((b.ops || 0).toFixed(3)),
-    hr: b.hr || 0,
-    h: b.h || 0,
-    rbi: b.rbi || 0,
-  }));
+  // Distinct seasons available for this player
+  const availableSeasons = React.useMemo(() => {
+    const list = isPitcher ? careerPitching : careerBatting;
+    const map = new Map<string, { edition: string; category: string; fullTitle: string; count: number }>();
+    list.forEach((s) => {
+      const info = getSeasonInfo(s);
+      const key = info.edition;
+      if (!map.has(key)) {
+        map.set(key, { edition: info.edition, category: info.category, fullTitle: info.fullTitle, count: 1 });
+      } else {
+        map.get(key)!.count++;
+      }
+    });
+    return Array.from(map.values());
+  }, [isPitcher, careerPitching, careerBatting]);
 
-  const pitchingChartData = careerPitching.map((p) => ({
-    season: String(p.seasonYear || p.seasonId || ''),
-    era: Number((p.era || 0).toFixed(2)),
-    whip: Number((p.whip || 0).toFixed(2)),
-    so: p.so || 0,
-    w: p.w ?? p.wins ?? 0,
-  }));
+  const filteredBatting = React.useMemo(() => {
+    if (historicalSeasonFilter === 'ALL') return careerBatting;
+    return careerBatting.filter((b) => getSeasonInfo(b).edition === historicalSeasonFilter);
+  }, [careerBatting, historicalSeasonFilter]);
+
+  const filteredPitching = React.useMemo(() => {
+    if (historicalSeasonFilter === 'ALL') return careerPitching;
+    return careerPitching.filter((p) => getSeasonInfo(p).edition === historicalSeasonFilter);
+  }, [careerPitching, historicalSeasonFilter]);
+
+  // Evolution chart data with distinct season indicators
+  const battingChartData = careerBatting.map((b) => {
+    const sInfo = getSeasonInfo(b);
+    return {
+      season: sInfo.edition,
+      seasonFull: sInfo.fullTitle,
+      year: sInfo.yearSpan,
+      avg: Number((b.avg || 0).toFixed(3)),
+      ops: Number((b.ops || 0).toFixed(3)),
+      hr: b.hr || 0,
+      h: b.h || 0,
+      rbi: b.rbi || 0,
+    };
+  });
+
+  const pitchingChartData = careerPitching.map((p) => {
+    const sInfo = getSeasonInfo(p);
+    return {
+      season: sInfo.edition,
+      seasonFull: sInfo.fullTitle,
+      year: sInfo.yearSpan,
+      era: Number((p.era || 0).toFixed(2)),
+      whip: Number((p.whip || 0).toFixed(2)),
+      so: p.so || 0,
+      w: p.w ?? p.wins ?? 0,
+    };
+  });
 
   return (
     <div
@@ -240,6 +302,47 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                       "{player.bio}"
                     </p>
                   )}
+
+                  {/* Personalized Custom URL Display & Share Link */}
+                  {(() => {
+                    const customPath = getPlayerCustomUrl(player, player.teamShort || player.teamId || selectedTeamId);
+                    return (
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-2 border-t border-slate-800/80">
+                        <div
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950/90 border border-slate-800 text-xs font-mono"
+                          title="Enlace permanente y personalizado del pelotero"
+                        >
+                          <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="text-slate-500 font-sans text-[11px] font-semibold">URL:</span>
+                          <span className="text-emerald-400 font-bold">{customPath}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const ok = await copyCustomUrlToClipboard(customPath);
+                            if (ok) {
+                              setCopiedUrl(true);
+                              setTimeout(() => setCopiedUrl(false), 2000);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white border border-slate-700 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                          title="Copiar URL personalizada al portapapeles"
+                        >
+                          {copiedUrl ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-emerald-400 font-bold">¡Enlace Copiado!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Copiar Enlace</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -616,15 +719,65 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
 
                   {/* Batting Historical Table */}
                   {careerBatting.length > 0 && (
-                    <div className="space-y-2">
-                      <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                        Estadísticas de Bateo por Temporada
-                      </h5>
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                          Estadísticas de Bateo por Temporada
+                        </h5>
+
+                        {/* Distinct Season Filter Ribbon */}
+                        {availableSeasons.length > 1 && (
+                          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
+                            <span className="text-slate-400 font-bold text-[11px] px-1.5 flex items-center gap-1">
+                              <Filter className="w-3 h-3 text-emerald-400" />
+                              <span>Temporadas:</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setHistoricalSeasonFilter('ALL')}
+                              className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                historicalSeasonFilter === 'ALL'
+                                  ? 'bg-emerald-500 text-slate-950 shadow font-black'
+                                  : 'bg-slate-900 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              Todas ({careerBatting.length})
+                            </button>
+                            {availableSeasons.map((s) => (
+                              <button
+                                key={s.edition}
+                                type="button"
+                                onClick={() => setHistoricalSeasonFilter(s.edition)}
+                                className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                  historicalSeasonFilter === s.edition
+                                    ? 'bg-slate-800 text-white border border-emerald-500 shadow'
+                                    : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                }`}
+                                title={s.fullTitle}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    s.category === 'current'
+                                      ? 'bg-emerald-400 animate-pulse'
+                                      : s.category === 'recent'
+                                      ? 'bg-blue-400'
+                                      : s.category === 'historical'
+                                      ? 'bg-amber-400'
+                                      : 'bg-purple-400'
+                                  }`}
+                                />
+                                <span>{s.edition}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/80">
                         <table className="w-full text-xs font-mono text-left">
                           <thead>
                             <tr className="text-slate-400 bg-slate-900 border-b border-slate-800 uppercase font-sans text-[11px]">
-                              <th className="py-2.5 px-3">Temporada</th>
+                              <th className="py-2.5 px-3">Temporada Oficial</th>
                               <th className="py-2.5 px-2 text-center">Equipo</th>
                               <th className="py-2.5 px-2 text-right">JJ</th>
                               <th className="py-2.5 px-2 text-right">VB</th>
@@ -645,10 +798,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/60">
-                            {careerBatting.map((stat) => (
+                            {filteredBatting.map((stat) => (
                               <tr key={stat.id} className="hover:bg-slate-800/40 transition-colors">
-                                <td className="py-2.5 px-3 font-sans font-bold text-white">
-                                  {stat.seasonYear || stat.seasonId}
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <SeasonBadge stat={stat} size="sm" showStatusTag={true} />
                                 </td>
                                 <td className="py-2.5 px-2 text-center font-bold text-slate-300">
                                   {stat.teamShort || stat.teamId}
@@ -715,15 +868,65 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
 
                   {/* Pitching Historical Table */}
                   {careerPitching.length > 0 && (
-                    <div className="space-y-2">
-                      <h5 className="text-xs font-bold uppercase tracking-wider text-sky-400">
-                        Estadísticas de Pitcheo por Temporada
-                      </h5>
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-sky-400">
+                          Estadísticas de Pitcheo por Temporada
+                        </h5>
+
+                        {/* Distinct Season Filter Ribbon */}
+                        {availableSeasons.length > 1 && (
+                          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
+                            <span className="text-slate-400 font-bold text-[11px] px-1.5 flex items-center gap-1">
+                              <Filter className="w-3 h-3 text-sky-400" />
+                              <span>Temporadas:</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setHistoricalSeasonFilter('ALL')}
+                              className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                historicalSeasonFilter === 'ALL'
+                                  ? 'bg-sky-500 text-slate-950 shadow font-black'
+                                  : 'bg-slate-900 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              Todas ({careerPitching.length})
+                            </button>
+                            {availableSeasons.map((s) => (
+                              <button
+                                key={s.edition}
+                                type="button"
+                                onClick={() => setHistoricalSeasonFilter(s.edition)}
+                                className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                  historicalSeasonFilter === s.edition
+                                    ? 'bg-slate-800 text-white border border-sky-500 shadow'
+                                    : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                }`}
+                                title={s.fullTitle}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    s.category === 'current'
+                                      ? 'bg-emerald-400 animate-pulse'
+                                      : s.category === 'recent'
+                                      ? 'bg-blue-400'
+                                      : s.category === 'historical'
+                                      ? 'bg-amber-400'
+                                      : 'bg-purple-400'
+                                  }`}
+                                />
+                                <span>{s.edition}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/80">
                         <table className="w-full text-xs font-mono text-left">
                           <thead>
                             <tr className="text-slate-400 bg-slate-900 border-b border-slate-800 uppercase font-sans text-[11px]">
-                              <th className="py-2.5 px-3">Temporada</th>
+                              <th className="py-2.5 px-3">Temporada Oficial</th>
                               <th className="py-2.5 px-2 text-center">Equipo</th>
                               <th className="py-2.5 px-2 text-right">JJ</th>
                               <th className="py-2.5 px-2 text-right">JI</th>
@@ -742,10 +945,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/60">
-                            {careerPitching.map((stat) => (
+                            {filteredPitching.map((stat) => (
                               <tr key={stat.id} className="hover:bg-slate-800/40 transition-colors">
-                                <td className="py-2.5 px-3 font-sans font-bold text-white">
-                                  {stat.seasonYear || stat.seasonId}
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <SeasonBadge stat={stat} size="sm" showStatusTag={true} />
                                 </td>
                                 <td className="py-2.5 px-2 text-center font-bold text-slate-300">
                                   {stat.teamShort || stat.teamId}

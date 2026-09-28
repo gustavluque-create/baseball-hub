@@ -98,6 +98,20 @@ apiRouter.post('/admin/games', requireAdmin, (req: Request, res: Response) => {
   res.status(201).json(newGame);
 });
 
+apiRouter.post('/admin/games/series', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const games = baseballRepo.createGameSeries(req.body);
+  if (games.length > 0) {
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Programación de Subserie',
+      `Subserie creada: ${games[0].awayTeam.shortName} vs ${games[0].homeTeam.shortName} (${games.length} juegos programados)`,
+      'games'
+    );
+  }
+  res.status(201).json(games);
+});
+
 apiRouter.put('/admin/games/:id', requireAdmin, (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const gameId = req.params.id;
@@ -806,6 +820,28 @@ apiRouter.get('/players/:id/recent-games', (req: Request, res: Response) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
   const recentGames = baseballRepo.getPlayerRecentGameLogs(player.id, limit);
   res.json(recentGames);
+});
+
+// Personalized URL endpoint: /teams/:teamId/players/:playerId (e.g. /matanzas/erisbel-arruebarrena or /matanzas/jugador)
+apiRouter.get('/teams/:teamId/players/:playerId', (req: Request, res: Response) => {
+  const player = baseballRepo.getPlayerByTeamAndIdentifier(req.params.teamId, req.params.playerId);
+  if (!player) {
+    return res.status(404).json({ error: 'Jugador no encontrado para este equipo' });
+  }
+  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+  const batting = historical.careerBatting[historical.careerBatting.length - 1];
+  const pitching = historical.careerPitching[historical.careerPitching.length - 1];
+  const recentGames = baseballRepo.getPlayerRecentGameLogs(player.id, 10);
+
+  res.json({
+    player,
+    batting,
+    pitching,
+    careerBatting: historical.careerBatting,
+    careerPitching: historical.careerPitching,
+    careerTotals: historical.careerTotals,
+    recentGames,
+  });
 });
 
 // Manage Player Historical Batting Stats

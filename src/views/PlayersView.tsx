@@ -229,7 +229,7 @@ export const PlayersView: React.FC = () => {
             return (
               <div
                 key={player.id}
-                onClick={() => navigateToPlayer(player.id)}
+                onClick={() => navigateToPlayer(player.slug || player.id, player.teamShort || player.teamId)}
                 className={`group relative p-4 rounded-2xl transition-all shadow-sm hover:shadow-xl flex items-center gap-3.5 cursor-pointer ${
                   isSelected
                     ? isPlayerA

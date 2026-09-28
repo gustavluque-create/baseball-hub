@@ -33,6 +33,7 @@ import {
   HardDrive,
   Save,
   RefreshCw,
+  Swords,
 } from 'lucide-react';
 import { ApiClient } from '../services/api.ts';
 import { IngestionValidationSummary, AdminSystemOverview } from '../types/index.ts';
@@ -40,6 +41,7 @@ import { useApp } from '../context/AppContext.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { AdminLoginForm } from '../components/AdminLoginModal.tsx';
 import { AdminGamesManager } from '../components/admin/AdminGamesManager.tsx';
+import { AdminComparisonsManager } from '../components/admin/AdminComparisonsManager.tsx';
 import { AdminPlayersManager } from '../components/admin/AdminPlayersManager.tsx';
 import { AdminAuditLogs } from '../components/admin/AdminAuditLogs.tsx';
 import { AdminNewsManager } from '../components/admin/AdminNewsManager.tsx';
@@ -88,8 +90,11 @@ export const AdminView: React.FC = () => {
   const { isAdminAuthenticated, adminUser, logout } = useAdminAuth();
   const { stats: monitorStats } = useDatabaseLogs();
 
-  type AdminTab = 'overview' | 'teams' | 'games' | 'etl' | 'players' | 'news' | 'logs' | 'db_monitor' | 'settings';
+  type AdminTab = 'overview' | 'teams' | 'games' | 'comparisons' | 'etl' | 'players' | 'news' | 'logs' | 'db_monitor' | 'settings';
   const [activeSection, setActiveSection] = useState<AdminTab>('overview');
+  const [comparisonTeamAId, setComparisonTeamAId] = useState<string>('');
+  const [comparisonTeamBId, setComparisonTeamBId] = useState<string>('');
+  const [comparisonGameId, setComparisonGameId] = useState<string>('');
   const [format, setFormat] = useState<'csv' | 'json'>('csv');
   const [rawText, setRawText] = useState<string>(SAMPLE_CSV);
   const [auditSummary, setAuditSummary] = useState<IngestionValidationSummary | null>(null);
@@ -266,6 +271,18 @@ export const AdminView: React.FC = () => {
         >
           <Calendar className="w-3.5 h-3.5" />
           <span>Partidos en Vivo</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSection('comparisons')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            activeSection === 'comparisons'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+          }`}
+        >
+          <Swords className="w-3.5 h-3.5" />
+          <span>Comparativas &amp; Cara a Cara</span>
         </button>
 
         <button
@@ -605,7 +622,26 @@ export const AdminView: React.FC = () => {
       )}
 
       {/* TAB: GAMES CONTROLLER */}
-      {activeSection === 'games' && <AdminGamesManager />}
+      {activeSection === 'games' && (
+        <AdminGamesManager
+          onOpenComparison={(teamA, teamB, gameId) => {
+            setComparisonTeamAId(teamA);
+            setComparisonTeamBId(teamB);
+            if (gameId) setComparisonGameId(gameId);
+            setActiveSection('comparisons');
+          }}
+        />
+      )}
+
+      {/* TAB: MATCHUPS & HEAD-TO-HEAD COMPARISON STUDIO */}
+      {activeSection === 'comparisons' && (
+        <AdminComparisonsManager
+          initialTeamAId={comparisonTeamAId}
+          initialTeamBId={comparisonTeamBId}
+          initialGameId={comparisonGameId}
+          onNavigateToGames={() => setActiveSection('games')}
+        />
+      )}
 
       {/* TAB: PLAYERS & ROSTER */}
       {activeSection === 'players' && <AdminPlayersManager />}

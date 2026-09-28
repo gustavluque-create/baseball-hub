@@ -147,7 +147,7 @@ export const GlobalSearchModal: React.FC = () => {
                   <div
                     key={p.id}
                     onClick={() => {
-                      navigateToPlayer(p.id);
+                      navigateToPlayer(p.slug || p.id, p.teamShort || p.teamId);
                       setIsSearchOpen(false);
                     }}
                     className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-colors group"

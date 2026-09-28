@@ -563,6 +563,10 @@ export class ApiClient {
     return this.request<PlayerDetailResponse>(`/players/${id}`);
   }
 
+  static getPlayerByTeamAndSlug(teamSlugOrId: string, playerSlugOrId: string): Promise<PlayerDetailResponse> {
+    return this.request<PlayerDetailResponse>(`/teams/${encodeURIComponent(teamSlugOrId)}/players/${encodeURIComponent(playerSlugOrId)}`);
+  }
+
   static getPlayerRecentGames(id: string, limit = 10): Promise<PlayerGameLogItem[]> {
     return this.request<PlayerGameLogItem[]>(`/players/${id}/recent-games?limit=${limit}`);
   }
@@ -611,6 +615,10 @@ export class ApiClient {
 
   static getMatchupComparison(id: string): Promise<MatchupComparisonData> {
     return this.request<MatchupComparisonData>(`/games/${id}/matchup`);
+  }
+
+  static compareTeams(teamA: string, teamB: string): Promise<TeamDirectComparisonData> {
+    return this.request<TeamDirectComparisonData>(`/teams/compare?teamA=${encodeURIComponent(teamA)}&teamB=${encodeURIComponent(teamB)}`);
   }
 
   static simulateGameRun(params?: { gameId?: string; side?: 'home' | 'away'; runs?: number }): Promise<{
@@ -844,6 +852,20 @@ export class ApiClient {
     return this.request<Game>('/admin/games', {
       method: 'POST',
       body: JSON.stringify(gameData),
+    });
+  }
+
+  static createAdminGameSeries(seriesData: {
+    awayTeamId: string;
+    homeTeamId: string;
+    startDate: string;
+    startTime?: string;
+    numberOfGames: number;
+    stadium?: string;
+  }): Promise<Game[]> {
+    return this.request<Game[]>('/admin/games/series', {
+      method: 'POST',
+      body: JSON.stringify(seriesData),
     });
   }
 

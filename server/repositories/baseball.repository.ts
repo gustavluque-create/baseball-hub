@@ -63,6 +63,25 @@ const INITIAL_COMMENTS: ArticleComment[] = [
   },
 ];
 
+const KNOWN_SLUG_MAP: Record<string, string> = {
+  mtz: 'mtz', matanzas: 'mtz', cocodrilos: 'mtz',
+  ind: 'ind', industriales: 'ind', leones: 'ind', 'la-habana': 'ind', habana: 'ind',
+  ltu: 'ltu', 'las-tunas': 'ltu', tunas: 'ltu', lenadores: 'ltu', 'leñadores': 'ltu',
+  pri: 'pri', 'pinar-del-rio': 'pri', pinar: 'pri', vegueros: 'pri',
+  gra: 'gra', granma: 'gra', alazanes: 'gra', bayamo: 'gra',
+  scu: 'scu', 'santiago-de-cuba': 'scu', santiago: 'scu', avispas: 'scu',
+  cav: 'cav', 'ciego-de-avila': 'cav', ciego: 'cav', tigres: 'cav',
+  ssp: 'ssp', 'sancti-spiritus': 'ssp', spiritus: 'ssp', gallos: 'ssp',
+  vcl: 'vcl', 'villa-clara': 'vcl', leopardos: 'vcl', 'santa-clara': 'vcl',
+  cmg: 'cmg', camaguey: 'cmg', 'camagüey': 'cmg', toros: 'cmg',
+  hol: 'hol', holguin: 'hol', 'holguín': 'hol', cachorros: 'hol',
+  cfg: 'cfg', cienfuegos: 'cfg', elefantes: 'cfg',
+  art: 'art', artemisa: 'art', cazadores: 'art',
+  may: 'may', mayabeque: 'may', huracanes: 'may',
+  ijv: 'ijv', 'isla-de-la-juventud': 'ijv', isla: 'ijv', piratas: 'ijv',
+  gtm: 'gtm', guantanamo: 'gtm', 'guantánamo': 'gtm', indios: 'gtm',
+};
+
 export class BaseballRepository {
   private readonly dbFilePath = path.resolve(process.cwd(), 'server/data/database.json');
   private readonly backupFilePath = path.resolve(process.cwd(), 'server/data/database.backup.json');
@@ -334,6 +353,21 @@ export class BaseballRepository {
       loaded = true;
     }
 
+    // Fallback: If no teams or data loaded, initialize with full DEMO data
+    if (this.teams.length === 0) {
+      this.competitions = JSON.parse(JSON.stringify(DEMO_COMPETITIONS));
+      this.seasons = JSON.parse(JSON.stringify(DEMO_SEASONS));
+      this.teams = JSON.parse(JSON.stringify(DEMO_TEAMS));
+      this.players = JSON.parse(JSON.stringify(DEMO_PLAYERS));
+      this.games = JSON.parse(JSON.stringify(DEMO_GAMES));
+      this.battingStats = JSON.parse(JSON.stringify(DEMO_BATTING_STATS));
+      this.pitchingStats = JSON.parse(JSON.stringify(DEMO_PITCHING_STATS));
+      this.standings = JSON.parse(JSON.stringify(DEMO_STANDINGS));
+      this.news = JSON.parse(JSON.stringify(DEMO_NEWS));
+      this.videos = JSON.parse(JSON.stringify(DEMO_VIDEOS));
+      this.comments = JSON.parse(JSON.stringify(INITIAL_COMMENTS));
+    }
+
     // 3. ALWAYS apply user overrides on top (guarantees user uploaded logos and data are NEVER lost!)
     this.applyUserOverrides();
 
@@ -432,7 +466,44 @@ export class BaseballRepository {
   }
 
   getTeamById(id: string): Team | undefined {
-    return this.teams.find((t) => t.id === id || t.shortName.toLowerCase() === id.toLowerCase());
+    if (!id) return undefined;
+    const clean = id.trim().toLowerCase();
+
+    // 1. Direct ID match
+    const byId = this.teams.find((t) => t.id.toLowerCase() === clean);
+    if (byId) return byId;
+
+    // 2. ShortName match (e.g. MTZ, IND, LTU)
+    const byShort = this.teams.find((t) => t.shortName.toLowerCase() === clean);
+    if (byShort) return byShort;
+
+    // 3. Known canonical slug map (e.g. "matanzas" -> "mtz", "industriales" -> "ind")
+    const mappedId = KNOWN_SLUG_MAP[clean];
+    if (mappedId) {
+      const byMapped = this.teams.find((t) => t.id.toLowerCase() === mappedId);
+      if (byMapped) return byMapped;
+    }
+
+    // 4. Explicit slug property
+    const bySlug = this.teams.find((t) => (t as any).slug && (t as any).slug.toLowerCase() === clean);
+    if (bySlug) return bySlug;
+
+    // 4. Normalized slug from city, nickname, or full name
+    const normalize = (str: string) =>
+      (str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
+    // Canonical city mappings (e.g. "pinar-del-rio", "la-habana", "ciego-de-avila", "matanzas")
+    return this.teams.find((t) => {
+      const citySlug = normalize(t.city);
+      const nameSlug = normalize(t.name);
+      const nickSlug = normalize(t.nickname);
+      return citySlug === clean || nameSlug === clean || nickSlug === clean;
+    });
   }
 
   updateTeam(id: string, updates: Partial<Team>): Team | undefined {
@@ -922,7 +993,72 @@ export class BaseballRepository {
   }
 
   getPlayerById(id: string): Player | undefined {
-    return this.players.find((p) => p.id === id || p.slug === id);
+    if (!id) return undefined;
+    const clean = id.trim().toLowerCase();
+
+    // 1. Direct ID match
+    const byId = this.players.find((p) => p.id.toLowerCase() === clean);
+    if (byId) return byId;
+
+    // 2. Direct slug match
+    const bySlug = this.players.find((p) => p.slug && p.slug.toLowerCase() === clean);
+    if (bySlug) return bySlug;
+
+    // 3. Normalized full name match (e.g. "Erisbel Arruebarrena" -> "erisbel-arruebarrena")
+    const normalize = (str: string) =>
+      (str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
+    return this.players.find((p) => normalize(p.fullName) === clean);
+  }
+
+  getPlayerByTeamAndIdentifier(teamIdOrSlug: string, playerIdentifier: string): Player | undefined {
+    if (!playerIdentifier) return undefined;
+    const cleanPlayer = playerIdentifier.trim().toLowerCase();
+    const team = this.getTeamById(teamIdOrSlug);
+
+    // If identifier is literally "jugador", return the first / representative player of that team
+    if (cleanPlayer === 'jugador') {
+      if (team) {
+        const teamPlayers = this.players.filter(
+          (p) => p.teamId.toLowerCase() === team.id.toLowerCase() || p.teamShort.toLowerCase() === team.shortName.toLowerCase()
+        );
+        if (teamPlayers.length > 0) return teamPlayers[0];
+      }
+      return this.players[0];
+    }
+
+    const normalize = (str: string) =>
+      (str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
+    // Search specifically within the team first
+    if (team) {
+      const inTeam = this.players.find((p) => {
+        const matchesTeam =
+          p.teamId.toLowerCase() === team.id.toLowerCase() ||
+          p.teamShort.toLowerCase() === team.shortName.toLowerCase();
+        if (!matchesTeam) return false;
+
+        return (
+          p.id.toLowerCase() === cleanPlayer ||
+          (p.slug && p.slug.toLowerCase() === cleanPlayer) ||
+          normalize(p.fullName) === cleanPlayer
+        );
+      });
+      if (inTeam) return inTeam;
+    }
+
+    // Fall back to searching any player across all teams
+    return this.getPlayerById(playerIdentifier);
   }
 
   getPlayerHistoricalStats(playerId: string): {
@@ -2690,6 +2826,36 @@ export class BaseballRepository {
     this.games[index] = updated;
     this.saveToDisk();
     return updated;
+  }
+
+  createGameSeries(seriesData: {
+    awayTeamId: string;
+    homeTeamId: string;
+    startDate: string;
+    startTime?: string;
+    numberOfGames: number;
+    stadium?: string;
+  }): Game[] {
+    const createdGames: Game[] = [];
+    const baseDate = new Date(seriesData.startDate || new Date().toISOString().split('T')[0]);
+    const num = Math.min(Math.max(1, seriesData.numberOfGames || 3), 7);
+
+    for (let i = 0; i < num; i++) {
+      const gDate = new Date(baseDate);
+      gDate.setDate(gDate.getDate() + i);
+      const dateStr = gDate.toISOString().split('T')[0];
+      const game = this.createGame({
+        id: `game_${Date.now()}_${i + 1}`,
+        awayTeamId: seriesData.awayTeamId,
+        homeTeamId: seriesData.homeTeamId,
+        date: dateStr,
+        time: seriesData.startTime || '14:00',
+        stadium: seriesData.stadium,
+        status: 'SCHEDULED',
+      });
+      createdGames.push(game);
+    }
+    return createdGames;
   }
 
   deleteGame(id: string): boolean {

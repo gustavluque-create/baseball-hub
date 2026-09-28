@@ -87,21 +87,28 @@ const AppContent: React.FC = () => {
       setActiveEntityName((prev) => ({ ...prev, playerName: undefined }));
       return;
     }
-    ApiClient.getPlayerDetail(selectedPlayerId)
+    const fetchPlayer =
+      selectedTeamId && (selectedPlayerId === 'jugador' || !selectedPlayerId.startsWith('p-'))
+        ? ApiClient.getPlayerByTeamAndSlug(selectedTeamId, selectedPlayerId).catch(() =>
+            ApiClient.getPlayerDetail(selectedPlayerId)
+          )
+        : ApiClient.getPlayerDetail(selectedPlayerId);
+
+    fetchPlayer
       .then((data) => {
         if (data?.player) {
           setActiveEntityName((prev) => ({ ...prev, playerName: data.player.fullName }));
         }
       })
       .catch(() => {});
-  }, [selectedPlayerId]);
+  }, [selectedPlayerId, selectedTeamId]);
 
   // Sync article details when in article view
   useEffect(() => {
     const targetSlug =
       selectedNewsSlug ||
       (activeTab === 'article' && typeof window !== 'undefined'
-        ? window.location.pathname.replace(/^\/(?:noticias|articulo|news)\//i, '')
+        ? window.location.pathname.replace(/^\/(?:noticias|articulo|news)\//, '')
         : null);
 
     if (!targetSlug || activeTab !== 'article') {
@@ -128,7 +135,28 @@ const AppContent: React.FC = () => {
 
   // Compute dynamic SEO metadata based on currently active view and selection
   const getSeoMetadata = () => {
-    // 1. Team page or modal selection (e.g. 'Baseball Hub - Matanzas')
+    // 1. Player modal selection
+    if (selectedPlayerId) {
+      const pName = activeEntityName.playerName || 'Jugador';
+      const teamCity =
+        activeEntityName.teamName ||
+        (selectedTeamId && KNOWN_TEAMS[selectedTeamId.toLowerCase()]?.city) ||
+        '';
+      const title = teamCity ? `Baseball Hub - ${pName} (${teamCity})` : `Baseball Hub - ${pName}`;
+      return {
+        title,
+        description: `Ficha deportiva, estadísticas avanzadas de bateo y pitcheo, métricas y trayectoria de ${pName} en la Serie Nacional.`,
+        ogType: 'profile' as const,
+        jsonLd: {
+          '@context': 'https://schema.org',
+          '@type': 'Person',
+          name: pName,
+          jobTitle: 'Pelotero de Béisbol',
+        },
+      };
+    }
+
+    // 2. Team page or modal selection (e.g. 'Baseball Hub - Matanzas')
     if (selectedTeamId) {
       const teamCity =
         activeEntityName.teamName ||
@@ -143,22 +171,6 @@ const AppContent: React.FC = () => {
           '@type': 'SportsTeam',
           name: teamCity,
           sport: 'Baseball',
-        },
-      };
-    }
-
-    // 2. Player modal selection
-    if (selectedPlayerId) {
-      const pName = activeEntityName.playerName || 'Jugador';
-      return {
-        title: `Baseball Hub - ${pName}`,
-        description: `Ficha deportiva, estadísticas avanzadas de bateo y pitcheo, métricas y trayectoria de ${pName} en la Serie Nacional.`,
-        ogType: 'profile' as const,
-        jsonLd: {
-          '@context': 'https://schema.org',
-          '@type': 'Person',
-          name: pName,
-          jobTitle: 'Pelotero de Béisbol',
         },
       };
     }

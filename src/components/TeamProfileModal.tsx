@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MapPin, Trophy, Users, Shield, Calendar, Award, Star, Camera, Image as ImageIcon } from 'lucide-react';
+import { X, MapPin, Trophy, Users, Shield, Calendar, Award, Star, Camera, Image as ImageIcon, Link2, Copy, Check } from 'lucide-react';
 import { Team, Player, Game } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
@@ -8,6 +8,7 @@ import { TeamLogo } from './TeamLogo.tsx';
 import { TeamLogoEditorModal } from './admin/TeamLogoEditorModal.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
+import { getTeamCustomUrl, copyCustomUrlToClipboard } from '../utils/entityUrls.ts';
 
 interface TeamProfileModalProps {
   teamId: string | null;
@@ -25,6 +26,7 @@ export const TeamProfileModal: React.FC<TeamProfileModalProps> = ({ teamId, onCl
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'roster' | 'games' | 'info'>('roster');
   const [isLogoEditorOpen, setIsLogoEditorOpen] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   useEffect(() => {
     if (!teamId) return;
@@ -39,6 +41,16 @@ export const TeamProfileModal: React.FC<TeamProfileModalProps> = ({ teamId, onCl
         setLoading(false);
       });
   }, [teamId, dataVersion]);
+
+  // Synchronize browser address bar with canonical personalized URL
+  useEffect(() => {
+    if (data?.team && typeof window !== 'undefined') {
+      const canonical = getTeamCustomUrl(data.team);
+      if (canonical && window.location.pathname !== canonical && !window.location.pathname.startsWith('/admin')) {
+        window.history.replaceState({ teamId: data.team.id }, '', canonical);
+      }
+    }
+  }, [data?.team]);
 
   if (!teamId) return null;
 
@@ -174,6 +186,47 @@ export const TeamProfileModal: React.FC<TeamProfileModalProps> = ({ teamId, onCl
                           <span>•</span>
                           <span>Fundado: {data.team.foundedYear}</span>
                         </div>
+
+                        {/* Personalized Custom URL Display & Share Link */}
+                        {(() => {
+                          const customPath = getTeamCustomUrl(data.team);
+                          return (
+                            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-2 border-t border-slate-800/80 mt-2">
+                              <div
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950/90 border border-slate-800 text-xs font-mono"
+                                title="Enlace permanente y personalizado del equipo"
+                              >
+                                <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span className="text-slate-500 font-sans text-[11px] font-semibold">URL:</span>
+                                <span className="text-emerald-400 font-bold">{customPath}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const ok = await copyCustomUrlToClipboard(customPath);
+                                  if (ok) {
+                                    setCopiedUrl(true);
+                                    setTimeout(() => setCopiedUrl(false), 2000);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white border border-slate-700 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                                title="Copiar URL personalizada del equipo al portapapeles"
+                              >
+                                {copiedUrl ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="text-emerald-400 font-bold">¡Enlace Copiado!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Copiar Enlace</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Record badge */}
@@ -247,7 +300,7 @@ export const TeamProfileModal: React.FC<TeamProfileModalProps> = ({ teamId, onCl
                               key={p.id}
                               onClick={() => {
                                 onClose();
-                                navigateToPlayer(p.id);
+                                navigateToPlayer(p.slug || p.id, data.team.shortName || data.team.id);
                               }}
                               className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all group"
                             >

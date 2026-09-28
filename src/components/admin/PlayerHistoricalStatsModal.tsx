@@ -19,6 +19,7 @@ import {
 import { Player, BattingStats, PitchingStats, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { AdminStatsImportModal } from './AdminStatsImportModal.tsx';
+import { SeasonBadge } from '../../utils/seasonIndicator.tsx';
 
 interface PlayerHistoricalStatsModalProps {
   player: Player | null;
@@ -521,11 +522,11 @@ export const PlayerHistoricalStatsModal: React.FC<PlayerHistoricalStatsModalProp
                   />
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {[
-                      { label: 'SNB 65 (2026)', yr: 2026, sid: 'snb-65' },
-                      { label: 'SNB 64 (2025)', yr: 2025, sid: 'snb-64' },
-                      { label: 'SNB 63 (2024)', yr: 2024, sid: 'snb-63' },
-                      { label: 'SNB 62 (2023)', yr: 2023, sid: 'snb-62' },
-                      { label: 'SNB 61 (2022)', yr: 2022, sid: 'snb-61' },
+                      { label: 'SNB 65 (2026-27) [Actual]', yr: 2027, sid: 'snb-65' },
+                      { label: 'SNB 64 (2025-26) [Anterior]', yr: 2026, sid: 'snb-64' },
+                      { label: 'SNB 63 (2024-25)', yr: 2024, sid: 'snb-63' },
+                      { label: 'SNB 56 (2016-17) [Histórica]', yr: 2017, sid: 'snb-56' },
+                      { label: '3ra LEBC (2026)', yr: 2026, sid: 'lebc-2026' },
                     ].map((preset) => (
                       <button
                         key={preset.sid}
@@ -542,6 +543,21 @@ export const PlayerHistoricalStatsModal: React.FC<PlayerHistoricalStatsModalProp
                         {preset.label}
                       </button>
                     ))}
+                  </div>
+
+                  {/* Live Season Badge Preview */}
+                  <div className="mt-2.5 pt-2 border-t border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-1 font-semibold">
+                      Indicativo visual oficial generado:
+                    </span>
+                    <SeasonBadge
+                      stat={{
+                        seasonYear: activeTab === 'batting' ? battingForm.seasonYear : pitchingForm.seasonYear,
+                        seasonId: activeTab === 'batting' ? battingForm.seasonId : pitchingForm.seasonId,
+                      }}
+                      size="sm"
+                      showStatusTag={true}
+                    />
                   </div>
                 </div>
 

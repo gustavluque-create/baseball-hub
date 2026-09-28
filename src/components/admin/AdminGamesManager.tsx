@@ -14,19 +14,40 @@ import {
   AlertCircle,
   Save,
   X,
+  Search,
+  Swords,
+  Layers,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { Game, GameStatus, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { useScoreNotifications } from '../../context/ScoreNotificationContext.tsx';
+import { GameLiveConsoleModal } from './GameLiveConsoleModal.tsx';
+import { GameEditModal } from './GameEditModal.tsx';
+import { TeamLogo } from '../TeamLogo.tsx';
 
-export const AdminGamesManager: React.FC = () => {
+interface AdminGamesManagerProps {
+  onOpenComparison?: (teamAId: string, teamBId: string, gameId?: string) => void;
+}
+
+export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
+  onOpenComparison,
+}) => {
   const { simulateScoreChange } = useScoreNotifications();
   const [games, setGames] = useState<Game[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filters & Search
   const [filter, setFilter] = useState<'all' | 'live' | 'scheduled' | 'final'>('all');
-  const [editingGameId, setEditingGameId] = useState<string | null>(null);
+  const [teamFilter, setTeamFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Modals
+  const [liveConsoleGame, setLiveConsoleGame] = useState<Game | null>(null);
+  const [editingGame, setEditingGame] = useState<Game | null>(null);
   const [isCreatingGame, setIsCreatingGame] = useState(false);
+  const [isCreatingSeries, setIsCreatingSeries] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // New game form state
@@ -36,6 +57,9 @@ export const AdminGamesManager: React.FC = () => {
   const [newTime, setNewTime] = useState('14:00');
   const [newVenue, setNewVenue] = useState('');
   const [newStatus, setNewStatus] = useState<GameStatus>('SCHEDULED');
+
+  // Series generator state
+  const [seriesGamesCount, setSeriesGamesCount] = useState(3);
 
   const fetchGamesAndTeams = async () => {
     setLoading(true);
@@ -60,6 +84,11 @@ export const AdminGamesManager: React.FC = () => {
   useEffect(() => {
     fetchGamesAndTeams();
   }, []);
+
+  const showMessage = (msg: string) => {
+    setActionMessage(msg);
+    setTimeout(() => setActionMessage(null), 3500);
+  };
 
   const handleUpdateScore = async (game: Game, side: 'home' | 'away', delta: number) => {
     const currentScore = side === 'home' ? game.homeScore : game.awayScore;
@@ -112,7 +141,7 @@ export const AdminGamesManager: React.FC = () => {
     try {
       await ApiClient.deleteAdminGame(gameId);
       setGames((prev) => prev.filter((g) => g.id !== gameId));
-      showMessage('Partido eliminado correctamente.');
+      showMessage('Partido eliminado correctamente del sistema.');
     } catch (err: any) {
       alert(`Error al eliminar partido: ${err.message}`);
     }
@@ -147,23 +176,69 @@ export const AdminGamesManager: React.FC = () => {
     }
   };
 
-  const showMessage = (msg: string) => {
-    setActionMessage(msg);
-    setTimeout(() => setActionMessage(null), 3500);
+  const handleCreateSeries = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAwayTeamId || !newHomeTeamId || newAwayTeamId === newHomeTeamId) {
+      alert('Seleccione dos equipos diferentes.');
+      return;
+    }
+
+    try {
+      const createdList = await ApiClient.createAdminGameSeries({
+        awayTeamId: newAwayTeamId,
+        homeTeamId: newHomeTeamId,
+        startDate: newDate,
+        startTime: newTime,
+        numberOfGames: seriesGamesCount,
+        stadium: newVenue || undefined,
+      });
+      setGames((prev) => [...createdList, ...prev]);
+      setIsCreatingSeries(false);
+      showMessage(`Subserie de ${createdList.length} partidos programada exitosamente.`);
+    } catch (err: any) {
+      alert(`Error al programar subserie: ${err.message}`);
+    }
   };
 
+  const handleGameUpdated = (updated: Game) => {
+    setGames((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+    showMessage(`Partido ${updated.awayTeam.shortName} vs ${updated.homeTeam.shortName} actualizado.`);
+  };
+
+  // Filtered games
   const filteredGames = games.filter((g) => {
-    if (filter === 'live') return g.status === 'LIVE';
-    if (filter === 'scheduled') return g.status === 'SCHEDULED';
-    if (filter === 'final') return g.status === 'FINAL';
+    // Status filter
+    if (filter === 'live' && g.status !== 'LIVE') return false;
+    if (filter === 'scheduled' && g.status !== 'SCHEDULED') return false;
+    if (filter === 'final' && g.status !== 'FINAL') return false;
+
+    // Team filter
+    if (teamFilter !== 'all') {
+      const matchesTeam = g.awayTeam.id === teamFilter || g.homeTeam.id === teamFilter;
+      if (!matchesTeam) return false;
+    }
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchText =
+        g.awayTeam.name.toLowerCase().includes(q) ||
+        g.awayTeam.shortName.toLowerCase().includes(q) ||
+        g.homeTeam.name.toLowerCase().includes(q) ||
+        g.homeTeam.shortName.toLowerCase().includes(q) ||
+        (g.stadium && g.stadium.toLowerCase().includes(q)) ||
+        g.date.includes(q);
+      if (!matchText) return false;
+    }
+
     return true;
   });
 
   return (
     <div className="space-y-6">
-      {/* Action Message Toast */}
+      {/* Toast Notification */}
       {actionMessage && (
-        <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-between animate-in fade-in duration-200">
+        <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-between animate-in fade-in duration-150">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <span>{actionMessage}</span>
@@ -174,80 +249,135 @@ export const AdminGamesManager: React.FC = () => {
         </div>
       )}
 
-      {/* Top Controls Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900 border border-slate-800">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              filter === 'all'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-            }`}
-          >
-            Todos ({games.length})
-          </button>
-          <button
-            onClick={() => setFilter('live')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              filter === 'live'
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-            <span>En Vivo ({games.filter((g) => g.status === 'LIVE').length})</span>
-          </button>
-          <button
-            onClick={() => setFilter('scheduled')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              filter === 'scheduled'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-            }`}
-          >
-            Programados
-          </button>
-          <button
-            onClick={() => setFilter('final')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              filter === 'final'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-            }`}
-          >
-            Finalizados
-          </button>
+      {/* Top Filter and Action Bar */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Status Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                filter === 'all'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              Todos ({games.length})
+            </button>
+            <button
+              onClick={() => setFilter('live')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                filter === 'live'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+              <span>En Vivo ({games.filter((g) => g.status === 'LIVE').length})</span>
+            </button>
+            <button
+              onClick={() => setFilter('scheduled')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                filter === 'scheduled'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              Programados ({games.filter((g) => g.status === 'SCHEDULED').length})
+            </button>
+            <button
+              onClick={() => setFilter('final')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                filter === 'final'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              Finalizados ({games.filter((g) => g.status === 'FINAL').length})
+            </button>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={fetchGamesAndTeams}
+              className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
+              title="Recargar partidos"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={() => {
+                setIsCreatingGame(!isCreatingGame);
+                setIsCreatingSeries(false);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Programar Partido</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsCreatingSeries(!isCreatingSeries);
+                setIsCreatingGame(false);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+            >
+              <Layers className="w-4 h-4" />
+              <span>Generar Subserie</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={fetchGamesAndTeams}
-            className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
-            title="Recargar partidos"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={() => setIsCreatingGame(!isCreatingGame)}
-            className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Programar Partido</span>
-          </button>
+        {/* Search & Team Filter Row */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 border-t border-slate-800/80">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar por equipo, estadio o fecha (ej: Matanzas, Victoria de Girón)..."
+              className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label className="text-[11px] font-bold text-slate-400 whitespace-nowrap">Equipo:</label>
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 focus:border-emerald-500 focus:outline-none"
+            >
+              <option value="all">Todos los Equipos</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.shortName} - {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* New Game Form Modal/Drawer */}
+      {/* New Single Game Form */}
       {isCreatingGame && (
         <form
           onSubmit={handleCreateGame}
-          className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/40 shadow-xl space-y-4 animate-in slide-in-from-top-2 duration-200"
+          className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/40 shadow-xl space-y-4 animate-in slide-in-from-top-2 duration-150"
         >
           <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <h3 className="text-sm font-black text-slate-100 uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-xs font-black text-slate-100 uppercase tracking-wider flex items-center gap-2">
               <Calendar className="w-4 h-4 text-emerald-400" />
-              <span>Programar Nuevo Partido de Béisbol</span>
+              <span>Programar Nuevo Partido Oficial</span>
             </h3>
             <button
               type="button"
@@ -325,16 +455,118 @@ export const AdminGamesManager: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsCreatingGame(false)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
               <span>Guardar y Publicar Partido</span>
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Series Generator Form */}
+      {isCreatingSeries && (
+        <form
+          onSubmit={handleCreateSeries}
+          className="p-5 rounded-2xl bg-slate-900 border border-indigo-500/40 shadow-xl space-y-4 animate-in slide-in-from-top-2 duration-150"
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <h3 className="text-xs font-black text-slate-100 uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-400" />
+              <span>Generador de Subserie de Béisbol (Serie Particular)</span>
+            </h3>
+            <button
+              type="button"
+              onClick={() => setIsCreatingSeries(false)}
+              className="text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Equipo Visitante</label>
+              <select
+                value={newAwayTeamId}
+                onChange={(e) => setNewAwayTeamId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-semibold focus:border-indigo-500 focus:outline-none"
+              >
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.shortName} - {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Equipo Home Club</label>
+              <select
+                value={newHomeTeamId}
+                onChange={(e) => setNewHomeTeamId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-semibold focus:border-indigo-500 focus:outline-none"
+              >
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.shortName} - {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Fecha de Inicio & Hora</label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-mono focus:border-indigo-500 focus:outline-none"
+                />
+                <input
+                  type="time"
+                  value={newTime}
+                  onChange={(e) => setNewTime(e.target.value)}
+                  className="w-20 px-2 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-mono focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">Formato de Subserie</label>
+              <select
+                value={seriesGamesCount}
+                onChange={(e) => setSeriesGamesCount(parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 font-semibold focus:border-indigo-500 focus:outline-none"
+              >
+                <option value={2}>2 Juegos Consecutivos</option>
+                <option value={3}>Subserie de 3 Juegos</option>
+                <option value={5}>Subserie Nacional (5 Juegos)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsCreatingSeries(false)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Generar Subserie Completa</span>
             </button>
           </div>
         </form>
@@ -344,7 +576,7 @@ export const AdminGamesManager: React.FC = () => {
       <div className="space-y-3">
         {filteredGames.length === 0 ? (
           <div className="p-8 text-center rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 text-xs">
-            No se encontraron partidos con el filtro seleccionado.
+            No se encontraron partidos con los filtros aplicados.
           </div>
         ) : (
           filteredGames.map((game) => (
@@ -359,7 +591,7 @@ export const AdminGamesManager: React.FC = () => {
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 {/* Game Information & Teams */}
                 <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
                     <span className="font-mono">{game.date} • {game.time}</span>
                     <span>•</span>
                     <span className="truncate">{game.stadium || 'Estadio Principal'}</span>
@@ -381,6 +613,9 @@ export const AdminGamesManager: React.FC = () => {
                   <div className="flex items-center gap-6">
                     {/* Away Team */}
                     <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-md bg-slate-950 flex items-center justify-center p-0.5 border border-slate-800">
+                        <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full object-contain" />
+                      </div>
                       <span className="font-black text-base text-slate-100">{game.awayTeam.shortName}</span>
                       <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
                         <span className="font-mono text-lg font-black text-amber-400">{game.awayScore}</span>
@@ -409,6 +644,9 @@ export const AdminGamesManager: React.FC = () => {
 
                     {/* Home Team */}
                     <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-md bg-slate-950 flex items-center justify-center p-0.5 border border-slate-800">
+                        <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full object-contain" />
+                      </div>
                       <span className="font-black text-base text-slate-100">{game.homeTeam.shortName}</span>
                       <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
                         <span className="font-mono text-lg font-black text-emerald-400">{game.homeScore}</span>
@@ -462,7 +700,7 @@ export const AdminGamesManager: React.FC = () => {
 
                       <div className="flex items-center gap-1 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
                         <span>Outs:</span>
-                        <span className="font-mono font-bold text-amber-400">{game.outs}</span>
+                        <span className="font-mono font-bold text-amber-400">{game.outs || 0}</span>
                       </div>
                     </div>
                   )}
@@ -470,11 +708,45 @@ export const AdminGamesManager: React.FC = () => {
 
                 {/* Status & Operational Actions */}
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {/* Quick State Toggle Buttons */}
+                  {/* Open Live Operator Console */}
+                  <button
+                    type="button"
+                    onClick={() => setLiveConsoleGame(game)}
+                    className="px-3 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    title="Abrir Consola de Operador en Vivo (Pizarra Inning-por-Inning, Conteo B-S-O y Jugadas)"
+                  >
+                    <Radio className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+                    <span>Consola En Vivo</span>
+                  </button>
+
+                  {/* Open Matchup Comparison */}
+                  {onOpenComparison && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenComparison(game.awayTeam.id, game.homeTeam.id, game.id)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Ver y Gestionar Comparativa Cara a Cara de este Partido"
+                    >
+                      <Swords className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Comparativa</span>
+                    </button>
+                  )}
+
+                  {/* Edit Game Details */}
+                  <button
+                    type="button"
+                    onClick={() => setEditingGame(game)}
+                    className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
+                    title="Editar datos del partido (Fecha, Hora, Sede, Árbitro)"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Quick State Toggle Dropdown */}
                   <select
                     value={game.status}
                     onChange={(e) => handleUpdateStatus(game.id, e.target.value as GameStatus)}
-                    className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-200 focus:border-emerald-500 focus:outline-none"
                   >
                     <option value="SCHEDULED">Programado</option>
                     <option value="LIVE">Poner En Vivo</option>
@@ -486,21 +758,20 @@ export const AdminGamesManager: React.FC = () => {
                   {game.status === 'LIVE' && (
                     <button
                       onClick={() => simulateScoreChange(game.id, Math.random() > 0.5 ? 'home' : 'away')}
-                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                      className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 text-xs font-bold transition-colors cursor-pointer"
                       title="Simular carrera y emitir notificación en tiempo real a los navegadores"
                     >
                       <Zap className="w-3.5 h-3.5" />
-                      <span>Simular Jugada</span>
                     </button>
                   )}
 
                   {/* Delete Game */}
                   <button
                     onClick={() => handleDeleteGame(game.id)}
-                    className="p-1.5 rounded-lg bg-slate-950 hover:bg-red-500/20 text-slate-500 hover:text-red-400 border border-slate-800 transition-colors cursor-pointer"
+                    className="p-2 rounded-xl bg-slate-950 hover:bg-red-500/20 text-slate-500 hover:text-red-400 border border-slate-800 transition-colors cursor-pointer"
                     title="Eliminar partido"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -508,6 +779,25 @@ export const AdminGamesManager: React.FC = () => {
           ))
         )}
       </div>
+
+      {/* Live Console Operator Modal */}
+      {liveConsoleGame && (
+        <GameLiveConsoleModal
+          game={liveConsoleGame}
+          onClose={() => setLiveConsoleGame(null)}
+          onGameUpdated={handleGameUpdated}
+        />
+      )}
+
+      {/* Edit Game Modal */}
+      {editingGame && (
+        <GameEditModal
+          game={editingGame}
+          teams={teams}
+          onClose={() => setEditingGame(null)}
+          onGameUpdated={handleGameUpdated}
+        />
+      )}
     </div>
   );
 };

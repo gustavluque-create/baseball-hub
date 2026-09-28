@@ -63,6 +63,116 @@ function injectArticleMeta(html: string, article: any, fullUrl: string): string 
   return transformed.replace('</head>', `${extraMeta}</head>`);
 }
 
+function injectPlayerMeta(html: string, player: any, team: any, fullUrl: string): string {
+  const escapeHtml = (str: string) =>
+    (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const teamName = team ? team.city || team.name : player.teamName || '';
+  const title = `${escapeHtml(player.fullName)} (${escapeHtml(teamName)}) | Ficha y Estadísticas | Baseball Hub`;
+  const desc = escapeHtml(
+    player.bio ||
+      `Perfil deportivo, estadísticas de bateo y pitcheo, métricas de rendimiento y trayectoria de ${player.fullName} en la Serie Nacional de Béisbol.`
+  );
+  const image = player.photo || '';
+
+  let transformed = html
+    .replace(/<title>.*?<\/title>/i, `<title>${title}</title>`)
+    .replace(
+      /<meta\s+name="description"\s+content=".*?"\s*\/?>/i,
+      `<meta name="description" content="${desc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:title"\s+content=".*?"\s*\/?>/i,
+      `<meta property="og:title" content="${title}" />`
+    )
+    .replace(
+      /<meta\s+property="og:description"\s+content=".*?"\s*\/?>/i,
+      `<meta property="og:description" content="${desc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:type"\s+content=".*?"\s*\/?>/i,
+      `<meta property="og:type" content="profile" />`
+    );
+
+  const extraMeta = `
+    <link rel="canonical" href="${fullUrl}" />
+    <meta property="og:url" content="${fullUrl}" />
+    <meta property="og:image" content="${image}" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${desc}" />
+    <meta name="twitter:image" content="${image}" />
+    <script type="application/ld+json">
+    ${JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Person',
+      name: player.fullName,
+      jobTitle: 'Pelotero de Béisbol',
+      memberOf: teamName ? { '@type': 'SportsTeam', name: teamName } : undefined,
+      image: player.photo,
+      mainEntityOfPage: fullUrl,
+    })}
+    </script>
+  `;
+
+  return transformed.replace('</head>', `${extraMeta}</head>`);
+}
+
+function injectTeamMeta(html: string, team: any, fullUrl: string): string {
+  const escapeHtml = (str: string) =>
+    (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const title = `${escapeHtml(team.name)} (${escapeHtml(team.shortName)}) | Perfil y Roster Oficial | Baseball Hub`;
+  const desc = escapeHtml(
+    `Perfil oficial, roster de jugadores, calendario y estadísticas de ${team.name} (${team.city}) en la Serie Nacional de Béisbol.`
+  );
+
+  let transformed = html
+    .replace(/<title>.*?<\/title>/i, `<title>${title}</title>`)
+    .replace(
+      /<meta\s+name="description"\s+content=".*?"\s*\/?>/i,
+      `<meta name="description" content="${desc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:title"\s+content=".*?"\s*\/?>/i,
+      `<meta property="og:title" content="${title}" />`
+    )
+    .replace(
+      /<meta\s+property="og:description"\s+content=".*?"\s*\/?>/i,
+      `<meta property="og:description" content="${desc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:type"\s+content=".*?"\s*\/?>/i,
+      `<meta property="og:type" content="website" />`
+    );
+
+  const extraMeta = `
+    <link rel="canonical" href="${fullUrl}" />
+    <meta property="og:url" content="${fullUrl}" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${desc}" />
+    <script type="application/ld+json">
+    ${JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SportsTeam',
+      name: team.name,
+      location: team.city,
+      sport: 'Baseball',
+      mainEntityOfPage: fullUrl,
+    })}
+    </script>
+  `;
+
+  return transformed.replace('</head>', `${extraMeta}</head>`);
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -108,15 +218,38 @@ async function startServer() {
     app.use(express.static(distPath));
 
     app.get('*', (req, res) => {
-      const slugCandidate = req.path.replace(/^\/+|\/+$/g, '');
-      if (slugCandidate && !slugCandidate.includes('.')) {
-        const article = baseballRepo.getNewsBySlug(slugCandidate);
-        if (article && cachedHtml) {
-          const host = req.get('host') || 'localhost:3000';
-          const protocol = req.protocol || 'https';
-          const fullUrl = `${protocol}://${host}/${article.slug}`;
-          const customHtml = injectArticleMeta(cachedHtml, article, fullUrl);
-          return res.send(customHtml);
+      const cleanPath = req.path.replace(/^\/+|\/+$/g, '');
+      if (cleanPath && !cleanPath.includes('.') && cachedHtml) {
+        const host = req.get('host') || 'localhost:3000';
+        const protocol = req.protocol || 'https';
+        const segments = cleanPath.split('/');
+
+        // 1. Two segments: /:teamSlug/:playerSlug (e.g. /matanzas/erisbel-arruebarrena or /matanzas/jugador)
+        if (segments.length === 2) {
+          const team = baseballRepo.getTeamById(segments[0]);
+          const player = baseballRepo.getPlayerByTeamAndIdentifier(segments[0], segments[1]);
+          if (player) {
+            const fullUrl = `${protocol}://${host}/${segments[0]}/${player.slug || segments[1]}`;
+            const customHtml = injectPlayerMeta(cachedHtml, player, team, fullUrl);
+            return res.send(customHtml);
+          }
+        }
+
+        // 2. Single segment: /:teamSlug or /:articleSlug
+        if (segments.length === 1) {
+          const team = baseballRepo.getTeamById(segments[0]);
+          if (team) {
+            const fullUrl = `${protocol}://${host}/${segments[0]}`;
+            const customHtml = injectTeamMeta(cachedHtml, team, fullUrl);
+            return res.send(customHtml);
+          }
+
+          const article = baseballRepo.getNewsBySlug(segments[0]);
+          if (article) {
+            const fullUrl = `${protocol}://${host}/${article.slug}`;
+            const customHtml = injectArticleMeta(cachedHtml, article, fullUrl);
+            return res.send(customHtml);
+          }
         }
       }
 

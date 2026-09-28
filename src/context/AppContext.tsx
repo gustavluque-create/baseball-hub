@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import esTranslations from '../locales/es.json';
 import enTranslations from '../locales/en.json';
 import { isPotentialArticleSlug } from '../utils/slug.ts';
+import {
+  parseCustomRoute,
+  getTeamSlug,
+  getPlayerSlug,
+  resolveTeamIdFromSlug,
+} from '../utils/entityUrls.ts';
 
 export type ActiveNavTab =
   | 'home'
@@ -57,7 +63,7 @@ interface AppContextType {
   t: (path: string) => string;
   navigateToGame: (id: string) => void;
   navigateToTeam: (id: string) => void;
-  navigateToPlayer: (id: string) => void;
+  navigateToPlayer: (id: string, teamIdentifier?: string) => void;
   navigateToNews: (slug: string) => void;
   dataVersion: number;
   triggerDataRefresh: () => void;
@@ -65,68 +71,54 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const getInitialRoute = (): { tab: ActiveNavTab; slug: string | null } => {
+interface InitialRouteResult {
+  tab: ActiveNavTab;
+  slug: string | null;
+  teamId: string | null;
+  playerId: string | null;
+}
+
+const getInitialRoute = (): InitialRouteResult => {
   if (typeof window !== 'undefined') {
-    const path = window.location.pathname;
-    const hash = window.location.hash;
+    const route = parseCustomRoute(window.location.pathname, window.location.hash);
 
-    // 1. Admin route
-    if (
-      path === '/admin' ||
-      path.startsWith('/admin/') ||
-      hash === '#/admin' ||
-      hash === '#admin'
-    ) {
-      return { tab: 'admin', slug: null };
+    if (route.type === 'team') {
+      return {
+        tab: 'teams',
+        slug: null,
+        teamId: route.teamId || route.teamSlug || null,
+        playerId: null,
+      };
     }
 
-    // 2. Explicit article prefix: /noticias/:slug, /articulo/:slug, /news/:slug
-    const matchArticlePrefix = path.match(/^\/(?:noticias|articulo|news)\/([^/]+)/i);
-    if (matchArticlePrefix && matchArticlePrefix[1]) {
-      return { tab: 'article', slug: decodeURIComponent(matchArticlePrefix[1]) };
+    if (route.type === 'player') {
+      return {
+        tab: 'players',
+        slug: null,
+        teamId: route.teamId || null,
+        playerId: route.playerSlug || route.playerId || null,
+      };
     }
 
-    // 3. Hash article: #/articulo/:slug or #/:slug
-    const hashArticleMatch = hash.match(/^#\/?(?:noticias|articulo|news)?\/?([^/]+)/i);
-    if (hashArticleMatch && hashArticleMatch[1] && isPotentialArticleSlug(hashArticleMatch[1])) {
-      return { tab: 'article', slug: decodeURIComponent(hashArticleMatch[1]) };
+    if (route.type === 'article') {
+      return {
+        tab: 'article',
+        slug: route.articleSlug || null,
+        teamId: null,
+        playerId: null,
+      };
     }
 
-    // 4. Clean root path: /cocodrilos-matanzas-liderato-ofensiva-implacable
-    const singleSegment = path.replace(/^\/+|\/+$/g, '');
-    if (singleSegment && isPotentialArticleSlug(singleSegment)) {
-      return { tab: 'article', slug: decodeURIComponent(singleSegment) };
-    }
-
-    // 5. Standard tab routes
-    const cleanHash = hash.replace(/^#\/?/, '').toLowerCase();
-    const cleanPath = singleSegment.toLowerCase();
-    const target = cleanHash || cleanPath;
-
-    if (target === 'noticias') return { tab: 'news', slug: null };
-    if (target === 'partidos') return { tab: 'games', slug: null };
-    if (target === 'posiciones') return { tab: 'standings', slug: null };
-    if (target === 'estadisticas') return { tab: 'statistics', slug: null };
-    if (target === 'lideres') return { tab: 'leaders', slug: null };
-    if (target === 'equipos') return { tab: 'teams', slug: null };
-    if (target === 'jugadores') return { tab: 'players', slug: null };
-
-    if (
-      [
-        'games',
-        'standings',
-        'statistics',
-        'leaders',
-        'teams',
-        'players',
-        'news',
-        'videos',
-      ].includes(target)
-    ) {
-      return { tab: target as ActiveNavTab, slug: null };
+    if (route.type === 'tab') {
+      return {
+        tab: (route.tab as ActiveNavTab) || 'home',
+        slug: null,
+        teamId: null,
+        playerId: null,
+      };
     }
   }
-  return { tab: 'home', slug: null };
+  return { tab: 'home', slug: null, teamId: null, playerId: null };
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -173,6 +165,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const route = getInitialRoute();
       setActiveTabState(route.tab);
       setSelectedNewsSlug(route.slug);
+      setSelectedTeamIdState(route.teamId);
+      setSelectedPlayerIdState(route.playerId);
     };
 
     window.addEventListener('popstate', handleUrlNavigation);
@@ -186,8 +180,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeSeasonId, setActiveSeasonId] = useState<string>('snb-65');
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [selectedComparisonGameId, setSelectedComparisonGameId] = useState<string | null>(null);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [selectedTeamId, setSelectedTeamIdState] = useState<string | null>(initialRoute.teamId);
+  const [selectedPlayerId, setSelectedPlayerIdState] = useState<string | null>(initialRoute.playerId);
   const [language, setLanguage] = useState<'es' | 'en'>('es');
 
   // Initialize theme mode from localStorage
@@ -361,6 +355,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return typeof current === 'string' ? current : path;
   };
 
+  const setSelectedTeamId = (id: string | null) => {
+    setSelectedTeamIdState(id);
+    if (typeof window !== 'undefined') {
+      try {
+        if (!id) {
+          if (!selectedPlayerId) {
+            const fallback = activeTab === 'home' ? '/' : `/${activeTab}`;
+            if (window.location.pathname !== fallback) {
+              window.history.pushState(null, '', fallback);
+            }
+          }
+        } else {
+          const teamSlug = getTeamSlug(id);
+          const targetPath = `/${teamSlug}`;
+          if (window.location.pathname !== targetPath && !selectedPlayerId) {
+            window.history.pushState({ teamId: id }, '', targetPath);
+          }
+        }
+      } catch (e) {
+        console.warn('History pushState error:', e);
+      }
+    }
+  };
+
+  const setSelectedPlayerId = (id: string | null) => {
+    setSelectedPlayerIdState(id);
+    if (typeof window !== 'undefined') {
+      try {
+        if (!id) {
+          if (selectedTeamId) {
+            const teamSlug = getTeamSlug(selectedTeamId);
+            const targetPath = `/${teamSlug}`;
+            if (window.location.pathname !== targetPath) {
+              window.history.pushState({ teamId: selectedTeamId }, '', targetPath);
+            }
+          } else {
+            const fallback = activeTab === 'home' ? '/' : `/${activeTab}`;
+            if (window.location.pathname !== fallback) {
+              window.history.pushState(null, '', fallback);
+            }
+          }
+        } else {
+          const teamSlug = getTeamSlug(selectedTeamId || id);
+          const playerSlug = getPlayerSlug(id);
+          const targetPath = `/${teamSlug}/${playerSlug}`;
+          if (window.location.pathname !== targetPath) {
+            window.history.pushState({ playerId: id, teamId: selectedTeamId }, '', targetPath);
+          }
+        }
+      } catch (e) {
+        console.warn('History pushState error:', e);
+      }
+    }
+  };
+
   const navigateToGame = (id: string) => {
     setSelectedGameId(id);
     setActiveTab('games');
@@ -372,14 +421,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const navigateToTeam = (id: string) => {
-    setSelectedTeamId(id);
-    setActiveTab('teams');
+    const resolvedTeamId = resolveTeamIdFromSlug(id) || id;
+    setSelectedTeamIdState(resolvedTeamId);
+    setSelectedPlayerIdState(null);
+    setActiveTabState('teams');
+    if (typeof window !== 'undefined') {
+      try {
+        const teamSlug = getTeamSlug(resolvedTeamId);
+        const targetPath = `/${teamSlug}`;
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState({ teamId: resolvedTeamId }, '', targetPath);
+        }
+      } catch (e) {
+        console.warn('History pushState error:', e);
+      }
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const navigateToPlayer = (id: string) => {
-    setSelectedPlayerId(id);
-    setActiveTab('players');
+  const navigateToPlayer = (id: string, teamIdentifier?: string) => {
+    const cleanPlayer = id.trim();
+    let resolvedTeamId = teamIdentifier ? (resolveTeamIdFromSlug(teamIdentifier) || teamIdentifier) : selectedTeamId;
+    if (!resolvedTeamId && cleanPlayer.startsWith('p-')) {
+      const parts = cleanPlayer.split('-');
+      if (parts.length >= 2) {
+        resolvedTeamId = resolveTeamIdFromSlug(parts[1]) || parts[1];
+      }
+    }
+
+    if (resolvedTeamId) {
+      setSelectedTeamIdState(resolvedTeamId);
+    }
+    setSelectedPlayerIdState(cleanPlayer);
+    setActiveTabState('players');
+
+    if (typeof window !== 'undefined') {
+      try {
+        const teamSlug = getTeamSlug(resolvedTeamId || cleanPlayer);
+        const playerSlug = getPlayerSlug(cleanPlayer);
+        const targetPath = `/${teamSlug}/${playerSlug}`;
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState({ playerId: cleanPlayer, teamId: resolvedTeamId }, '', targetPath);
+        }
+      } catch (e) {
+        console.warn('History pushState error:', e);
+      }
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

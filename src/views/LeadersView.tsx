@@ -89,7 +89,7 @@ export const LeadersView: React.FC = () => {
             {/* #1 Leader Hero Highlight */}
             {firstItem && (
               <div
-                onClick={() => navigateToPlayer(firstItem.playerId)}
+                onClick={() => navigateToPlayer(firstItem.playerId, firstItem.teamShort)}
                 className="flex items-center gap-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all mb-3 group"
               >
                 <div className="relative">
@@ -124,7 +124,7 @@ export const LeadersView: React.FC = () => {
               {items.slice(1).map((item, idx) => (
                 <div
                   key={item.playerId}
-                  onClick={() => navigateToPlayer(item.playerId)}
+                  onClick={() => navigateToPlayer(item.playerId, item.teamShort)}
                   className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 cursor-pointer text-xs transition-colors group"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">

@@ -361,7 +361,7 @@ export const StatisticsView: React.FC = () => {
                   {filteredPitching.map((p) => (
                     <tr
                       key={p.id}
-                      onClick={() => navigateToPlayer(p.playerId)}
+                      onClick={() => navigateToPlayer(p.playerId, p.teamShort)}
                       className="hover:bg-slate-800/60 cursor-pointer transition-colors"
                     >
                       <td className="py-2.5 px-3 font-sans font-bold text-slate-200 hover:text-sky-400 transition-colors">
@@ -439,7 +439,7 @@ export const StatisticsView: React.FC = () => {
                   {filteredBatting.map((b) => (
                     <tr
                       key={b.id}
-                      onClick={() => navigateToPlayer(b.playerId)}
+                      onClick={() => navigateToPlayer(b.playerId, b.teamShort)}
                       className="hover:bg-slate-800/60 cursor-pointer transition-colors"
                     >
                       <td className="py-2.5 px-3 font-sans font-bold text-slate-200 hover:text-emerald-400 transition-colors">
