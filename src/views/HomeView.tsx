@@ -14,6 +14,7 @@ import { ApiClient } from '../services/api.ts';
 import { GameCard } from '../components/GameCard.tsx';
 import { TeamLogo } from '../components/TeamLogo.tsx';
 import { MyTeamsSection } from '../components/MyTeamsSection.tsx';
+import { NewsHeroSlider } from '../components/NewsHeroSlider.tsx';
 import {
   GameCardSkeleton,
   TableSkeleton,
@@ -55,7 +56,7 @@ export const HomeView: React.FC = () => {
     Promise.all([
       ApiClient.getGames({ competition: activeCompetitionId }),
       ApiClient.getStandings({ competition: activeCompetitionId, seasonId: activeSeasonId }),
-      ApiClient.getNews({ limit: 4 }),
+      ApiClient.getNews({ limit: 8 }),
       ApiClient.getVideos(),
       ApiClient.getLeaders({ category: 'batting', stat: 'avg', limit: 3, seasonId: activeSeasonId }),
       ApiClient.getTeams(activeCompetitionId),
@@ -80,7 +81,12 @@ export const HomeView: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* 1. Games / Scoreboard Ticker Header */}
+      {/* 1. Large News Hero Slider at the Top */}
+      <section className="space-y-3">
+        <NewsHeroSlider articles={news} loading={loading} />
+      </section>
+
+      {/* 2. Games / Scoreboard Ticker Header */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -116,135 +122,72 @@ export const HomeView: React.FC = () => {
         </div>
       </section>
 
-      {/* 2. My Teams / Mis Equipos Favoritos */}
+      {/* 3. My Teams / Mis Equipos Favoritos */}
       <MyTeamsSection
         teams={teams}
         games={games}
         loading={loading}
       />
 
-      {/* 3. Main Hero Story & Secondary News */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {loading ? (
-          <>
-            <div className="lg:col-span-2 rounded-2xl bg-slate-900 border border-slate-800 p-6 flex flex-col justify-end min-h-[380px] sm:min-h-[440px] space-y-4">
-              <Skeleton className="h-6 w-24 rounded-full" />
-              <Skeleton className="h-8 w-4/5 rounded-xl" />
-              <Skeleton className="h-4 w-3/4 rounded" />
-              <Skeleton className="h-4 w-2/3 rounded" />
+      {/* 4. More Articles & News Stories */}
+      {news.length > 2 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <Flame className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200">
+                Crónicas y Reportajes Recientes
+              </h3>
             </div>
-            <div className="flex flex-col justify-between gap-4">
-              <div className="pb-1 border-b border-slate-800">
-                <Skeleton className="h-4 w-32 rounded" />
-              </div>
-              <div className="space-y-3 flex-1 flex flex-col justify-between">
-                {Array.from({ length: 3 }).map((_, idx) => (
-                  <div key={idx} className="flex gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-                    <Skeleton className="w-20 h-20 rounded-lg shrink-0" />
-                    <div className="flex-1 space-y-2 py-1">
-                      <Skeleton className="h-3 w-16 rounded" />
-                      <Skeleton className="h-4 w-full rounded" />
-                      <Skeleton className="h-3 w-20 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        ) : news.length === 0 ? (
-          <div className="lg:col-span-3 py-10 px-4 text-center rounded-2xl bg-slate-900/40 border border-slate-800 text-slate-500 text-xs">
-            No hay artículos ni noticias publicadas actualmente.
+            <button
+              onClick={() => setActiveTab('news')}
+              className="flex items-center gap-1 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              <span>Ver todas las noticias</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
-        ) : (
-          <>
-            {/* Left 2 Cols: Main Headline Article */}
-            {featuredArticle && (
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {news.slice(1, 5).map((article) => (
               <a
-                href={`/${featuredArticle.slug}`}
+                key={article.id}
+                href={`/${article.slug}`}
                 onClick={(e) => {
                   e.preventDefault();
-                  navigateToNews(featuredArticle.slug);
+                  navigateToNews(article.slug);
                 }}
-                className="lg:col-span-2 group relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 cursor-pointer shadow-lg hover:shadow-2xl hover:border-slate-700 transition-all flex flex-col justify-end min-h-[380px] sm:min-h-[440px]"
+                className="group p-3 rounded-2xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between space-y-3 cursor-pointer shadow-sm hover:shadow-md"
               >
-                {/* Background Image with Gradient Overlay */}
-                <img
-                  src={featuredArticle.image}
-                  alt={featuredArticle.title}
-                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent"></div>
-
-                {/* Floating content */}
-                <div className="relative p-6 sm:p-8 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 font-bold text-xs text-slate-950 uppercase">
-                      {featuredArticle.category}
-                    </span>
-                    <span className="text-xs text-slate-300 font-medium">
-                      {featuredArticle.publishedAt} • {featuredArticle.readingTimeMinutes || 4} min
-                    </span>
-                  </div>
-                  <h1 className="text-2xl sm:text-3xl font-black text-white group-hover:text-emerald-400 transition-colors leading-tight">
-                    {featuredArticle.title}
-                  </h1>
-                  <p className="text-sm text-slate-300 line-clamp-2 leading-relaxed">
-                    {featuredArticle.subtitle || featuredArticle.excerpt}
+                <div className="relative w-full h-36 rounded-xl overflow-hidden bg-slate-800">
+                  <img
+                    src={article.image}
+                    alt={article.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+                  <span className="absolute bottom-2 left-2 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    {article.category}
+                  </span>
+                </div>
+                <div className="flex-1 flex flex-col justify-between space-y-1.5">
+                  <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors line-clamp-2 leading-snug">
+                    {article.title}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                    {article.excerpt || article.subtitle}
                   </p>
+                  <div className="text-[10px] text-slate-500 font-mono pt-1.5 border-t border-slate-800/80 flex items-center justify-between">
+                    <span>{article.author || 'Redacción'}</span>
+                    <span>{article.readingTimeMinutes || 4} min</span>
+                  </div>
                 </div>
               </a>
-            )}
-
-            {/* Right 1 Col: Secondary Breaking News */}
-            <div className="flex flex-col justify-between gap-4">
-              <div className="flex items-center justify-between pb-1 border-b border-slate-800">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  {t('home.breakingNews')}
-                </h3>
-                <button
-                  onClick={() => setActiveTab('news')}
-                  className="text-xs text-slate-400 hover:text-emerald-400 transition-colors"
-                >
-                  Ver todas
-                </button>
-              </div>
-
-              <div className="space-y-3 flex-1 flex flex-col justify-between">
-                {secondaryArticles.map((article) => (
-                  <a
-                    key={article.id}
-                    href={`/${article.slug}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigateToNews(article.slug);
-                    }}
-                    className="group flex gap-3 p-3 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition-all"
-                  >
-                    <img
-                      src={article.image}
-                      alt={article.title}
-                      className="w-20 h-20 rounded-lg object-cover border border-slate-800 shrink-0"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="flex-1 flex flex-col justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase text-emerald-400">
-                          {article.category}
-                        </span>
-                        <h4 className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 line-clamp-2 transition-colors mt-0.5">
-                          {article.title}
-                        </h4>
-                      </div>
-                      <span className="text-[11px] text-slate-500">{article.publishedAt}</span>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 3. Mid Grid: Standings Snapshot + Leaders Preview */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
