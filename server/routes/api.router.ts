@@ -758,9 +758,52 @@ apiRouter.get('/players/:id', (req: Request, res: Response) => {
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
   }
-  const batting = baseballRepo.getBattingStats().find((b) => b.playerId === player.id);
-  const pitching = baseballRepo.getPitchingStats().find((p) => p.playerId === player.id);
-  res.json({ player, batting, pitching });
+  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+  const batting = historical.careerBatting[historical.careerBatting.length - 1];
+  const pitching = historical.careerPitching[historical.careerPitching.length - 1];
+
+  res.json({
+    player,
+    batting,
+    pitching,
+    careerBatting: historical.careerBatting,
+    careerPitching: historical.careerPitching,
+    careerTotals: historical.careerTotals,
+  });
+});
+
+// Manage Player Historical Batting Stats
+apiRouter.post('/players/:id/stats/batting', requireAdmin, (req: Request, res: Response) => {
+  const player = baseballRepo.getPlayerById(req.params.id);
+  if (!player) {
+    return res.status(404).json({ error: 'Jugador no encontrado' });
+  }
+  const stat = baseballRepo.addOrUpdatePlayerSeasonBatting(player.id, req.body || {});
+  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+  res.json({ success: true, stat, historical });
+});
+
+// Manage Player Historical Pitching Stats
+apiRouter.post('/players/:id/stats/pitching', requireAdmin, (req: Request, res: Response) => {
+  const player = baseballRepo.getPlayerById(req.params.id);
+  if (!player) {
+    return res.status(404).json({ error: 'Jugador no encontrado' });
+  }
+  const stat = baseballRepo.addOrUpdatePlayerSeasonPitching(player.id, req.body || {});
+  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+  res.json({ success: true, stat, historical });
+});
+
+// Delete Player Historical Stat
+apiRouter.delete('/players/:id/stats/:statId', requireAdmin, (req: Request, res: Response) => {
+  const player = baseballRepo.getPlayerById(req.params.id);
+  if (!player) {
+    return res.status(404).json({ error: 'Jugador no encontrado' });
+  }
+  const type = (req.query.type as 'batting' | 'pitching') || 'batting';
+  const deleted = baseballRepo.deletePlayerSeasonStat(player.id, req.params.statId, type);
+  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+  res.json({ success: deleted, historical });
 });
 
 // Update Player Photo directly (from profile modal or admin tools)

@@ -21,12 +21,15 @@ import {
   Eye,
   Download,
   Calendar,
+  TrendingUp,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Team, Player } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { teamCreateSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { TeamLogo } from '../TeamLogo.tsx';
 import { TEAM_EMOJI_PRESETS } from './TeamLogoEditorModal.tsx';
+import { PlayerHistoricalStatsModal } from './PlayerHistoricalStatsModal.tsx';
 import { useApp } from '../../context/AppContext.tsx';
 
 interface AdminTeamsManagerProps {
@@ -100,6 +103,13 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
 
   // Quick Seed 16 teams state
   const [isSeeding16, setIsSeeding16] = useState(false);
+
+  // Historical stats and player transfer state
+  const [historicalStatsPlayer, setHistoricalStatsPlayer] = useState<Player | null>(null);
+  const [transferringPlayer, setTransferringPlayer] = useState<Player | null>(null);
+  const [targetTransferTeamId, setTargetTransferTeamId] = useState<string>('');
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [rosterSearch, setRosterSearch] = useState('');
 
   // Fetch teams and players
   const fetchTeamsAndPlayers = async () => {
@@ -287,6 +297,33 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
       setErrorMessage(err.message || 'Error al registrar el equipo.');
     } finally {
       setIsSubmittingCreate(false);
+    }
+  };
+
+  // Submit Player Transfer between teams
+  const handleTransferPlayerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferringPlayer || !targetTransferTeamId) return;
+    setIsTransferring(true);
+    setErrorMessage(null);
+    try {
+      const targetTeam = teams.find((t) => t.id === targetTransferTeamId);
+      await ApiClient.updatePlayer(transferringPlayer.id, {
+        teamId: targetTransferTeamId,
+        teamName: targetTeam?.name,
+        teamShort: targetTeam?.shortName,
+      });
+      setActionMessage(`¡${transferringPlayer.fullName} transferido con éxito a ${targetTeam?.name || 'nuevo equipo'}!`);
+      setTimeout(() => setActionMessage(null), 4000);
+      setTransferringPlayer(null);
+      await fetchTeamsAndPlayers();
+      triggerDataRefresh();
+      if (onTeamsChange) onTeamsChange();
+    } catch (err: any) {
+      console.error('Error transferring player:', err);
+      setErrorMessage(err.message || 'Error al transferir el jugador.');
+    } finally {
+      setIsTransferring(false);
     }
   };
 
@@ -823,50 +860,73 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
 
               {/* Plantilla / Roster Preview */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-emerald-400" />
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider">
                       Plantilla Oficial de Jugadores
                     </h4>
                   </div>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                      (rosterCounts[viewingTeam.id] || 0) >= 40
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    }`}
-                  >
-                    {rosterCounts[viewingTeam.id] || 0} / 40 Jugadores
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Filtrar en nómina..."
+                      value={rosterSearch}
+                      onChange={(e) => setRosterSearch(e.target.value)}
+                      className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-36"
+                    />
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                        (rosterCounts[viewingTeam.id] || 0) >= 40
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      }`}
+                    >
+                      {rosterCounts[viewingTeam.id] || 0} / 40 Jugadores
+                    </span>
+                  </div>
                 </div>
 
                 {(() => {
-                  const teamPlayers = players.filter((p) => p.teamId === viewingTeam.id);
+                  const teamPlayers = players
+                    .filter((p) => p.teamId === viewingTeam.id)
+                    .filter((p) => {
+                      if (!rosterSearch) return true;
+                      const q = rosterSearch.toLowerCase();
+                      return (
+                        p.fullName.toLowerCase().includes(q) ||
+                        p.position.toLowerCase().includes(q) ||
+                        String(p.jerseyNumber).includes(q)
+                      );
+                    });
+
                   if (teamPlayers.length === 0) {
                     return (
                       <div className="py-8 text-center rounded-xl bg-slate-800/30 border border-dashed border-slate-800 text-slate-400 text-xs">
-                        No hay jugadores registrados en la plantilla de este equipo.
+                        {rosterSearch
+                          ? 'No se encontraron jugadores que coincidan con la búsqueda.'
+                          : 'No hay jugadores registrados en la plantilla de este equipo.'}
                       </div>
                     );
                   }
 
                   return (
-                    <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/50">
+                    <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/50">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-900/90 text-slate-400 font-semibold sticky top-0 border-b border-slate-800">
                           <tr>
                             <th className="p-2.5 pl-3 w-12 text-center">#</th>
                             <th className="p-2.5">Pelotero</th>
                             <th className="p-2.5">Posición</th>
-                            <th className="p-2.5 text-right pr-3">B/L</th>
+                            <th className="p-2.5 text-center">B/L</th>
+                            <th className="p-2.5 text-right pr-3">Acciones</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/60 text-slate-300">
                           {teamPlayers.map((player) => (
                             <tr key={player.id} className="hover:bg-slate-900/60 transition-colors">
-                              <td className="p-2.5 pl-3 text-center font-bold text-slate-400">
-                                {player.jerseyNumber}
+                              <td className="p-2.5 pl-3 text-center font-bold text-slate-400 font-mono">
+                                #{player.jerseyNumber}
                               </td>
                               <td className="p-2.5 font-medium text-white">
                                 {player.fullName || `${player.firstName} ${player.lastName}`}
@@ -876,8 +936,32 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
                                   {player.position}
                                 </span>
                               </td>
-                              <td className="p-2.5 text-right pr-3 text-slate-400 text-[11px]">
+                              <td className="p-2.5 text-center text-slate-400 text-[11px] font-mono">
                                 {player.bats}/{player.throws}
+                              </td>
+                              <td className="p-2.5 text-right pr-3">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoricalStatsPlayer(player)}
+                                    className="p-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 border border-slate-700 transition-colors cursor-pointer"
+                                    title="Estadísticas históricas por temporada"
+                                  >
+                                    <TrendingUp className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTransferringPlayer(player);
+                                      const otherTeam = teams.find((t) => t.id !== viewingTeam.id);
+                                      setTargetTransferTeamId(otherTeam ? otherTeam.id : '');
+                                    }}
+                                    className="p-1 rounded-lg bg-slate-800 hover:bg-sky-500/20 text-slate-400 hover:text-sky-300 border border-slate-700 transition-colors cursor-pointer"
+                                    title="Transferir a otro equipo"
+                                  >
+                                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -1492,6 +1576,91 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
                 {isSubmittingDelete ? 'Eliminando...' : 'Sí, Eliminar Equipo'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* HISTORICAL STATS MODAL */}
+      {historicalStatsPlayer && (
+        <PlayerHistoricalStatsModal
+          player={historicalStatsPlayer}
+          teams={teams}
+          isOpen={true}
+          onClose={() => setHistoricalStatsPlayer(null)}
+          onStatsUpdated={fetchTeamsAndPlayers}
+        />
+      )}
+
+      {/* TRANSFER PLAYER MODAL */}
+      {transferringPlayer && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 space-y-4">
+            <div className="flex items-center gap-3 text-sky-400">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
+                <ArrowRightLeft className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Transferir Jugador</h3>
+                <p className="text-xs text-slate-400">Reasignar a otro equipo de la Serie Nacional</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Pelotero:</span>
+                <strong className="text-white">{transferringPlayer.fullName}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Equipo Actual:</span>
+                <span className="text-slate-200">{transferringPlayer.teamName} ({transferringPlayer.teamShort})</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Posición / Número:</span>
+                <span className="font-mono text-emerald-400">#{transferringPlayer.jerseyNumber} • {transferringPlayer.position}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleTransferPlayerSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Seleccionar Equipo de Destino *
+                </label>
+                <select
+                  required
+                  value={targetTransferTeamId}
+                  onChange={(e) => setTargetTransferTeamId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500"
+                >
+                  <option value="">Selecciona equipo de destino</option>
+                  {teams
+                    .filter((t) => t.id !== transferringPlayer.teamId)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.shortName}) — Nómina: {rosterCounts[t.id] || 0}/40
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setTransferringPlayer(null)}
+                  disabled={isTransferring}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isTransferring || !targetTransferTeamId}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer shadow-md shadow-sky-950/40"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>{isTransferring ? 'Transfiriendo...' : 'Confirmar Transferencia'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

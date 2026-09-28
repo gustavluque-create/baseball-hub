@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Filter, Shield, Swords, ArrowLeftRight, X, Check, Sparkles, Camera } from 'lucide-react';
+import { Users, Search, Filter, Shield, Swords, ArrowLeftRight, X, Check, Sparkles, Camera, TrendingUp } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { PlayersGridSkeleton, Skeleton } from '../components/LoadingSkeleton.tsx';
 import { Player, Team } from '../types/index.ts';
 import { PlayerComparisonView } from '../components/PlayerComparisonView.tsx';
 import { PlayerImageEditorModal } from '../components/admin/PlayerImageEditorModal.tsx';
+import { PlayerHistoricalStatsModal } from '../components/admin/PlayerHistoricalStatsModal.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
 
@@ -19,6 +20,7 @@ export const PlayersView: React.FC = () => {
   const [selectedPosition, setSelectedPosition] = useState('ALL');
   const [selectedTeamId, setSelectedTeamId] = useState('ALL');
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [statsPlayer, setStatsPlayer] = useState<Player | null>(null);
 
   // Player comparison state
   const [showComparison, setShowComparison] = useState(false);
@@ -251,17 +253,30 @@ export const PlayersView: React.FC = () => {
                     onError={(e) => handlePlayerImgError(e, player)}
                   />
                   {isAdminAuthenticated && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingPlayer(player);
-                      }}
-                      className="absolute -bottom-1 -left-1 p-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow border border-slate-900 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
-                      title="Editar foto del jugador (Admin)"
-                    >
-                      <Camera className="w-2.5 h-2.5" />
-                    </button>
+                    <div className="absolute -bottom-1 -left-1 flex items-center gap-0.5 z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingPlayer(player);
+                        }}
+                        className="p-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow border border-slate-900 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                        title="Editar foto del jugador (Admin)"
+                      >
+                        <Camera className="w-2.5 h-2.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStatsPlayer(player);
+                        }}
+                        className="p-1 rounded-full bg-slate-800 hover:bg-emerald-500/30 text-slate-300 hover:text-emerald-300 shadow border border-slate-900 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                        title="Gestionar estadísticas históricas (Admin)"
+                      >
+                        <TrendingUp className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
                   )}
                   {isSelected && (
                     <span
@@ -408,6 +423,17 @@ export const PlayersView: React.FC = () => {
               );
             }
           }}
+        />
+      )}
+
+      {/* Player Historical Stats Modal */}
+      {statsPlayer && (
+        <PlayerHistoricalStatsModal
+          player={statsPlayer}
+          teams={teams}
+          isOpen={true}
+          onClose={() => setStatsPlayer(null)}
+          onStatsUpdated={triggerDataRefresh}
         />
       )}
     </div>

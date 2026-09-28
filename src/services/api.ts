@@ -3,6 +3,7 @@ import {
   Season,
   Team,
   Player,
+  PlayerDetailResponse,
   Game,
   BattingStats,
   PitchingStats,
@@ -557,8 +558,28 @@ export class ApiClient {
     };
   }
 
-  static getPlayerDetail(id: string): Promise<{ player: Player; batting?: BattingStats; pitching?: PitchingStats }> {
-    return this.request<{ player: Player; batting?: BattingStats; pitching?: PitchingStats }>(`/players/${id}`);
+  static getPlayerDetail(id: string): Promise<PlayerDetailResponse> {
+    return this.request<PlayerDetailResponse>(`/players/${id}`);
+  }
+
+  static savePlayerSeasonBatting(playerId: string, stat: Partial<BattingStats>): Promise<{ success: boolean; stat: BattingStats; historical: any }> {
+    return this.request<{ success: boolean; stat: BattingStats; historical: any }>(`/players/${playerId}/stats/batting`, {
+      method: 'POST',
+      body: JSON.stringify(stat),
+    });
+  }
+
+  static savePlayerSeasonPitching(playerId: string, stat: Partial<PitchingStats>): Promise<{ success: boolean; stat: PitchingStats; historical: any }> {
+    return this.request<{ success: boolean; stat: PitchingStats; historical: any }>(`/players/${playerId}/stats/pitching`, {
+      method: 'POST',
+      body: JSON.stringify(stat),
+    });
+  }
+
+  static deletePlayerSeasonStat(playerId: string, statId: string, type: 'batting' | 'pitching'): Promise<{ success: boolean; historical: any }> {
+    return this.request<{ success: boolean; historical: any }>(`/players/${playerId}/stats/${statId}?type=${type}`, {
+      method: 'DELETE',
+    });
   }
 
   static updatePlayerPhoto(id: string, photo: string): Promise<{ success: boolean; message: string; player: Player; photo: string }> {
@@ -856,6 +877,10 @@ export class ApiClient {
     }
     this.clearCache();
     return res;
+  }
+
+  static async updatePlayer(id: string, updates: Partial<Player>): Promise<Player> {
+    return this.updateAdminPlayer(id, updates);
   }
 
   static async deleteAdminPlayer(id: string): Promise<{ success: boolean; message: string }> {

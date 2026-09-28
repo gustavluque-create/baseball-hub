@@ -5,6 +5,7 @@ import {
   Season,
   Team,
   Player,
+  PlayerPosition,
   Game,
   BattingStats,
   PitchingStats,
@@ -921,6 +922,289 @@ export class BaseballRepository {
 
   getPlayerById(id: string): Player | undefined {
     return this.players.find((p) => p.id === id || p.slug === id);
+  }
+
+  getPlayerHistoricalStats(playerId: string): {
+    careerBatting: BattingStats[];
+    careerPitching: PitchingStats[];
+    careerTotals: {
+      batting?: {
+        seasons: number;
+        games: number;
+        pa: number;
+        ab: number;
+        r: number;
+        h: number;
+        doubles: number;
+        triples: number;
+        hr: number;
+        rbi: number;
+        bb: number;
+        so: number;
+        sb: number;
+        avg: number;
+        obp: number;
+        slg: number;
+        ops: number;
+        war: number;
+      };
+      pitching?: {
+        seasons: number;
+        games: number;
+        gs: number;
+        w: number;
+        l: number;
+        sv: number;
+        ip: number;
+        h: number;
+        r: number;
+        er: number;
+        bb: number;
+        so: number;
+        hr: number;
+        era: number;
+        whip: number;
+        war: number;
+      };
+    };
+  } {
+    const careerBatting = this.battingStats
+      .filter((b) => b.playerId === playerId)
+      .sort((a, b) => (a.seasonYear || 0) - (b.seasonYear || 0));
+
+    let battingTotals: any = undefined;
+    if (careerBatting.length > 0) {
+      const games = careerBatting.reduce((sum, b) => sum + (b.games || 0), 0);
+      const pa = careerBatting.reduce((sum, b) => sum + (b.pa || 0), 0);
+      const ab = careerBatting.reduce((sum, b) => sum + (b.ab || 0), 0);
+      const r = careerBatting.reduce((sum, b) => sum + (b.r || 0), 0);
+      const h = careerBatting.reduce((sum, b) => sum + (b.h || 0), 0);
+      const doubles = careerBatting.reduce((sum, b) => sum + (b.doubles || 0), 0);
+      const triples = careerBatting.reduce((sum, b) => sum + (b.triples || 0), 0);
+      const hr = careerBatting.reduce((sum, b) => sum + (b.hr || 0), 0);
+      const rbi = careerBatting.reduce((sum, b) => sum + (b.rbi || 0), 0);
+      const bb = careerBatting.reduce((sum, b) => sum + (b.bb || 0), 0);
+      const so = careerBatting.reduce((sum, b) => sum + (b.so || 0), 0);
+      const sb = careerBatting.reduce((sum, b) => sum + (b.sb || 0), 0);
+      const totalWar = careerBatting.reduce((sum, b) => sum + (Number(b.war) || 0), 0);
+
+      const avg = ab > 0 ? Number((h / ab).toFixed(3)) : 0;
+      const obpDenom = ab + bb;
+      const obp = obpDenom > 0 ? Number(((h + bb) / obpDenom).toFixed(3)) : 0;
+      const singles = Math.max(0, h - doubles - triples - hr);
+      const slg = ab > 0 ? Number(((singles + doubles * 2 + triples * 3 + hr * 4) / ab).toFixed(3)) : 0;
+      const ops = Number((obp + slg).toFixed(3));
+
+      battingTotals = {
+        seasons: careerBatting.length,
+        games,
+        pa,
+        ab,
+        r,
+        h,
+        doubles,
+        triples,
+        hr,
+        rbi,
+        bb,
+        so,
+        sb,
+        avg,
+        obp,
+        slg,
+        ops,
+        war: Number(totalWar.toFixed(1)),
+      };
+    }
+
+    const careerPitching = this.pitchingStats
+      .filter((p) => p.playerId === playerId)
+      .sort((a, b) => (a.seasonYear || 0) - (b.seasonYear || 0));
+
+    let pitchingTotals: any = undefined;
+    if (careerPitching.length > 0) {
+      const games = careerPitching.reduce((sum, p) => sum + (p.games || 0), 0);
+      const gs = careerPitching.reduce((sum, p) => sum + (p.gs || 0), 0);
+      const w = careerPitching.reduce((sum, p) => sum + (p.w ?? p.wins ?? 0), 0);
+      const l = careerPitching.reduce((sum, p) => sum + (p.l ?? p.losses ?? 0), 0);
+      const sv = careerPitching.reduce((sum, p) => sum + (p.sv ?? p.saves ?? 0), 0);
+      const ip = careerPitching.reduce((sum, p) => sum + (Number(p.ip) || 0), 0);
+      const h = careerPitching.reduce((sum, p) => sum + (p.h || 0), 0);
+      const r = careerPitching.reduce((sum, p) => sum + (p.r || 0), 0);
+      const er = careerPitching.reduce((sum, p) => sum + (p.er || 0), 0);
+      const bb = careerPitching.reduce((sum, p) => sum + (p.bb || 0), 0);
+      const so = careerPitching.reduce((sum, p) => sum + (p.so || 0), 0);
+      const hr = careerPitching.reduce((sum, p) => sum + (p.hr || 0), 0);
+      const totalWar = careerPitching.reduce((sum, p) => sum + (Number(p.war) || 0), 0);
+
+      const era = ip > 0 ? Number(((er * 9) / ip).toFixed(2)) : 0;
+      const whip = ip > 0 ? Number(((bb + h) / ip).toFixed(2)) : 0;
+
+      pitchingTotals = {
+        seasons: careerPitching.length,
+        games,
+        gs,
+        w,
+        l,
+        sv,
+        ip: Number(ip.toFixed(1)),
+        h,
+        r,
+        er,
+        bb,
+        so,
+        hr,
+        era,
+        whip,
+        war: Number(totalWar.toFixed(1)),
+      };
+    }
+
+    return {
+      careerBatting,
+      careerPitching,
+      careerTotals: {
+        batting: battingTotals,
+        pitching: pitchingTotals,
+      },
+    };
+  }
+
+  addOrUpdatePlayerSeasonBatting(playerId: string, statData: Partial<BattingStats>): BattingStats {
+    const player = this.getPlayerById(playerId);
+    const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
+    const statId = statData.id || `bs_${playerId}_${seasonYear}`;
+
+    const existingIndex = this.battingStats.findIndex(
+      (b) => b.id === statId || (b.playerId === playerId && b.seasonYear === seasonYear)
+    );
+
+    const ab = Number(statData.ab) || 0;
+    const h = Number(statData.h) || 0;
+    const doubles = Number(statData.doubles) || 0;
+    const triples = Number(statData.triples) || 0;
+    const hr = Number(statData.hr) || 0;
+    const bb = Number(statData.bb) || 0;
+    const pa = Number(statData.pa) || (ab + bb);
+    const avg = statData.avg !== undefined ? Number(statData.avg) : (ab > 0 ? Number((h / ab).toFixed(3)) : 0);
+    const obp = statData.obp !== undefined ? Number(statData.obp) : ((ab + bb) > 0 ? Number(((h + bb) / (ab + bb)).toFixed(3)) : 0);
+    const singles = Math.max(0, h - doubles - triples - hr);
+    const slg = statData.slg !== undefined ? Number(statData.slg) : (ab > 0 ? Number(((singles + doubles * 2 + triples * 3 + hr * 4) / ab).toFixed(3)) : 0);
+    const ops = statData.ops !== undefined ? Number(statData.ops) : Number((obp + slg).toFixed(3));
+
+    const statRecord: BattingStats = {
+      id: statId,
+      playerId,
+      playerName: player?.fullName || statData.playerName || 'Jugador',
+      teamId: statData.teamId || player?.teamId || '',
+      teamShort: statData.teamShort || player?.teamShort || '',
+      position: (statData.position || player?.position || 'OF') as PlayerPosition,
+      seasonYear,
+      seasonId: statData.seasonId || `snb-${seasonYear}`,
+      games: Number(statData.games) || 0,
+      pa,
+      ab,
+      r: Number(statData.r) || 0,
+      h,
+      doubles,
+      triples,
+      hr,
+      rbi: Number(statData.rbi) || 0,
+      bb,
+      so: Number(statData.so) || 0,
+      sb: Number(statData.sb) || 0,
+      cs: Number(statData.cs) || 0,
+      avg,
+      obp,
+      slg,
+      ops,
+      war: Number(statData.war) || 0,
+    };
+
+    if (existingIndex !== -1) {
+      this.battingStats[existingIndex] = statRecord;
+    } else {
+      this.battingStats.push(statRecord);
+    }
+
+    this.saveToDisk();
+    return statRecord;
+  }
+
+  addOrUpdatePlayerSeasonPitching(playerId: string, statData: Partial<PitchingStats>): PitchingStats {
+    const player = this.getPlayerById(playerId);
+    const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
+    const statId = statData.id || `ps_${playerId}_${seasonYear}`;
+
+    const existingIndex = this.pitchingStats.findIndex(
+      (p) => p.id === statId || (p.playerId === playerId && p.seasonYear === seasonYear)
+    );
+
+    const ip = Number(statData.ip) || 0;
+    const er = Number(statData.er) || 0;
+    const bb = Number(statData.bb) || 0;
+    const h = Number(statData.h) || 0;
+    const era = statData.era !== undefined ? Number(statData.era) : (ip > 0 ? Number(((er * 9) / ip).toFixed(2)) : 0);
+    const whip = statData.whip !== undefined ? Number(statData.whip) : (ip > 0 ? Number(((bb + h) / ip).toFixed(2)) : 0);
+
+    const statRecord: PitchingStats = {
+      id: statId,
+      playerId,
+      playerName: player?.fullName || statData.playerName || 'Lanzador',
+      teamId: statData.teamId || player?.teamId || '',
+      teamShort: statData.teamShort || player?.teamShort || '',
+      position: (statData.position || (player?.position === 'SP' || player?.position === 'RP' ? player.position : 'SP')) as 'SP' | 'RP',
+      seasonYear,
+      seasonId: statData.seasonId || `snb-${seasonYear}`,
+      games: Number(statData.games) || 0,
+      gs: Number(statData.gs) || 0,
+      cg: Number(statData.cg) || 0,
+      sho: Number(statData.sho) || 0,
+      w: Number(statData.w ?? statData.wins) || 0,
+      l: Number(statData.l ?? statData.losses) || 0,
+      sv: Number(statData.sv ?? statData.saves) || 0,
+      wins: Number(statData.w ?? statData.wins) || 0,
+      losses: Number(statData.l ?? statData.losses) || 0,
+      saves: Number(statData.sv ?? statData.saves) || 0,
+      ip,
+      h,
+      r: Number(statData.r) || 0,
+      er,
+      bb,
+      so: Number(statData.so) || 0,
+      hr: Number(statData.hr) || 0,
+      era,
+      whip,
+      war: Number(statData.war) || 0,
+    };
+
+    if (existingIndex !== -1) {
+      this.pitchingStats[existingIndex] = statRecord;
+    } else {
+      this.pitchingStats.push(statRecord);
+    }
+
+    this.saveToDisk();
+    return statRecord;
+  }
+
+  deletePlayerSeasonStat(playerId: string, statId: string, type: 'batting' | 'pitching'): boolean {
+    if (type === 'batting') {
+      const prevLength = this.battingStats.length;
+      this.battingStats = this.battingStats.filter((b) => !(b.id === statId && b.playerId === playerId));
+      if (this.battingStats.length !== prevLength) {
+        this.saveToDisk();
+        return true;
+      }
+    } else {
+      const prevLength = this.pitchingStats.length;
+      this.pitchingStats = this.pitchingStats.filter((p) => !(p.id === statId && p.playerId === playerId));
+      if (this.pitchingStats.length !== prevLength) {
+        this.saveToDisk();
+        return true;
+      }
+    }
+    return false;
   }
 
   // Games

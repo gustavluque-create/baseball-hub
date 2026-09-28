@@ -84,6 +84,56 @@ export interface Player {
   status: 'active' | 'injured' | 'minors';
 }
 
+export interface PlayerCareerTotals {
+  batting?: {
+    seasons: number;
+    games: number;
+    pa: number;
+    ab: number;
+    r: number;
+    h: number;
+    doubles: number;
+    triples: number;
+    hr: number;
+    rbi: number;
+    bb: number;
+    so: number;
+    sb: number;
+    avg: number;
+    obp: number;
+    slg: number;
+    ops: number;
+    war: number;
+  };
+  pitching?: {
+    seasons: number;
+    games: number;
+    gs: number;
+    w: number;
+    l: number;
+    sv: number;
+    ip: number;
+    h: number;
+    r: number;
+    er: number;
+    bb: number;
+    so: number;
+    hr: number;
+    era: number;
+    whip: number;
+    war: number;
+  };
+}
+
+export interface PlayerDetailResponse {
+  player: Player;
+  batting?: BattingStats;
+  pitching?: PitchingStats;
+  careerBatting?: BattingStats[];
+  careerPitching?: PitchingStats[];
+  careerTotals?: PlayerCareerTotals;
+}
+
 export type GameStatus = 'SCHEDULED' | 'LIVE' | 'FINAL' | 'POSTPONED' | 'SUSPENDED' | 'CANCELLED';
 
 export interface InningScore {

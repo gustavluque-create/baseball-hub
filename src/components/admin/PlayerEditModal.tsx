@@ -7,11 +7,13 @@ import {
   Star,
   Sliders,
   AlertCircle,
+  TrendingUp,
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
 import { playerEditSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { PlayerImageEditorModal } from './PlayerImageEditorModal.tsx';
+import { PlayerHistoricalStatsModal } from './PlayerHistoricalStatsModal.tsx';
 import { resolvePlayerPhoto, handlePlayerImgError, INDUSTRIALES_DEFAULT_PHOTO } from '../../utils/playerPhoto.ts';
 
 interface PlayerEditModalProps {
@@ -48,6 +50,7 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
+  const [isHistoricalStatsOpen, setIsHistoricalStatsOpen] = useState(false);
 
   useEffect(() => {
     if (player) {
@@ -464,26 +467,48 @@ export const PlayerEditModal: React.FC<PlayerEditModalProps> = ({
               />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                onClick={() => setIsHistoricalStatsOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Abrir panel de estadísticas históricas por temporada"
               >
-                Cancelar
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Estadísticas Históricas</span>
               </button>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                <span>{isSaving ? 'Guardando Cambios...' : 'Guardar Cambios'}</span>
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSaving ? 'Guardando Cambios...' : 'Guardar Cambios'}</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>
       </div>
+
+      {/* Historical Stats Submodal */}
+      {isHistoricalStatsOpen && (
+        <PlayerHistoricalStatsModal
+          player={player}
+          teams={teams}
+          isOpen={true}
+          onClose={() => setIsHistoricalStatsOpen(false)}
+        />
+      )}
 
       {/* Image Editor Submodal */}
       <PlayerImageEditorModal

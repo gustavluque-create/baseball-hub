@@ -25,6 +25,7 @@ import {
   ShieldAlert,
   ArrowLeftRight,
   Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
@@ -33,6 +34,7 @@ import { playerCreateSchema, validateWithSchema } from '../../schemas/adminSchem
 import { PlayerImageEditorModal, BASEBALL_PHOTO_PRESETS } from './PlayerImageEditorModal.tsx';
 import { AdminPlayerImportModal } from './AdminPlayerImportModal.tsx';
 import { PlayerEditModal } from './PlayerEditModal.tsx';
+import { PlayerHistoricalStatsModal } from './PlayerHistoricalStatsModal.tsx';
 import { useApp } from '../../context/AppContext.tsx';
 
 const LOCAL_STORAGE_BACKUP_KEY = 'baseball_hub_players_backup_v2';
@@ -63,6 +65,7 @@ export const AdminPlayersManager: React.FC = () => {
   // Modals state
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [imageEditingPlayer, setImageEditingPlayer] = useState<Player | null>(null);
+  const [historicalStatsPlayer, setHistoricalStatsPlayer] = useState<Player | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCreateImageEditorOpen, setIsCreateImageEditorOpen] = useState(false);
 
@@ -1239,6 +1242,15 @@ export const AdminPlayersManager: React.FC = () => {
                       {/* Row Actions */}
                       <td className="py-2.5 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Historical Stats Quick Button */}
+                          <button
+                            onClick={() => setHistoricalStatsPlayer(player)}
+                            className="p-1.5 rounded-lg bg-slate-950 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 border border-slate-800 transition-colors cursor-pointer"
+                            title="Gestionar estadísticas históricas por temporada"
+                          >
+                            <TrendingUp className="w-3.5 h-3.5" />
+                          </button>
+
                           {/* Edit Photo Quick Button */}
                           <button
                             onClick={() => setImageEditingPlayer(player)}
@@ -1373,6 +1385,17 @@ export const AdminPlayersManager: React.FC = () => {
           teams={teams}
           onClose={() => setIsImportModalOpen(false)}
           onImportSuccess={handleImportSuccess}
+        />
+      )}
+
+      {/* Modal 5: Player Historical Stats Modal */}
+      {historicalStatsPlayer && (
+        <PlayerHistoricalStatsModal
+          player={historicalStatsPlayer}
+          teams={teams}
+          isOpen={true}
+          onClose={() => setHistoricalStatsPlayer(null)}
+          onStatsUpdated={fetchInitialData}
         />
       )}
     </div>
