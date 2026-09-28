@@ -23,6 +23,7 @@ import {
   Calendar,
   TrendingUp,
   ArrowRightLeft,
+  FileCode,
 } from 'lucide-react';
 import { Team, Player } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
@@ -30,6 +31,7 @@ import { teamCreateSchema, validateWithSchema } from '../../schemas/adminSchemas
 import { TeamLogo } from '../TeamLogo.tsx';
 import { TEAM_EMOJI_PRESETS } from './TeamLogoEditorModal.tsx';
 import { PlayerHistoricalStatsModal } from './PlayerHistoricalStatsModal.tsx';
+import { AdminStatsImportModal } from './AdminStatsImportModal.tsx';
 import { useApp } from '../../context/AppContext.tsx';
 
 interface AdminTeamsManagerProps {
@@ -106,6 +108,7 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
 
   // Historical stats and player transfer state
   const [historicalStatsPlayer, setHistoricalStatsPlayer] = useState<Player | null>(null);
+  const [isStatsImportModalOpen, setIsStatsImportModalOpen] = useState(false);
   const [transferringPlayer, setTransferringPlayer] = useState<Player | null>(null);
   const [targetTransferTeamId, setTargetTransferTeamId] = useState<string>('');
   const [isTransferring, setIsTransferring] = useState(false);
@@ -875,6 +878,15 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
                       onChange={(e) => setRosterSearch(e.target.value)}
                       className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-36"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setIsStatsImportModalOpen(true)}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Importar estadísticas históricas desde JSON"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-indigo-200" />
+                      <span>Importar Stats</span>
+                    </button>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                         (rosterCounts[viewingTeam.id] || 0) >= 40
@@ -1663,6 +1675,22 @@ export const AdminTeamsManager: React.FC<AdminTeamsManagerProps> = ({ onTeamsCha
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal: Import Historical Stats JSON */}
+      {isStatsImportModalOpen && (
+        <AdminStatsImportModal
+          isOpen={true}
+          teams={teams}
+          players={players}
+          onClose={() => setIsStatsImportModalOpen(false)}
+          onImportSuccess={(_count, msg) => {
+            setActionMessage(msg);
+            setTimeout(() => setActionMessage(null), 5000);
+            fetchTeamsAndPlayers();
+            if (onTeamsChange) onTeamsChange();
+          }}
+        />
       )}
     </div>
   );

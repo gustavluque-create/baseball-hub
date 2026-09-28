@@ -14,9 +14,11 @@ import {
   Sparkles,
   Shield,
   Layers,
+  FileCode,
 } from 'lucide-react';
 import { Player, BattingStats, PitchingStats, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
+import { AdminStatsImportModal } from './AdminStatsImportModal.tsx';
 
 interface PlayerHistoricalStatsModalProps {
   player: Player | null;
@@ -44,6 +46,7 @@ export const PlayerHistoricalStatsModal: React.FC<PlayerHistoricalStatsModalProp
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null);
   const [editingStatId, setEditingStatId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isImportJsonModalOpen, setIsImportJsonModalOpen] = useState(false);
   const [statToDelete, setStatToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -445,13 +448,24 @@ export const PlayerHistoricalStatsModal: React.FC<PlayerHistoricalStatsModalProp
 
           {/* Action button */}
           {!formMode ? (
-            <button
-              onClick={handleStartCreate}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Añadir Temporada Histórica</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsImportJsonModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                title="Importar temporadas anteriores de este pelotero desde archivo o texto JSON"
+              >
+                <FileCode className="w-3.5 h-3.5 text-indigo-200" />
+                <span>Importar JSON</span>
+              </button>
+              <button
+                onClick={handleStartCreate}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Añadir Temporada Histórica</span>
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => {
@@ -1204,6 +1218,22 @@ export const PlayerHistoricalStatsModal: React.FC<PlayerHistoricalStatsModalProp
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal: Import Player Historical Stats JSON */}
+      {isImportJsonModalOpen && player && (
+        <AdminStatsImportModal
+          isOpen={true}
+          teams={teams}
+          players={[player]}
+          targetPlayerId={player.id}
+          onClose={() => setIsImportJsonModalOpen(false)}
+          onImportSuccess={(_count, msg) => {
+            setFeedback({ type: 'success', message: msg });
+            fetchStats();
+            if (onStatsUpdated) onStatsUpdated();
+          }}
+        />
       )}
     </div>
   );

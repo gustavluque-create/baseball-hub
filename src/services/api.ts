@@ -4,6 +4,7 @@ import {
   Team,
   Player,
   PlayerDetailResponse,
+  PlayerGameLogItem,
   Game,
   BattingStats,
   PitchingStats,
@@ -562,6 +563,10 @@ export class ApiClient {
     return this.request<PlayerDetailResponse>(`/players/${id}`);
   }
 
+  static getPlayerRecentGames(id: string, limit = 10): Promise<PlayerGameLogItem[]> {
+    return this.request<PlayerGameLogItem[]>(`/players/${id}/recent-games?limit=${limit}`);
+  }
+
   static savePlayerSeasonBatting(playerId: string, stat: Partial<BattingStats>): Promise<{ success: boolean; stat: BattingStats; historical: any }> {
     return this.request<{ success: boolean; stat: BattingStats; historical: any }>(`/players/${playerId}/stats/batting`, {
       method: 'POST',
@@ -968,6 +973,40 @@ export class ApiClient {
     return this.request('/admin/players/import', {
       method: 'POST',
       body: JSON.stringify({ players }),
+    });
+  }
+
+  static importAdminHistoricalStats(statsData: any): Promise<{
+    success: boolean;
+    importedCount: number;
+    battingCount: number;
+    pitchingCount: number;
+    playersCount: number;
+    unmatchedCount: number;
+    unmatchedEntries: any[];
+    affectedPlayerIds: string[];
+    message: string;
+    details: any[];
+  }> {
+    this.clearCache();
+    return this.request('/admin/stats/import', {
+      method: 'POST',
+      body: JSON.stringify(statsData),
+    });
+  }
+
+  static importPlayerHistoricalStats(playerId: string, statsData: any): Promise<{
+    success: boolean;
+    importedCount: number;
+    battingCount: number;
+    pitchingCount: number;
+    historical: any;
+    message: string;
+  }> {
+    this.clearCache();
+    return this.request(`/players/${encodeURIComponent(playerId)}/stats/import`, {
+      method: 'POST',
+      body: JSON.stringify(statsData),
     });
   }
 

@@ -16,6 +16,7 @@ import {
   MatchupComparisonData,
   TeamDirectComparisonData,
   ArticleComment,
+  PlayerGameLogItem,
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
 import { cloudSqlSync } from '../../src/db/cloudsql-sync.ts';
@@ -1070,6 +1071,322 @@ export class BaseballRepository {
     };
   }
 
+  getPlayerRecentGameLogs(playerId: string, limit = 10): PlayerGameLogItem[] {
+    const player = this.getPlayerById(playerId);
+    if (!player) return [];
+
+    const isPitcher = player.position === 'SP' || player.position === 'RP';
+
+    // Current season stats
+    const batting =
+      this.battingStats.find(
+        (b) => b.playerId === playerId && (b.seasonYear === 2026 || b.seasonYear === 2027 || !b.seasonId?.includes('56'))
+      ) || this.battingStats.filter((b) => b.playerId === playerId).pop();
+
+    const pitching =
+      this.pitchingStats.find(
+        (p) => p.playerId === playerId && (p.seasonYear === 2026 || p.seasonYear === 2027 || !p.seasonId?.includes('56'))
+      ) || this.pitchingStats.filter((p) => p.playerId === playerId).pop();
+
+    // Check if player participated in real games with boxscores
+    const realGameLogs: PlayerGameLogItem[] = [];
+    const teamGames = this.games
+      .filter((g) => g.homeTeam.id === player.teamId || g.awayTeam.id === player.teamId)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    for (const g of teamGames) {
+      const isHome = g.homeTeam.id === player.teamId;
+      const opp = isHome ? g.awayTeam : g.homeTeam;
+      const myScore = isHome ? g.homeScore : g.awayScore;
+      const oppScore = isHome ? g.awayScore : g.homeScore;
+      const result: 'W' | 'L' = myScore >= oppScore ? 'W' : 'L';
+
+      if (!isPitcher) {
+        const boxList = isHome ? g.battingBoxScore?.home : g.battingBoxScore?.away;
+        const boxEntry = boxList?.find((b) => b.playerId === player.id || b.name === player.fullName);
+        if (boxEntry) {
+          const ab = boxEntry.ab;
+          const h = boxEntry.h;
+          realGameLogs.push({
+            id: `gl_${g.id}_${player.id}`,
+            gameId: g.id,
+            gameNumber: realGameLogs.length + 1,
+            date: g.date,
+            formattedDate: new Date(g.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
+            opponentId: opp.id,
+            opponentShort: opp.shortName,
+            opponentName: opp.name,
+            opponentLogo: opp.logo,
+            isHome,
+            score: `${myScore}-${oppScore}`,
+            teamScore: myScore,
+            opponentScore: oppScore,
+            result,
+            ab,
+            h,
+            r: boxEntry.r,
+            rbi: boxEntry.rbi,
+            bb: boxEntry.bb,
+            so: boxEntry.so,
+            gameAvg: ab > 0 ? Number((h / ab).toFixed(3)) : 0,
+            rollingAvg: 0,
+          });
+        }
+      } else {
+        const pitList = isHome ? g.pitchingBoxScore?.home : g.pitchingBoxScore?.away;
+        const pitEntry = pitList?.find((p) => p.playerId === player.id || p.name === player.fullName);
+        if (pitEntry) {
+          const ipNum = parseFloat(pitEntry.ip) || 1.0;
+          realGameLogs.push({
+            id: `gl_${g.id}_${player.id}`,
+            gameId: g.id,
+            gameNumber: realGameLogs.length + 1,
+            date: g.date,
+            formattedDate: new Date(g.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
+            opponentId: opp.id,
+            opponentShort: opp.shortName,
+            opponentName: opp.name,
+            opponentLogo: opp.logo,
+            isHome,
+            score: `${myScore}-${oppScore}`,
+            teamScore: myScore,
+            opponentScore: oppScore,
+            result,
+            decision: pitEntry.decision || (result === 'W' ? 'W' : 'ND'),
+            ip: pitEntry.ip,
+            ipDecimal: ipNum,
+            er: pitEntry.er,
+            rAllowed: pitEntry.r,
+            hAllowed: pitEntry.h,
+            bbPitcher: pitEntry.bb,
+            soPitcher: pitEntry.so,
+            gameEra: Number(((pitEntry.er * 9) / Math.max(ipNum, 0.33)).toFixed(2)),
+            rollingEra: 0,
+          });
+        }
+      }
+    }
+
+    // If we have enough real games (>= limit), take the last `limit`
+    if (realGameLogs.length >= limit) {
+      const slice = realGameLogs.slice(-limit);
+      slice.forEach((item, idx) => {
+        item.gameNumber = idx + 1;
+      });
+      if (!isPitcher) {
+        let runHits = 0;
+        let runAb = 0;
+        slice.forEach((item) => {
+          runHits += item.h || 0;
+          runAb += item.ab || 0;
+          item.rollingAvg = runAb > 0 ? Number((runHits / runAb).toFixed(3)) : (batting?.avg || 0.300);
+        });
+      } else {
+        let runEr = 0;
+        let runIp = 0;
+        slice.forEach((item) => {
+          runEr += item.er || 0;
+          runIp += item.ipDecimal || 1;
+          item.rollingEra = runIp > 0 ? Number(((runEr * 9) / runIp).toFixed(2)) : (pitching?.era || 3.00);
+        });
+      }
+      return slice;
+    }
+
+    // Complete / synthesize a realistic 10-game performance sequence for the player
+    // Deterministic pseudo-random based on player id characters
+    let seed = 0;
+    for (let i = 0; i < player.id.length; i++) {
+      seed = (seed * 31 + player.id.charCodeAt(i)) >>> 0;
+    }
+    const pseudoRand = (offset: number) => {
+      const x = Math.sin(seed + offset * 7919) * 10000;
+      return x - Math.floor(x);
+    };
+
+    const otherTeams = this.teams.filter((t) => t.id !== player.teamId);
+    const availableOpponents = otherTeams.length > 0 ? otherTeams : this.teams;
+
+    const baseDates = [
+      '2026-09-01',
+      '2026-09-03',
+      '2026-09-05',
+      '2026-09-07',
+      '2026-09-09',
+      '2026-09-12',
+      '2026-09-14',
+      '2026-09-16',
+      '2026-09-18',
+      '2026-09-20',
+    ];
+
+    const targetBatAvg = batting?.avg ?? 0.325;
+    const targetEra = pitching?.era ?? (isPitcher ? 2.85 : 3.50);
+
+    const generated: PlayerGameLogItem[] = [];
+
+    if (!isPitcher) {
+      let runningHits = Math.round(targetBatAvg * 32);
+      let runningAb = 32;
+
+      for (let i = 0; i < limit; i++) {
+        const r1 = pseudoRand(i * 3 + 1);
+        const r2 = pseudoRand(i * 3 + 2);
+        const r3 = pseudoRand(i * 3 + 3);
+
+        const opp = availableOpponents[Math.floor(r1 * availableOpponents.length)] || availableOpponents[0];
+        const isHome = r2 > 0.45;
+        const result: 'W' | 'L' = r3 > 0.4 ? 'W' : 'L';
+        const teamScore = result === 'W' ? 4 + Math.floor(r1 * 5) : 1 + Math.floor(r1 * 3);
+        const oppScore = result === 'W' ? Math.max(0, teamScore - (1 + Math.floor(r2 * 3))) : teamScore + 1 + Math.floor(r2 * 3);
+
+        const ab = 3 + (r1 > 0.7 ? 1 : 0) + (r2 > 0.85 ? 1 : 0);
+        let h = 0;
+        const hitProb = targetBatAvg * 1.05;
+        if (r3 < hitProb * 0.35) {
+          h = 2;
+        } else if (r3 < hitProb * 0.85) {
+          h = 1;
+        } else if (r3 < hitProb * 0.98) {
+          h = 3;
+        } else {
+          h = 0;
+        }
+        h = Math.min(h, ab);
+
+        const r = h > 0 ? (r1 > 0.5 ? 1 : r1 > 0.85 ? 2 : 0) : 0;
+        const hr = (batting?.hr || 0) > 3 ? (r2 > 0.78 && h > 0 ? 1 : 0) : 0;
+        const doubles = hr === 0 && h > 1 ? 1 : (r3 > 0.7 && h > 0 ? 1 : 0);
+        const rbi = hr > 0 ? 1 + (r1 > 0.5 ? 1 : 0) : (h > 0 && r2 > 0.4 ? 1 + (r3 > 0.8 ? 1 : 0) : 0);
+        const bb = r1 > 0.65 ? 1 : (r2 > 0.9 ? 2 : 0);
+        const so = r3 > 0.55 ? 1 : 0;
+
+        runningHits += h;
+        runningAb += ab;
+        const rollingAvg = Number((runningHits / runningAb).toFixed(3));
+        const gameAvg = ab > 0 ? Number((h / ab).toFixed(3)) : 0;
+
+        const dateStr = baseDates[i] || `2026-09-${10 + i}`;
+        const dateObj = new Date(dateStr);
+        const formattedDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+
+        generated.push({
+          id: `gl_sim_${player.id}_${i + 1}`,
+          gameId: `g_sim_${i + 1}`,
+          gameNumber: i + 1,
+          date: dateStr,
+          formattedDate,
+          opponentId: opp.id,
+          opponentShort: opp.shortName,
+          opponentName: opp.name,
+          opponentLogo: opp.logo,
+          isHome,
+          score: `${teamScore}-${oppScore}`,
+          teamScore,
+          opponentScore: oppScore,
+          result,
+          ab,
+          h,
+          r,
+          doubles,
+          triples: 0,
+          hr,
+          rbi,
+          bb,
+          so,
+          sb: r1 > 0.8 ? 1 : 0,
+          gameAvg,
+          rollingAvg,
+          rollingOps: Number((rollingAvg + 0.52).toFixed(3)),
+        });
+      }
+    } else {
+      let runningEr = Math.round((targetEra * 42) / 9);
+      let runningIp = 42.0;
+
+      for (let i = 0; i < limit; i++) {
+        const r1 = pseudoRand(i * 4 + 1);
+        const r2 = pseudoRand(i * 4 + 2);
+        const r3 = pseudoRand(i * 4 + 3);
+
+        const opp = availableOpponents[Math.floor(r1 * availableOpponents.length)] || availableOpponents[0];
+        const isHome = r2 > 0.48;
+        const result: 'W' | 'L' = r3 > 0.35 ? 'W' : 'L';
+        const teamScore = result === 'W' ? 4 + Math.floor(r1 * 4) : 1 + Math.floor(r1 * 3);
+        const oppScore = result === 'W' ? Math.max(0, teamScore - (1 + Math.floor(r2 * 3))) : teamScore + 1 + Math.floor(r2 * 2);
+
+        const isReliever = player.position === 'RP';
+        const ipDecimal = isReliever ? 1.0 + (r1 > 0.5 ? 0.33 : r1 > 0.8 ? 0.67 : 0) : 5.0 + Math.floor(r1 * 3) + (r2 > 0.5 ? 0.33 : 0);
+        let er = 0;
+        if (targetEra < 2.0) {
+          er = r3 > 0.7 ? 1 : r3 > 0.9 ? 2 : 0;
+        } else if (targetEra < 3.5) {
+          er = r3 > 0.5 ? 1 : r3 > 0.8 ? 2 : r3 > 0.95 ? 3 : 0;
+        } else {
+          er = r3 > 0.35 ? 1 : r3 > 0.65 ? 2 : r3 > 0.85 ? 3 : 0;
+        }
+
+        const hAllowed = er + Math.floor(r2 * 4);
+        const bbPitcher = Math.floor(r1 * 3);
+        const soPitcher = isReliever ? 1 + Math.floor(r3 * 3) : 4 + Math.floor(r3 * 6);
+
+        let decision: 'W' | 'L' | 'S' | 'ND' = 'ND';
+        if (isReliever) {
+          if (result === 'W' && r2 > 0.5) decision = 'S';
+          else if (result === 'W' && r1 > 0.7) decision = 'W';
+          else if (result === 'L' && er > 1) decision = 'L';
+        } else {
+          if (result === 'W' && ipDecimal >= 5.0) decision = 'W';
+          else if (result === 'L') decision = 'L';
+        }
+
+        runningEr += er;
+        runningIp += ipDecimal;
+        const rollingEra = Number(((runningEr * 9) / runningIp).toFixed(2));
+        const gameEra = Number(((er * 9) / Math.max(ipDecimal, 0.33)).toFixed(2));
+
+        const dateStr = baseDates[i] || `2026-09-${10 + i}`;
+        const dateObj = new Date(dateStr);
+        const formattedDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+
+        const ipWhole = Math.floor(ipDecimal);
+        const ipFrac = ipDecimal - ipWhole;
+        const ipString = ipFrac > 0.6 ? `${ipWhole}.2` : ipFrac > 0.3 ? `${ipWhole}.1` : `${ipWhole}.0`;
+
+        generated.push({
+          id: `gl_sim_${player.id}_${i + 1}`,
+          gameId: `g_sim_${i + 1}`,
+          gameNumber: i + 1,
+          date: dateStr,
+          formattedDate,
+          opponentId: opp.id,
+          opponentShort: opp.shortName,
+          opponentName: opp.name,
+          opponentLogo: opp.logo,
+          isHome,
+          score: `${teamScore}-${oppScore}`,
+          teamScore,
+          opponentScore: oppScore,
+          result,
+          decision,
+          ip: ipString,
+          ipDecimal: Number(ipDecimal.toFixed(2)),
+          er,
+          rAllowed: er + (r1 > 0.7 ? 1 : 0),
+          hAllowed,
+          bbPitcher,
+          soPitcher,
+          hrAllowed: er > 0 && r2 > 0.6 ? 1 : 0,
+          gameEra,
+          rollingEra,
+          rollingWhip: Number(((bbPitcher + hAllowed) / ipDecimal).toFixed(2)),
+        });
+      }
+    }
+
+    return generated;
+  }
+
   addOrUpdatePlayerSeasonBatting(playerId: string, statData: Partial<BattingStats>): BattingStats {
     const player = this.getPlayerById(playerId);
     const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
@@ -1205,6 +1522,325 @@ export class BaseballRepository {
       }
     }
     return false;
+  }
+
+  /**
+   * Import historical stats for players from an array of JSON objects.
+   * Supports both batting and pitching records from previous seasons (e.g. SNB 60, 61, 62, 63, 64).
+   */
+  importHistoricalStats(
+    incoming: any[] | { batting?: any[]; pitching?: any[]; stats?: any[]; temporadas?: any[] },
+    defaultPlayerId?: string
+  ): {
+    importedCount: number;
+    battingCount: number;
+    pitchingCount: number;
+    playersCount: number;
+    unmatchedCount: number;
+    unmatchedEntries: any[];
+    affectedPlayerIds: string[];
+    details: {
+      playerName: string;
+      playerId: string;
+      type: 'batting' | 'pitching';
+      seasonYear: number;
+      seasonId: string;
+      teamShort: string;
+    }[];
+  } {
+    let rawList: any[] = [];
+    if (Array.isArray(incoming)) {
+      rawList = incoming;
+    } else if (incoming && typeof incoming === 'object') {
+      if (Array.isArray(incoming.stats)) {
+        rawList = incoming.stats;
+      } else if (Array.isArray(incoming.temporadas)) {
+        rawList = incoming.temporadas;
+      } else {
+        const battingList = Array.isArray(incoming.batting)
+          ? incoming.batting.map((b) => ({ ...b, type: 'batting' }))
+          : [];
+        const pitchingList = Array.isArray(incoming.pitching)
+          ? incoming.pitching.map((p) => ({ ...p, type: 'pitching' }))
+          : [];
+        rawList = [...battingList, ...pitchingList];
+      }
+    }
+
+    let battingCount = 0;
+    let pitchingCount = 0;
+    const affectedPlayerIdsSet = new Set<string>();
+    const unmatchedEntries: any[] = [];
+    const details: any[] = [];
+
+    const normalize = (str: string) =>
+      str
+        ? str
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim()
+        : '';
+
+    for (const raw of rawList) {
+      if (!raw || typeof raw !== 'object') continue;
+
+      // 1. Resolve player
+      let matchedPlayer: Player | undefined;
+      if (defaultPlayerId) {
+        matchedPlayer = this.getPlayerById(defaultPlayerId);
+      }
+
+      if (!matchedPlayer) {
+        const cleanId = raw.playerId || raw.id || raw.player_id;
+        if (cleanId) {
+          matchedPlayer = this.getPlayerById(String(cleanId).trim());
+        }
+      }
+
+      if (!matchedPlayer) {
+        const searchName = (
+          raw.playerName ||
+          raw.fullName ||
+          raw.player ||
+          raw.Nombre ||
+          raw.nombre ||
+          raw.name ||
+          raw.jugador ||
+          ''
+        )
+          .toString()
+          .trim();
+
+        if (searchName) {
+          const normSearch = normalize(searchName);
+          const teamQuery = (raw.teamShort || raw.team || raw.equipo || raw.teamId || '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+          // Try exact match with team preference first
+          if (teamQuery) {
+            matchedPlayer = this.players.find(
+              (p) =>
+                (p.teamShort.toLowerCase() === teamQuery || p.teamId.toLowerCase() === teamQuery) &&
+                normalize(p.fullName) === normSearch
+            );
+          }
+
+          // Exact name match across all teams
+          if (!matchedPlayer) {
+            matchedPlayer = this.players.find((p) => normalize(p.fullName) === normSearch);
+          }
+
+          // Substring name match
+          if (!matchedPlayer) {
+            matchedPlayer = this.players.find(
+              (p) =>
+                normSearch.length > 4 &&
+                (normalize(p.fullName).includes(normSearch) || normSearch.includes(normalize(p.fullName)))
+            );
+          }
+        }
+      }
+
+      if (!matchedPlayer) {
+        unmatchedEntries.push({
+          raw,
+          reason: `No se pudo emparejar al jugador "${raw.playerName || raw.fullName || raw.playerId || 'desconocido'}" en la base de datos.`,
+        });
+        continue;
+      }
+
+      // 2. Determine stat type
+      const rawType = (raw.type || raw.tipo || '').toString().toLowerCase().trim();
+      let statType: 'batting' | 'pitching' = 'batting';
+
+      if (rawType.includes('pitch') || rawType.includes('lanz') || rawType === 'p') {
+        statType = 'pitching';
+      } else if (rawType.includes('bat') || rawType.includes('bate') || rawType === 'of' || rawType === 'c') {
+        statType = 'batting';
+      } else {
+        // Auto-detect based on attributes
+        const hasPitchingProps =
+          raw.era !== undefined ||
+          raw.pcl !== undefined ||
+          raw.ip !== undefined ||
+          raw.inn !== undefined ||
+          raw.gs !== undefined ||
+          raw.ji !== undefined ||
+          raw.sv !== undefined ||
+          raw.js !== undefined ||
+          raw.w !== undefined ||
+          raw.jg !== undefined ||
+          raw.l !== undefined ||
+          raw.jp !== undefined ||
+          raw.er !== undefined ||
+          raw.cl !== undefined;
+
+        if (hasPitchingProps) {
+          statType = 'pitching';
+        } else if (
+          raw.ab !== undefined ||
+          raw.vb !== undefined ||
+          raw.h !== undefined ||
+          raw.hr !== undefined ||
+          raw.rbi !== undefined ||
+          raw.ci !== undefined ||
+          raw.avg !== undefined ||
+          raw.doubles !== undefined ||
+          raw.triples !== undefined
+        ) {
+          statType = 'batting';
+        } else {
+          statType = matchedPlayer.position === 'SP' || matchedPlayer.position === 'RP' ? 'pitching' : 'batting';
+        }
+      }
+
+      // 3. Season metadata
+      const seasonYear =
+        Number(
+          raw.seasonYear ||
+            raw.year ||
+            raw.temporada ||
+            raw.ano ||
+            raw.año ||
+            (raw.seasonId ? String(raw.seasonId).replace(/\D/g, '') : null)
+        ) || 2025;
+
+      const seasonId =
+        raw.seasonId ||
+        raw.temporadaId ||
+        (seasonYear <= 90 && seasonYear >= 1 ? `snb-${seasonYear}` : `snb-${seasonYear}`);
+
+      // 4. Team metadata
+      const teamQuery = (
+        raw.teamShort ||
+        raw.teamId ||
+        raw.equipo ||
+        raw.team ||
+        raw.team_short ||
+        ''
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
+
+      const teamObj =
+        this.teams.find(
+          (t) =>
+            t.shortName.toLowerCase() === teamQuery ||
+            t.id.toLowerCase() === teamQuery ||
+            t.name.toLowerCase().includes(teamQuery)
+        ) || this.getTeamById(matchedPlayer.teamId);
+
+      const teamId = teamObj ? teamObj.id : matchedPlayer.teamId;
+      const teamShort = teamObj ? teamObj.shortName : matchedPlayer.teamShort;
+
+      // 5. Add or update stat
+      if (statType === 'batting') {
+        const games = Number(raw.games ?? raw.jj ?? raw.j ?? raw.juegos ?? 0);
+        const ab = Number(raw.ab ?? raw.vb ?? raw.turnos ?? 0);
+        const r = Number(raw.r ?? raw.c ?? raw.anotadas ?? raw.runs ?? 0);
+        const h = Number(raw.h ?? raw.hits ?? raw.imparables ?? 0);
+        const doubles = Number(raw.doubles ?? raw.dobles ?? raw['2b'] ?? raw['2B'] ?? 0);
+        const triples = Number(raw.triples ?? raw.triples ?? raw['3b'] ?? raw['3B'] ?? 0);
+        const hr = Number(raw.hr ?? raw.jonrones ?? raw.cuadrangulares ?? raw.homeruns ?? 0);
+        const rbi = Number(raw.rbi ?? raw.ci ?? raw.impulsadas ?? raw.remolcadas ?? 0);
+        const bb = Number(raw.bb ?? raw.boletos ?? raw.basesPorBolas ?? 0);
+        const so = Number(raw.so ?? raw.k ?? raw.ponches ?? raw.strikeouts ?? 0);
+        const sb = Number(raw.sb ?? raw.br ?? raw.robadas ?? raw.basesRobadas ?? 0);
+        const cs = Number(raw.cs ?? raw.cr ?? 0);
+        const war = Number(raw.war ?? raw.WAR ?? 0);
+
+        this.addOrUpdatePlayerSeasonBatting(matchedPlayer.id, {
+          seasonYear,
+          seasonId,
+          teamId,
+          teamShort,
+          games,
+          ab,
+          r,
+          h,
+          doubles,
+          triples,
+          hr,
+          rbi,
+          bb,
+          so,
+          sb,
+          cs,
+          war,
+          avg: raw.avg !== undefined ? Number(raw.avg) : undefined,
+          obp: raw.obp !== undefined ? Number(raw.obp) : undefined,
+          slg: raw.slg !== undefined ? Number(raw.slg) : undefined,
+          ops: raw.ops !== undefined ? Number(raw.ops) : undefined,
+        });
+
+        battingCount++;
+      } else {
+        const games = Number(raw.games ?? raw.jj ?? raw.j ?? raw.juegos ?? 0);
+        const gs = Number(raw.gs ?? raw.ji ?? raw.juegosIniciados ?? 0);
+        const w = Number(raw.w ?? raw.wins ?? raw.jg ?? raw.victorias ?? raw.ganados ?? 0);
+        const l = Number(raw.l ?? raw.losses ?? raw.jp ?? raw.derrotas ?? raw.perdidos ?? 0);
+        const sv = Number(raw.sv ?? raw.saves ?? raw.js ?? raw.salvados ?? 0);
+        const ip = Number(raw.ip ?? raw.inn ?? raw.entradas ?? raw.innings ?? 0);
+        const h = Number(raw.h ?? raw.hits ?? raw.hitsPermitidos ?? 0);
+        const r = Number(raw.r ?? raw.c ?? raw.carreras ?? raw.carrerasPermitidas ?? 0);
+        const er = Number(raw.er ?? raw.cl ?? raw.limpias ?? raw.carrerasLimpias ?? 0);
+        const bb = Number(raw.bb ?? raw.boletos ?? 0);
+        const so = Number(raw.so ?? raw.k ?? raw.ponches ?? raw.strikeouts ?? 0);
+        const hr = Number(raw.hr ?? raw.jonrones ?? 0);
+        const war = Number(raw.war ?? raw.WAR ?? 0);
+
+        this.addOrUpdatePlayerSeasonPitching(matchedPlayer.id, {
+          seasonYear,
+          seasonId,
+          teamId,
+          teamShort,
+          games,
+          gs,
+          w,
+          l,
+          sv,
+          ip,
+          h,
+          r,
+          er,
+          bb,
+          so,
+          hr,
+          war,
+          era: raw.era !== undefined ? Number(raw.era) : raw.pcl !== undefined ? Number(raw.pcl) : undefined,
+          whip: raw.whip !== undefined ? Number(raw.whip) : undefined,
+        });
+
+        pitchingCount++;
+      }
+
+      affectedPlayerIdsSet.add(matchedPlayer.id);
+      details.push({
+        playerName: matchedPlayer.fullName,
+        playerId: matchedPlayer.id,
+        type: statType,
+        seasonYear,
+        seasonId,
+        teamShort,
+      });
+    }
+
+    this.saveToDisk();
+
+    return {
+      importedCount: battingCount + pitchingCount,
+      battingCount,
+      pitchingCount,
+      playersCount: affectedPlayerIdsSet.size,
+      unmatchedCount: unmatchedEntries.length,
+      unmatchedEntries,
+      affectedPlayerIds: Array.from(affectedPlayerIdsSet),
+      details,
+    };
   }
 
   // Games

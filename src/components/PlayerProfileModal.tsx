@@ -23,6 +23,7 @@ import { PlayerImageEditorModal } from './admin/PlayerImageEditorModal.tsx';
 import { PlayerHistoricalStatsModal } from './admin/PlayerHistoricalStatsModal.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { resolvePlayerPhoto, handlePlayerImgError } from '../utils/playerPhoto.ts';
+import { PlayerPerformanceTrendChart } from './PlayerPerformanceTrendChart.tsx';
 import {
   LineChart,
   Line,
@@ -47,7 +48,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
   const [data, setData] = useState<PlayerDetailResponse | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'current' | 'history' | 'evolution'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'recent' | 'history' | 'evolution'>('current');
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
   const [isHistoricalStatsOpen, setIsHistoricalStatsOpen] = useState(false);
 
@@ -247,7 +248,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                 <button
                   type="button"
                   onClick={() => setActiveTab('current')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     activeTab === 'current'
                       ? 'bg-emerald-500 text-slate-950 shadow-md'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -259,8 +260,26 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
 
                 <button
                   type="button"
+                  onClick={() => setActiveTab('recent')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === 'recent'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>
+                    Últimos 10 Juegos{' '}
+                    <span className="text-[10px] font-mono opacity-80">
+                      ({isPitcher ? 'PCL' : 'AVG'})
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveTab('history')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     activeTab === 'history'
                       ? 'bg-emerald-500 text-slate-950 shadow-md'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -268,7 +287,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                 >
                   <Calendar className="w-3.5 h-3.5" />
                   <span>
-                    Historial por Temporadas{' '}
+                    Historial{' '}
                     <span className="text-[10px] font-mono opacity-80">
                       ({isPitcher ? careerPitching.length : careerBatting.length})
                     </span>
@@ -278,14 +297,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                 <button
                   type="button"
                   onClick={() => setActiveTab('evolution')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     activeTab === 'evolution'
                       ? 'bg-emerald-500 text-slate-950 shadow-md'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
                   }`}
                 >
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Trayectoria &amp; Gráfica</span>
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  <span>Trayectoria</span>
                 </button>
               </div>
 
@@ -414,6 +433,16 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                     );
                   })()}
 
+                  {/* Performance Trend Chart Component (Recharts - Last 10 Games) */}
+                  <PlayerPerformanceTrendChart
+                    player={player}
+                    recentGames={data.recentGames}
+                    batting={batting}
+                    pitching={pitching}
+                    isPitcher={isPitcher}
+                    showDetailsList={true}
+                  />
+
                   {/* Career Totals Banner */}
                   {(careerTotals?.batting || careerTotals?.pitching) && (
                     <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 space-y-3">
@@ -533,7 +562,33 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                 </div>
               )}
 
-              {/* TAB 2: HISTORICAL SEASONS TABLE */}
+              {/* TAB 2: RECENT 10 GAMES PERFORMANCE TREND (RECHARTS) */}
+              {activeTab === 'recent' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-400" />
+                        <span>Rendimiento Reciente ({player.fullName})</span>
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Visualización avanzada con Recharts de la tendencia de {isPitcher ? 'Efectividad (PCL / ERA)' : 'Promedio de Bateo (AVG)'} durante los últimos 10 encuentros.
+                      </p>
+                    </div>
+                  </div>
+
+                  <PlayerPerformanceTrendChart
+                    player={player}
+                    recentGames={data.recentGames}
+                    batting={batting}
+                    pitching={pitching}
+                    isPitcher={isPitcher}
+                    showDetailsList={true}
+                  />
+                </div>
+              )}
+
+              {/* TAB 3: HISTORICAL SEASONS TABLE */}
               {activeTab === 'history' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
                   <div className="flex items-center justify-between">
@@ -957,10 +1012,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                     <div className="py-12 text-center rounded-2xl bg-slate-950/40 border border-dashed border-slate-800 space-y-3">
                       <BarChart2 className="w-10 h-10 text-slate-600 mx-auto" />
                       <p className="text-slate-300 text-sm font-semibold">
-                        Se requieren al menos 1 o 2 temporadas históricas para trazar la curva gráfica.
+                        Se requieren al menos 1 o 2 temporadas históricas para trazar la curva gráfica por temporadas.
                       </p>
                       <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                        Añade registros históricos de este atleta para generar automáticamente sus gráficos de evolución.
+                        Añade registros históricos de este atleta para generar automáticamente sus gráficos de evolución multianual.
                       </p>
                       {isAdminAuthenticated && (
                         <button
@@ -974,6 +1029,18 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({ playerId
                       )}
                     </div>
                   )}
+
+                  {/* Micro-Trend: Recent 10 Games Recharts Component */}
+                  <div className="pt-2">
+                    <PlayerPerformanceTrendChart
+                      player={player}
+                      recentGames={data.recentGames}
+                      batting={batting}
+                      pitching={pitching}
+                      isPitcher={isPitcher}
+                      showDetailsList={true}
+                    />
+                  </div>
                 </div>
               )}
             </>

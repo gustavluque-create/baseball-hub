@@ -223,6 +223,29 @@ apiRouter.post('/admin/players/import', requireAdmin, (req: Request, res: Respon
   });
 });
 
+// Import Historical Stats (Batting and Pitching across seasons and players)
+apiRouter.post('/admin/stats/import', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const rawPayload = req.body;
+  if (!rawPayload || (Array.isArray(rawPayload) && rawPayload.length === 0)) {
+    return res.status(400).json({ error: 'Los datos de estadísticas a importar están vacíos o no tienen un formato válido.' });
+  }
+
+  const result = baseballRepo.importHistoricalStats(rawPayload);
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Importación de Estadísticas Históricas',
+    `Se procesaron e importaron ${result.importedCount} registros históricos (${result.battingCount} bateo, ${result.pitchingCount} pitcheo) para ${result.playersCount} peloteros.`,
+    'players'
+  );
+
+  res.json({
+    success: true,
+    ...result,
+    message: `Se importaron ${result.importedCount} registros históricos (${result.battingCount} bateo, ${result.pitchingCount} pitcheo) para ${result.playersCount} jugadores.`,
+  });
+});
+
 apiRouter.delete('/admin/players/:id', requireAdmin, (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const success = baseballRepo.deletePlayer(req.params.id);
@@ -761,6 +784,7 @@ apiRouter.get('/players/:id', (req: Request, res: Response) => {
   const historical = baseballRepo.getPlayerHistoricalStats(player.id);
   const batting = historical.careerBatting[historical.careerBatting.length - 1];
   const pitching = historical.careerPitching[historical.careerPitching.length - 1];
+  const recentGames = baseballRepo.getPlayerRecentGameLogs(player.id, 10);
 
   res.json({
     player,
@@ -769,7 +793,19 @@ apiRouter.get('/players/:id', (req: Request, res: Response) => {
     careerBatting: historical.careerBatting,
     careerPitching: historical.careerPitching,
     careerTotals: historical.careerTotals,
+    recentGames,
   });
+});
+
+// Dedicated endpoint for player recent games / game log
+apiRouter.get('/players/:id/recent-games', (req: Request, res: Response) => {
+  const player = baseballRepo.getPlayerById(req.params.id);
+  if (!player) {
+    return res.status(404).json({ error: 'Jugador no encontrado' });
+  }
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+  const recentGames = baseballRepo.getPlayerRecentGameLogs(player.id, limit);
+  res.json(recentGames);
 });
 
 // Manage Player Historical Batting Stats
@@ -804,6 +840,31 @@ apiRouter.delete('/players/:id/stats/:statId', requireAdmin, (req: Request, res:
   const deleted = baseballRepo.deletePlayerSeasonStat(player.id, req.params.statId, type);
   const historical = baseballRepo.getPlayerHistoricalStats(player.id);
   res.json({ success: deleted, historical });
+});
+
+// Bulk Import Historical Stats specifically for one player
+apiRouter.post('/players/:id/stats/import', requireAdmin, (req: Request, res: Response) => {
+  const player = baseballRepo.getPlayerById(req.params.id);
+  if (!player) {
+    return res.status(404).json({ error: 'Jugador no encontrado' });
+  }
+  const rawList = Array.isArray(req.body.stats)
+    ? req.body.stats
+    : Array.isArray(req.body.temporadas)
+    ? req.body.temporadas
+    : Array.isArray(req.body)
+    ? req.body
+    : req.body;
+
+  const result = baseballRepo.importHistoricalStats(rawList, player.id);
+  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+
+  res.json({
+    success: true,
+    ...result,
+    historical,
+    message: `Se han importado exitosamente ${result.importedCount} temporadas para ${player.fullName}.`,
+  });
 });
 
 // Update Player Photo directly (from profile modal or admin tools)

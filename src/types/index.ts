@@ -125,6 +125,52 @@ export interface PlayerCareerTotals {
   };
 }
 
+export interface PlayerGameLogItem {
+  id: string;
+  gameId: string;
+  gameNumber: number; // 1 to 10
+  date: string;
+  formattedDate: string;
+  opponentId: string;
+  opponentShort: string;
+  opponentName: string;
+  opponentLogo?: string;
+  isHome: boolean;
+  score: string;
+  teamScore: number;
+  opponentScore: number;
+  result: 'W' | 'L';
+
+  // Batting stats for this game (position player/batter)
+  ab?: number;
+  r?: number;
+  h?: number;
+  doubles?: number;
+  triples?: number;
+  hr?: number;
+  rbi?: number;
+  bb?: number;
+  so?: number;
+  sb?: number;
+  gameAvg?: number; // hits in this game / ab (e.g. 0.500)
+  rollingAvg?: number; // progressive season/recent average (e.g. 0.355)
+  rollingOps?: number;
+
+  // Pitching stats for this appearance (pitcher)
+  decision?: 'W' | 'L' | 'S' | 'H' | 'ND';
+  ip?: string; // e.g. "6.2"
+  ipDecimal?: number; // e.g. 6.67
+  hAllowed?: number;
+  rAllowed?: number;
+  er?: number;
+  bbPitcher?: number;
+  soPitcher?: number;
+  hrAllowed?: number;
+  gameEra?: number; // ERA in this specific outing
+  rollingEra?: number; // progressive season/recent ERA (e.g. 2.45)
+  rollingWhip?: number;
+}
+
 export interface PlayerDetailResponse {
   player: Player;
   batting?: BattingStats;
@@ -132,6 +178,7 @@ export interface PlayerDetailResponse {
   careerBatting?: BattingStats[];
   careerPitching?: PitchingStats[];
   careerTotals?: PlayerCareerTotals;
+  recentGames?: PlayerGameLogItem[];
 }
 
 export type GameStatus = 'SCHEDULED' | 'LIVE' | 'FINAL' | 'POSTPONED' | 'SUSPENDED' | 'CANCELLED';

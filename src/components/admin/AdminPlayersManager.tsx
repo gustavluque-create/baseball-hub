@@ -26,6 +26,7 @@ import {
   ArrowLeftRight,
   Sparkles,
   TrendingUp,
+  FileCode,
 } from 'lucide-react';
 import { Player, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
@@ -33,6 +34,7 @@ import { resolvePlayerPhoto, handlePlayerImgError } from '../../utils/playerPhot
 import { playerCreateSchema, validateWithSchema } from '../../schemas/adminSchemas.ts';
 import { PlayerImageEditorModal, BASEBALL_PHOTO_PRESETS } from './PlayerImageEditorModal.tsx';
 import { AdminPlayerImportModal } from './AdminPlayerImportModal.tsx';
+import { AdminStatsImportModal } from './AdminStatsImportModal.tsx';
 import { PlayerEditModal } from './PlayerEditModal.tsx';
 import { PlayerHistoricalStatsModal } from './PlayerHistoricalStatsModal.tsx';
 import { useApp } from '../../context/AppContext.tsx';
@@ -67,6 +69,7 @@ export const AdminPlayersManager: React.FC = () => {
   const [imageEditingPlayer, setImageEditingPlayer] = useState<Player | null>(null);
   const [historicalStatsPlayer, setHistoricalStatsPlayer] = useState<Player | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isStatsImportModalOpen, setIsStatsImportModalOpen] = useState(false);
   const [isCreateImageEditorOpen, setIsCreateImageEditorOpen] = useState(false);
 
   // New player form fields
@@ -733,6 +736,16 @@ export const AdminPlayersManager: React.FC = () => {
               <span>Importar Roster</span>
             </button>
 
+            {/* Import Historical Stats Modal Button */}
+            <button
+              onClick={() => setIsStatsImportModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+              title="Importar estadísticas históricas de anteriores temporadas desde JSON"
+            >
+              <FileCode className="w-4 h-4 text-indigo-200" />
+              <span>Importar Estadísticas JSON</span>
+            </button>
+
             {/* New Player Button */}
             <button
               onClick={() => setIsCreating(!isCreating)}
@@ -1396,6 +1409,20 @@ export const AdminPlayersManager: React.FC = () => {
           isOpen={true}
           onClose={() => setHistoricalStatsPlayer(null)}
           onStatsUpdated={fetchInitialData}
+        />
+      )}
+
+      {/* Modal 6: Batch Import Historical Stats Modal */}
+      {isStatsImportModalOpen && (
+        <AdminStatsImportModal
+          isOpen={true}
+          teams={teams}
+          players={players}
+          onClose={() => setIsStatsImportModalOpen(false)}
+          onImportSuccess={(_count, message) => {
+            fetchInitialData();
+            showMessage(message);
+          }}
         />
       )}
     </div>
