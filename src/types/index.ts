@@ -56,7 +56,7 @@ export interface Team {
   };
 }
 
-export type PlayerPosition = 'C' | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF' | 'DH' | 'SP' | 'RP';
+export type PlayerPosition = 'C' | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF' | 'DH' | 'SP' | 'RP' | 'P';
 export type BatHand = 'R' | 'L' | 'S';
 export type ThrowHand = 'R' | 'L';
 
@@ -218,6 +218,53 @@ export interface PitcherBox {
   era: string;
 }
 
+export interface LineupPlayer {
+  order: number; // 1 to 9
+  playerId: string;
+  name: string;
+  jerseyNumber?: number;
+  position: string; // 'DH' | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF' | 'C' | 'P'
+  bats?: BatHand;
+  throws?: ThrowHand;
+  ab?: number;
+  r?: number;
+  h?: number;
+  rbi?: number;
+  bb?: number;
+  so?: number;
+  avg?: string;
+  notes?: string;
+}
+
+export interface TeamLineup {
+  startingPitcher?: {
+    playerId?: string;
+    name: string;
+    jerseyNumber?: number;
+    throws?: ThrowHand;
+    era?: string;
+    ip?: string;
+    h?: number;
+    r?: number;
+    er?: number;
+    bb?: number;
+    so?: number;
+    pitches?: number;
+  };
+  battingOrder: LineupPlayer[];
+  bench?: {
+    playerId: string;
+    name: string;
+    position: string;
+    jerseyNumber?: number;
+  }[];
+}
+
+export interface GameLineups {
+  away: TeamLineup;
+  home: TeamLineup;
+}
+
 export interface PlayEvent {
   id: string;
   inning: number;
@@ -226,6 +273,12 @@ export interface PlayEvent {
   description: string;
   scoreAfter: string;
   isScoringPlay?: boolean;
+  playType?: string;
+  batterName?: string;
+  pitcherName?: string;
+  runsScored?: number;
+  rbiCount?: number;
+  timestamp?: string;
 }
 
 export interface Game {
@@ -243,6 +296,13 @@ export interface Game {
   currentInning?: number;
   isTopInning?: boolean;
   outs?: number;
+  balls?: number;
+  strikes?: number;
+  bases?: {
+    first: boolean;
+    second: boolean;
+    third: boolean;
+  };
   lineScore: InningScore[];
   homeHits: number;
   awayHits: number;
@@ -261,6 +321,7 @@ export interface Game {
     away: PitcherBox[];
   };
   plays?: PlayEvent[];
+  lineups?: GameLineups;
 }
 
 export interface BattingStats {

@@ -136,6 +136,7 @@ apiRouter.put('/admin/games/:id', requireAdmin, (req: Request, res: Response) =>
     const isHome = newHome > prevHome;
     const diff = isHome ? newHome - prevHome : newAway - prevAway;
     const scoringTeam = isHome ? updatedGame.homeTeam : updatedGame.awayTeam;
+    const latestPlay = updatedGame.plays && updatedGame.plays.length > 0 ? updatedGame.plays[0] : null;
 
     notificationService.broadcastScoreChange({
       gameId: updatedGame.id,
@@ -149,9 +150,9 @@ apiRouter.put('/admin/games/:id', requireAdmin, (req: Request, res: Response) =>
       inning: updatedGame.currentInning || 1,
       isTopInning: updatedGame.isTopInning !== undefined ? updatedGame.isTopInning : true,
       outs: updatedGame.outs || 0,
-      title: `¡Anotación de ${scoringTeam.name}!`,
-      description: `Actualizado por administración: ${updatedGame.awayTeam.shortName} ${updatedGame.awayScore} - ${updatedGame.homeScore} ${updatedGame.homeTeam.shortName}`,
-      playType: 'hit',
+      title: latestPlay?.isScoringPlay ? `¡Carrera(s) de ${scoringTeam.name}!` : `¡Anotación de ${scoringTeam.name}!`,
+      description: latestPlay ? latestPlay.description : `Actualizado por administración: ${updatedGame.awayTeam.shortName} ${updatedGame.awayScore} - ${updatedGame.homeScore} ${updatedGame.homeTeam.shortName}`,
+      playType: (latestPlay?.playType as any) || (diff > 1 ? 'homerun' : 'hit'),
     });
   }
 
@@ -332,6 +333,21 @@ apiRouter.post('/admin/news', requireAdmin, (req: Request, res: Response) => {
     'system'
   );
   res.status(201).json(article);
+});
+
+apiRouter.put('/admin/news/:id', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  const updated = baseballRepo.updateNews(req.params.id, req.body);
+  if (!updated) {
+    return res.status(404).json({ error: 'Noticia no encontrada' });
+  }
+  adminAuthService.addAuditLog(
+    admin.username,
+    'Edición de Noticia',
+    `Noticia "${updated.title}" modificada.`,
+    'system'
+  );
+  res.json(updated);
 });
 
 apiRouter.delete('/admin/news/:id', requireAdmin, (req: Request, res: Response) => {

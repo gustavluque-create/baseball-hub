@@ -242,6 +242,7 @@ export const newsArticleSchema = z.object({
     .trim()
     .min(3, 'El nombre del autor debe tener al menos 3 caracteres.')
     .max(80, 'El nombre del autor no puede superar los 80 caracteres.'),
+  subtitle: z.string().trim().max(300, 'El subtítulo no puede exceder los 300 caracteres.').optional(),
   image: z
     .string()
     .trim()
@@ -255,6 +256,10 @@ export const newsArticleSchema = z.object({
       'La imagen de cabecera debe ser una URL válida o estar vacía.'
     )
     .optional(),
+  isFeatured: z.boolean().optional(),
+  readingTimeMinutes: z.coerce.number().min(1).max(60).optional(),
+  imageHeight: z.enum(['tall', 'medium', 'wide', 'panoramic']).optional(),
+  tags: z.union([z.array(z.string()), z.string()]).optional(),
 });
 
 export type NewsArticleInput = z.infer<typeof newsArticleSchema>;

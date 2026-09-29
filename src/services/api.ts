@@ -1039,6 +1039,13 @@ export class ApiClient {
     });
   }
 
+  static updateAdminNews(id: string, updates: Partial<NewsArticle>): Promise<NewsArticle> {
+    return this.request<NewsArticle>(`/admin/news/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
   static deleteAdminNews(id: string): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>(`/admin/news/${id}`, {
       method: 'DELETE',

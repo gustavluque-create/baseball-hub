@@ -16,6 +16,7 @@ import { useApp } from '../context/AppContext.tsx';
 import { ApiClient } from '../services/api.ts';
 import { Skeleton, NewsMasonrySkeleton, NewsGridSkeleton } from '../components/LoadingSkeleton.tsx';
 import { NewsArticle } from '../types/index.ts';
+import { NewsHeroSlider } from '../components/NewsHeroSlider.tsx';
 
 export const NewsView: React.FC = () => {
   const { navigateToNews } = useApp();
@@ -178,6 +179,13 @@ export const NewsView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Hero Slider with Latest News */}
+      {selectedCategory === 'Todos' && !loading && news.length > 0 && (
+        <section className="mb-8">
+          <NewsHeroSlider articles={news} />
+        </section>
+      )}
 
       {/* Loading Skeleton */}
       {loading ? (

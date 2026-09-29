@@ -17,6 +17,9 @@ import {
   TeamDirectComparisonData,
   ArticleComment,
   PlayerGameLogItem,
+  TeamLineup,
+  LineupPlayer,
+  GameLineups,
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
 import { cloudSqlSync } from '../../src/db/cloudsql-sync.ts';
@@ -139,6 +142,20 @@ export class BaseballRepository {
           if (idx !== -1) this.players[idx] = p;
           else this.players.push(p);
         }
+        if (cloudData.games && cloudData.games.length > 0) {
+          for (const g of cloudData.games) {
+            const idx = this.games.findIndex((item) => item.id === g.id);
+            if (idx !== -1) this.games[idx] = g;
+            else this.games.push(g);
+          }
+        }
+        if (cloudData.news && cloudData.news.length > 0) {
+          for (const n of cloudData.news) {
+            const idx = this.news.findIndex((item) => item.id === n.id);
+            if (idx !== -1) this.news[idx] = n;
+            else this.news.push(n);
+          }
+        }
         for (const [teamId, logoData] of Object.entries(cloudData.teamLogos)) {
           this.userOverrides.teamLogos[teamId.toLowerCase()] = {
             logo: logoData.logo,
@@ -148,6 +165,9 @@ export class BaseballRepository {
         }
         this.applyUserOverrides();
         this.saveToDisk();
+      } else {
+        console.log('[BaseballRepository] Cloud SQL database is fresh. Seeding data...');
+        await cloudSqlSync.seedInitialDataset(this.teams, this.players, this.games, this.news);
       }
     } catch (err) {
       console.warn('[BaseballRepository] Cloud SQL initialization error (running on local persistence):', err);
@@ -1980,8 +2000,149 @@ export class BaseballRepository {
   }
 
   // Games
+  getOrGenerateTeamLineup(teamId: string, boxBatters?: any[]): TeamLineup {
+    const cleanId = (teamId || '').trim().toLowerCase();
+    const teamPlayers = this.players.filter((p) => p.teamId.toLowerCase() === cleanId);
+    const battingOrder: LineupPlayer[] = [];
+    const usedPlayerIds = new Set<string>();
+
+    const defaultPositions = ['CF', '2B', 'LF', '1B', 'DH', '3B', 'RF', 'C', 'SS'];
+
+    // 1. If box score batters exist, prioritize them in order
+    if (boxBatters && boxBatters.length > 0) {
+      boxBatters.slice(0, 9).forEach((b, idx) => {
+        const found = teamPlayers.find(
+          (p) => p.id === b.playerId || p.fullName.toLowerCase() === (b.name || '').toLowerCase()
+        );
+        const orderNum = idx + 1;
+        battingOrder.push({
+          order: orderNum,
+          playerId: found ? found.id : b.playerId || `lineup_${cleanId}_${orderNum}`,
+          name: b.name || (found ? found.fullName : `Bateador ${orderNum}`),
+          jerseyNumber: found ? found.jerseyNumber : idx * 7 + 3,
+          position: b.position || defaultPositions[idx] || 'DH',
+          bats: found ? found.bats : 'R',
+          throws: found ? found.throws : 'R',
+          ab: b.ab || 0,
+          r: b.r || 0,
+          h: b.h || 0,
+          rbi: b.rbi || 0,
+          bb: b.bb || 0,
+          so: b.so || 0,
+          avg: b.avg || '.280',
+        });
+        if (found) usedPlayerIds.add(found.id);
+      });
+    }
+
+    // 2. Fill remaining slots up to 9
+    for (let i = battingOrder.length; i < 9; i++) {
+      const targetPos = defaultPositions[i] || 'DH';
+      const playerMatch =
+        teamPlayers.find((p) => !usedPlayerIds.has(p.id) && p.position === targetPos) ||
+        teamPlayers.find((p) => !usedPlayerIds.has(p.id)) ||
+        null;
+
+      const orderNum = i + 1;
+      if (playerMatch) {
+        usedPlayerIds.add(playerMatch.id);
+        battingOrder.push({
+          order: orderNum,
+          playerId: playerMatch.id,
+          name: playerMatch.fullName,
+          jerseyNumber: playerMatch.jerseyNumber,
+          position: targetPos,
+          bats: playerMatch.bats || 'R',
+          throws: playerMatch.throws || 'R',
+          ab: 3,
+          r: i === 0 || i === 3 ? 1 : 0,
+          h: i % 2 === 0 ? 1 : 0,
+          rbi: i === 3 ? 1 : 0,
+          bb: i === 1 ? 1 : 0,
+          so: i === 5 ? 1 : 0,
+          avg: `.2${70 + ((i * 7) % 60)}`,
+        });
+      } else {
+        battingOrder.push({
+          order: orderNum,
+          playerId: `starter_${cleanId}_${orderNum}`,
+          name: `Titular ${targetPos}`,
+          jerseyNumber: orderNum * 4 + 2,
+          position: targetPos,
+          bats: 'R',
+          throws: 'R',
+          ab: 2,
+          r: 0,
+          h: 1,
+          rbi: 0,
+          bb: 0,
+          so: 1,
+          avg: '.275',
+        });
+      }
+    }
+
+    // 3. Find Starting Pitcher
+    const pitcherMatch =
+      teamPlayers.find((p) => p.position === 'P' || (p.position as string) === 'SP' || (p.position as string) === 'RP') ||
+      teamPlayers[teamPlayers.length - 1];
+
+    const startingPitcher = {
+      playerId: pitcherMatch?.id,
+      name: pitcherMatch ? pitcherMatch.fullName : 'Abridor Oficial',
+      jerseyNumber: pitcherMatch ? pitcherMatch.jerseyNumber : 33,
+      throws: pitcherMatch ? pitcherMatch.throws : ('R' as any),
+      era: '3.15',
+      ip: '5.2',
+      h: 4,
+      r: 2,
+      er: 2,
+      bb: 2,
+      so: 5,
+      pitches: 78,
+    };
+
+    // 4. Bench players
+    const bench = teamPlayers
+      .filter((p) => !usedPlayerIds.has(p.id) && p.position !== 'P')
+      .slice(0, 6)
+      .map((p) => ({
+        playerId: p.id,
+        name: p.fullName,
+        position: p.position,
+        jerseyNumber: p.jerseyNumber,
+      }));
+
+    return {
+      startingPitcher,
+      battingOrder,
+      bench,
+    };
+  }
+
+  ensureGameDetails(game: Game): Game {
+    if (!game.bases) {
+      game.bases = { first: false, second: false, third: false };
+    }
+    if (game.balls === undefined) game.balls = 0;
+    if (game.strikes === undefined) game.strikes = 0;
+    if (
+      !game.lineups ||
+      !game.lineups.away ||
+      !game.lineups.home ||
+      !game.lineups.away.battingOrder ||
+      game.lineups.away.battingOrder.length === 0
+    ) {
+      game.lineups = {
+        away: this.getOrGenerateTeamLineup(game.awayTeam.id, game.battingBoxScore?.away),
+        home: this.getOrGenerateTeamLineup(game.homeTeam.id, game.battingBoxScore?.home),
+      };
+    }
+    return game;
+  }
+
   getGames(params?: { competitionId?: string; seasonId?: string; status?: string; teamId?: string }): Game[] {
-    let result = this.games;
+    let result = this.games.map((g) => this.ensureGameDetails(g));
 
     if (params?.competitionId) {
       result = result.filter((g) => g.competitionId === params.competitionId);
@@ -2000,7 +2161,9 @@ export class BaseballRepository {
   }
 
   getGameById(id: string): Game | undefined {
-    return this.games.find((g) => g.id === id);
+    const found = this.games.find((g) => g.id === id);
+    if (!found) return undefined;
+    return this.ensureGameDetails(found);
   }
 
   simulateLiveScoreChange(gameId?: string, forcedSide?: 'home' | 'away', forcedRuns?: number): {
@@ -2808,6 +2971,7 @@ export class BaseballRepository {
 
     this.games.unshift(newGame);
     this.saveToDisk();
+    cloudSqlSync.saveGame(newGame).catch(() => {});
     return newGame;
   }
 
@@ -2821,10 +2985,15 @@ export class BaseballRepository {
       ...updates,
       homeTeam: updates.homeTeamId ? (this.getTeamById(updates.homeTeamId) || current.homeTeam) : current.homeTeam,
       awayTeam: updates.awayTeamId ? (this.getTeamById(updates.awayTeamId) || current.awayTeam) : current.awayTeam,
+      lineups: updates.lineups !== undefined ? updates.lineups : current.lineups,
+      bases: updates.bases !== undefined ? updates.bases : current.bases,
+      balls: updates.balls !== undefined ? updates.balls : current.balls,
+      strikes: updates.strikes !== undefined ? updates.strikes : current.strikes,
     };
 
     this.games[index] = updated;
     this.saveToDisk();
+    cloudSqlSync.saveGame(updated).catch(() => {});
     return updated;
   }
 
@@ -2862,6 +3031,7 @@ export class BaseballRepository {
     const initialLen = this.games.length;
     this.games = this.games.filter((g) => g.id !== id);
     this.saveToDisk();
+    cloudSqlSync.deleteGame(id).catch(() => {});
     return this.games.length < initialLen;
   }
 
@@ -3267,13 +3437,33 @@ export class BaseballRepository {
 
     this.news.unshift(newArticle);
     this.saveToDisk();
+    cloudSqlSync.saveNews(newArticle).catch(() => {});
     return newArticle;
+  }
+
+  updateNews(id: string, updates: Partial<NewsArticle>): NewsArticle | undefined {
+    const index = this.news.findIndex((n) => n.id === id);
+    if (index === -1) return undefined;
+
+    const current = this.news[index];
+    const updated: NewsArticle = {
+      ...current,
+      ...updates,
+      id: current.id,
+      slug: updates.slug ? generateSeoSlug(updates.slug) : current.slug,
+    };
+
+    this.news[index] = updated;
+    this.saveToDisk();
+    cloudSqlSync.saveNews(updated).catch(() => {});
+    return updated;
   }
 
   deleteNews(id: string): boolean {
     const initialLen = this.news.length;
     this.news = this.news.filter((n) => n.id !== id);
     this.saveToDisk();
+    cloudSqlSync.deleteNews(id).catch(() => {});
     return this.news.length < initialLen;
   }
 
@@ -3302,6 +3492,7 @@ export class BaseballRepository {
 
     this.comments.unshift(newComment);
     this.saveToDisk();
+    cloudSqlSync.saveComment(newComment).catch(() => {});
     return newComment;
   }
 
@@ -3309,6 +3500,7 @@ export class BaseballRepository {
     const initialLen = this.comments.length;
     this.comments = this.comments.filter((c) => c.id !== id);
     this.saveToDisk();
+    cloudSqlSync.deleteComment(id).catch(() => {});
     return this.comments.length < initialLen;
   }
 
@@ -3367,7 +3559,7 @@ export class BaseballRepository {
     this.videos = [];
     this.comments = [];
     this.saveToDisk();
-    cloudSqlSync.clearAllTestData().catch((err) => {
+    cloudSqlSync.clearAllTestData().catch((err: unknown) => {
       console.error('[BaseballRepository] Failed to clear Cloud SQL test data:', err);
     });
   }

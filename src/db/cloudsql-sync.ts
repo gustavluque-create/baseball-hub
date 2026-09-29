@@ -1,7 +1,23 @@
 import { db } from './index.ts';
-import { teams, players, teamLogos, appSettings } from './schema.ts';
+import {
+  teams,
+  players,
+  teamLogos,
+  appSettings,
+  games,
+  news,
+  newsComments,
+  auditLogs,
+} from './schema.ts';
 import { eq, inArray } from 'drizzle-orm';
-import { Team, Player } from '../types/index.ts';
+import {
+  Team,
+  Player,
+  Game,
+  NewsArticle,
+  ArticleComment,
+  AdminAuditLog,
+} from '../types/index.ts';
 
 export class CloudSqlSyncService {
   private static instance: CloudSqlSyncService;
@@ -33,11 +49,17 @@ export class CloudSqlSyncService {
     teams: Team[];
     players: Player[];
     teamLogos: Record<string, { logo: string; primaryColor?: string }>;
+    games?: Game[];
+    news?: NewsArticle[];
   } | null> {
     try {
-      const dbTeams = await db.select().from(teams);
-      const dbPlayers = await db.select().from(players);
-      const dbLogos = await db.select().from(teamLogos);
+      const [dbTeams, dbPlayers, dbLogos, dbGames, dbNews] = await Promise.all([
+        db.select().from(teams),
+        db.select().from(players),
+        db.select().from(teamLogos),
+        db.select().from(games),
+        db.select().from(news),
+      ]);
 
       if (dbTeams.length === 0) {
         return null;
@@ -85,7 +107,7 @@ export class CloudSqlSyncService {
         };
       });
 
-      const teamNameMap = new Map(mappedTeams.map((t) => [t.id, t.name]));
+      const teamMap = new Map(mappedTeams.map((t) => [t.id, t]));
 
       const mappedPlayers: Player[] = dbPlayers.map((p) => {
         const parts = (p.fullName || '').split(' ');
@@ -100,7 +122,7 @@ export class CloudSqlSyncService {
           jerseyNumber: p.number,
           position: p.position as any,
           teamId: p.teamId,
-          teamName: teamNameMap.get(p.teamId) || p.teamShort,
+          teamName: teamMap.get(p.teamId)?.name || p.teamShort,
           teamShort: p.teamShort,
           bats: (p.bats as any) || 'R',
           throws: (p.throws as any) || 'R',
@@ -116,40 +138,100 @@ export class CloudSqlSyncService {
         };
       });
 
-      console.log(`✅ [CloudSqlSync] Loaded ${mappedTeams.length} teams, ${mappedPlayers.length} players, and ${dbLogos.length} logos from Cloud SQL PostgreSQL.`);
+      const mappedGames: Game[] = dbGames.map((g) => {
+        const awayTeam = teamMap.get(g.awayTeamId) || mappedTeams[0];
+        const homeTeam = teamMap.get(g.homeTeamId) || mappedTeams[1] || mappedTeams[0];
+        let lineScore = [];
+        let umpires = [];
+        let plays = [];
+        let bases = { first: false, second: false, third: false };
+        let lineups = undefined;
+        try {
+          lineScore = JSON.parse(g.lineScore || '[]');
+        } catch {}
+        try {
+          umpires = JSON.parse(g.umpires || '[]');
+        } catch {}
+        try {
+          plays = JSON.parse(g.plays || '[]');
+        } catch {}
+        try {
+          if (g.bases) bases = JSON.parse(g.bases);
+        } catch {}
+        try {
+          if (g.lineups && g.lineups !== '{}') lineups = JSON.parse(g.lineups);
+        } catch {}
+
+        return {
+          id: g.id,
+          competitionId: g.competitionId,
+          seasonId: g.seasonId,
+          date: g.date,
+          time: g.time,
+          stadium: g.stadium,
+          status: g.status as any,
+          homeTeam,
+          awayTeam,
+          homeScore: g.homeScore,
+          awayScore: g.awayScore,
+          homeHits: g.homeHits,
+          awayHits: g.awayHits,
+          homeErrors: g.homeErrors,
+          awayErrors: g.awayErrors,
+          currentInning: g.currentInning || 1,
+          isTopInning: g.isTopInning != null ? g.isTopInning : true,
+          outs: g.outs || 0,
+          balls: g.balls || 0,
+          strikes: g.strikes || 0,
+          bases,
+          lineups,
+          lineScore,
+          winningPitcher: g.winningPitcher ? { name: g.winningPitcher, record: '' } : undefined,
+          losingPitcher: g.losingPitcher ? { name: g.losingPitcher, record: '' } : undefined,
+          savePitcher: g.savePitcher ? { name: g.savePitcher, saves: 1 } : undefined,
+          umpires,
+          plays,
+        };
+      });
+
+      const mappedNews: NewsArticle[] = dbNews.map((n) => {
+        let tags: string[] = ['Béisbol'];
+        try {
+          tags = JSON.parse(n.tags || '["Béisbol"]');
+        } catch {}
+
+        return {
+          id: n.id,
+          title: n.title,
+          slug: n.slug,
+          subtitle: n.subtitle || undefined,
+          excerpt: n.excerpt,
+          content: n.content,
+          image: n.image,
+          author: n.author,
+          publishedAt: n.publishedAt,
+          category: n.category as any,
+          tags,
+          readingTimeMinutes: n.readingTimeMinutes || 4,
+          isFeatured: n.isFeatured || false,
+          imageHeight: (n.imageHeight as any) || 'tall',
+        };
+      });
+
+      console.log(
+        `✅ [CloudSqlSync] Loaded ${mappedTeams.length} teams, ${mappedPlayers.length} players, ${mappedGames.length} games, and ${mappedNews.length} news from Cloud SQL PostgreSQL.`
+      );
+
       return {
         teams: mappedTeams,
         players: mappedPlayers,
         teamLogos: logosMap,
+        games: mappedGames.length > 0 ? mappedGames : undefined,
+        news: mappedNews.length > 0 ? mappedNews : undefined,
       };
     } catch (err) {
       console.error('[CloudSqlSync] Failed to load data from Cloud SQL:', err);
       return null;
-    }
-  }
-
-  /**
-   * Seed Cloud SQL - Disabled: Test data loading has been permanently disabled per user request.
-   */
-  public async seedIfEmpty(
-    _baseTeams: Team[] = [],
-    _basePlayers: Player[] = [],
-    _customLogos: Record<string, { logo: string; primaryColor?: string }> = {}
-  ): Promise<boolean> {
-    console.log('[CloudSqlSync] Auto-seeding of test data is permanently disabled.');
-    return false;
-  }
-
-  /**
-   * Delete all test data from Cloud SQL tables
-   */
-  public async clearAllTestData(): Promise<void> {
-    try {
-      await db.delete(players);
-      await db.delete(teams);
-      console.log('🧹 [CloudSqlSync] All test data deleted from Cloud SQL tables.');
-    } catch (err) {
-      console.error('[CloudSqlSync] Error clearing test data from Cloud SQL:', err);
     }
   }
 
@@ -174,7 +256,6 @@ export class CloudSqlSyncService {
           },
         });
 
-      // Also update the team record's logo field
       await db
         .update(teams)
         .set({
@@ -327,6 +408,253 @@ export class CloudSqlSyncService {
       console.log(`🗑️ [CloudSqlSync] Bulk deleted ${playerIds.length} players from Cloud SQL.`);
     } catch (err) {
       console.error('[CloudSqlSync] Failed to bulk delete players from Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Persist a Game to Cloud SQL
+   */
+  public async saveGame(game: Game): Promise<void> {
+    try {
+      await db
+        .insert(games)
+        .values({
+          id: game.id,
+          competitionId: game.competitionId || 'snb',
+          seasonId: game.seasonId || 'snb-65',
+          date: game.date,
+          time: game.time || '14:00',
+          stadium: game.stadium || 'Estadio Principal',
+          status: game.status || 'SCHEDULED',
+          homeTeamId: game.homeTeam?.id || '',
+          awayTeamId: game.awayTeam?.id || '',
+          homeScore: game.homeScore || 0,
+          awayScore: game.awayScore || 0,
+          homeHits: game.homeHits || 0,
+          awayHits: game.awayHits || 0,
+          homeErrors: game.homeErrors || 0,
+          awayErrors: game.awayErrors || 0,
+          currentInning: game.currentInning || 1,
+          isTopInning: game.isTopInning !== undefined ? game.isTopInning : true,
+          outs: game.outs || 0,
+          balls: game.balls || 0,
+          strikes: game.strikes || 0,
+          bases: JSON.stringify(game.bases || { first: false, second: false, third: false }),
+          lineScore: JSON.stringify(game.lineScore || []),
+          lineups: JSON.stringify(game.lineups || {}),
+          winningPitcher: game.winningPitcher?.name || null,
+          losingPitcher: game.losingPitcher?.name || null,
+          savePitcher: game.savePitcher?.name || null,
+          umpires: JSON.stringify(game.umpires || []),
+          plays: JSON.stringify(game.plays || []),
+        })
+        .onConflictDoUpdate({
+          target: games.id,
+          set: {
+            date: game.date,
+            time: game.time || '14:00',
+            stadium: game.stadium || 'Estadio Principal',
+            status: game.status || 'SCHEDULED',
+            homeScore: game.homeScore || 0,
+            awayScore: game.awayScore || 0,
+            homeHits: game.homeHits || 0,
+            awayHits: game.awayHits || 0,
+            homeErrors: game.homeErrors || 0,
+            awayErrors: game.awayErrors || 0,
+            currentInning: game.currentInning || 1,
+            isTopInning: game.isTopInning !== undefined ? game.isTopInning : true,
+            outs: game.outs || 0,
+            balls: game.balls || 0,
+            strikes: game.strikes || 0,
+            bases: JSON.stringify(game.bases || { first: false, second: false, third: false }),
+            lineScore: JSON.stringify(game.lineScore || []),
+            lineups: JSON.stringify(game.lineups || {}),
+            winningPitcher: game.winningPitcher?.name || null,
+            losingPitcher: game.losingPitcher?.name || null,
+            savePitcher: game.savePitcher?.name || null,
+            umpires: JSON.stringify(game.umpires || []),
+            plays: JSON.stringify(game.plays || []),
+          },
+        });
+      console.log(`💾 [CloudSqlSync] Persisted game "${game.id}" to Cloud SQL.`);
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to save game to Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Delete a Game from Cloud SQL
+   */
+  public async deleteGame(gameId: string): Promise<void> {
+    try {
+      await db.delete(games).where(eq(games.id, gameId));
+      console.log(`🗑️ [CloudSqlSync] Deleted game "${gameId}" from Cloud SQL.`);
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to delete game from Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Persist a News Article to Cloud SQL
+   */
+  public async saveNews(article: NewsArticle): Promise<void> {
+    try {
+      await db
+        .insert(news)
+        .values({
+          id: article.id,
+          title: article.title,
+          slug: article.slug,
+          subtitle: article.subtitle || null,
+          excerpt: article.excerpt,
+          content: article.content,
+          image: article.image,
+          author: article.author || 'Prensa Oficial Béisbol Hub',
+          publishedAt: article.publishedAt || new Date().toISOString(),
+          category: article.category || 'Crónica',
+          tags: JSON.stringify(article.tags || ['Béisbol']),
+          readingTimeMinutes: article.readingTimeMinutes || 4,
+          isFeatured: Boolean(article.isFeatured),
+          imageHeight: article.imageHeight || 'tall',
+        })
+        .onConflictDoUpdate({
+          target: news.id,
+          set: {
+            title: article.title,
+            slug: article.slug,
+            subtitle: article.subtitle || null,
+            excerpt: article.excerpt,
+            content: article.content,
+            image: article.image,
+            author: article.author || 'Prensa Oficial Béisbol Hub',
+            category: article.category || 'Crónica',
+            tags: JSON.stringify(article.tags || ['Béisbol']),
+            readingTimeMinutes: article.readingTimeMinutes || 4,
+            isFeatured: Boolean(article.isFeatured),
+            imageHeight: article.imageHeight || 'tall',
+          },
+        });
+      console.log(`💾 [CloudSqlSync] Persisted news article "${article.title}" to Cloud SQL.`);
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to save news to Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Delete a News Article from Cloud SQL
+   */
+  public async deleteNews(newsId: string): Promise<void> {
+    try {
+      await db.delete(news).where(eq(news.id, newsId));
+      console.log(`🗑️ [CloudSqlSync] Deleted news "${newsId}" from Cloud SQL.`);
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to delete news from Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Persist a Comment to Cloud SQL
+   */
+  public async saveComment(comment: ArticleComment): Promise<void> {
+    try {
+      await db
+        .insert(newsComments)
+        .values({
+          id: comment.id,
+          articleSlug: comment.articleSlug,
+          authorName: comment.authorName || 'Aficionado al Béisbol',
+          favoriteTeam: comment.favoriteTeam || null,
+          content: comment.content,
+          likes: comment.likes || 0,
+          createdAt: comment.createdAt || new Date().toISOString(),
+        })
+        .onConflictDoUpdate({
+          target: newsComments.id,
+          set: {
+            content: comment.content,
+            likes: comment.likes || 0,
+          },
+        });
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to save comment to Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Delete a Comment from Cloud SQL
+   */
+  public async deleteComment(commentId: string): Promise<void> {
+    try {
+      await db.delete(newsComments).where(eq(newsComments.id, commentId));
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to delete comment from Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Persist an Audit Log to Cloud SQL
+   */
+  public async saveAuditLog(log: AdminAuditLog): Promise<void> {
+    try {
+      await db.insert(auditLogs).values({
+        id: log.id,
+        username: log.username,
+        action: log.action,
+        details: log.details,
+        category: log.category || 'general',
+        timestamp: log.timestamp,
+      } as any);
+    } catch (err) {
+      console.error('[CloudSqlSync] Failed to save audit log to Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Clear all tables from Cloud SQL
+   */
+  public async clearAllTestData(): Promise<void> {
+    try {
+      await db.delete(newsComments);
+      await db.delete(news);
+      await db.delete(games);
+      await db.delete(players);
+      await db.delete(teamLogos);
+      await db.delete(teams);
+      console.log('🗑️ [CloudSqlSync] Cleared all Cloud SQL tables.');
+    } catch (err) {
+      console.error('[CloudSqlSync] Error clearing test data from Cloud SQL:', err);
+    }
+  }
+
+  /**
+   * Initial Seed to Cloud SQL: Pushes base dataset into Cloud SQL if tables are empty
+   */
+  public async seedInitialDataset(
+    allTeams: Team[],
+    allPlayers: Player[],
+    allGames: Game[],
+    allNews: NewsArticle[]
+  ): Promise<void> {
+    try {
+      const hasTeams = await this.hasData();
+      if (!hasTeams && allTeams.length > 0) {
+        console.log(`🌱 [CloudSqlSync] Seeding initial ${allTeams.length} teams and ${allPlayers.length} players to Cloud SQL...`);
+        for (const t of allTeams) {
+          await this.saveTeam(t);
+        }
+        for (const p of allPlayers) {
+          await this.savePlayer(p);
+        }
+        for (const g of allGames) {
+          await this.saveGame(g);
+        }
+        for (const n of allNews) {
+          await this.saveNews(n);
+        }
+        console.log('✅ [CloudSqlSync] Initial Cloud SQL database seeding completed successfully.');
+      }
+    } catch (err) {
+      console.error('[CloudSqlSync] Error seeding initial dataset to Cloud SQL:', err);
     }
   }
 }

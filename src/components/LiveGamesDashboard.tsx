@@ -30,8 +30,11 @@ import {
   Swords,
   Bell,
   BellRing,
+  ListOrdered,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import { Game } from '../types/index.ts';
+import { Game, TeamLineup, LineupPlayer } from '../types/index.ts';
 import { TeamLogo } from './TeamLogo.tsx';
 import { useApp } from '../context/AppContext.tsx';
 import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
@@ -93,6 +96,66 @@ export const LiveGamesDashboard: React.FC<LiveGamesDashboardProps> = ({
 
   // Visualization mode
   const [chartMode, setChartMode] = useState<ChartMode>('trend');
+  const [showLiveLineups, setShowLiveLineups] = useState<boolean>(true);
+
+  // Fallback lineups
+  const awayLineup = useMemo<TeamLineup>(() => {
+    if (selectedGame?.lineups?.away?.battingOrder?.length) {
+      return selectedGame.lineups.away;
+    }
+    const defaultPositions = ['CF', '2B', 'LF', '1B', 'DH', '3B', 'RF', 'C', 'SS'];
+    const box = selectedGame?.battingBoxScore?.away || [];
+    const battingOrder: LineupPlayer[] = box.slice(0, 9).map((b, idx) => ({
+      order: idx + 1,
+      playerId: b.playerId,
+      name: b.name,
+      position: b.position || defaultPositions[idx] || 'DH',
+      jerseyNumber: idx * 5 + 4,
+      ab: b.ab,
+      r: b.r,
+      h: b.h,
+      rbi: b.rbi,
+      avg: b.avg,
+    }));
+    return {
+      startingPitcher: {
+        name: selectedGame?.pitchingBoxScore?.away?.[0]?.name || 'Abridor Visitante',
+        era: selectedGame?.pitchingBoxScore?.away?.[0]?.era || '3.20',
+        so: selectedGame?.pitchingBoxScore?.away?.[0]?.so || 4,
+        ip: selectedGame?.pitchingBoxScore?.away?.[0]?.ip || '5.0',
+      },
+      battingOrder,
+    };
+  }, [selectedGame]);
+
+  const homeLineup = useMemo<TeamLineup>(() => {
+    if (selectedGame?.lineups?.home?.battingOrder?.length) {
+      return selectedGame.lineups.home;
+    }
+    const defaultPositions = ['CF', '2B', 'LF', '1B', 'DH', '3B', 'RF', 'C', 'SS'];
+    const box = selectedGame?.battingBoxScore?.home || [];
+    const battingOrder: LineupPlayer[] = box.slice(0, 9).map((b, idx) => ({
+      order: idx + 1,
+      playerId: b.playerId,
+      name: b.name,
+      position: b.position || defaultPositions[idx] || 'DH',
+      jerseyNumber: idx * 5 + 4,
+      ab: b.ab,
+      r: b.r,
+      h: b.h,
+      rbi: b.rbi,
+      avg: b.avg,
+    }));
+    return {
+      startingPitcher: {
+        name: selectedGame?.pitchingBoxScore?.home?.[0]?.name || 'Abridor Local',
+        era: selectedGame?.pitchingBoxScore?.home?.[0]?.era || '3.10',
+        so: selectedGame?.pitchingBoxScore?.home?.[0]?.so || 5,
+        ip: selectedGame?.pitchingBoxScore?.home?.[0]?.ip || '5.1',
+      },
+      battingOrder,
+    };
+  }, [selectedGame]);
 
   // Process data for the selected game
   const chartData = useMemo<InningDataPoint[]>(() => {
@@ -849,6 +912,125 @@ export const LiveGamesDashboard: React.FC<LiveGamesDashboardProps> = ({
             </div>
           </div>
         )}
+
+        {/* 7. Live Game Lineups & In-Field Situation Accordion */}
+        <div className="pt-4 border-t border-slate-800/80">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => setShowLiveLineups(!showLiveLineups)}
+              className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider hover:text-emerald-400 transition-colors cursor-pointer"
+            >
+              <ListOrdered className="w-4 h-4 text-emerald-400" />
+              <span>Alineaciones Oficiales y Situación en el Campo</span>
+              {showLiveLineups ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+            </button>
+
+            {onNavigateToGame && (
+              <button
+                onClick={() => onNavigateToGame(selectedGame.id)}
+                className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <span>Ver Jugada a Jugada Completo</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {showLiveLineups && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              {/* Diamond & Count State if Game is Live */}
+              {selectedGame.status === 'LIVE' && (
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    {/* Diamond */}
+                    <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
+                      <div className={`absolute top-1 w-3.5 h-3.5 rounded-xs transform rotate-45 ${selectedGame.bases?.second ? 'bg-amber-400 ring-2 ring-amber-400/50' : 'bg-slate-800 border border-slate-700'}`} title="2da Base" />
+                      <div className={`absolute left-1 w-3.5 h-3.5 rounded-xs transform rotate-45 ${selectedGame.bases?.third ? 'bg-amber-400 ring-2 ring-amber-400/50' : 'bg-slate-800 border border-slate-700'}`} title="3ra Base" />
+                      <div className={`absolute right-1 w-3.5 h-3.5 rounded-xs transform rotate-45 ${selectedGame.bases?.first ? 'bg-amber-400 ring-2 ring-amber-400/50' : 'bg-slate-800 border border-slate-700'}`} title="1ra Base" />
+                      <div className="absolute bottom-1 w-3.5 h-3.5 bg-slate-200 rounded-xs transform rotate-45" title="Home Plate" />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                        Al bate: {selectedGame.isTopInning ? selectedGame.awayTeam.name : selectedGame.homeTeam.name}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-white">
+                        {selectedGame.currentInning}ª {selectedGame.isTopInning ? '▲ Alta' : '▼ Baja'} • {selectedGame.outs || 0} Out(s)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 font-mono text-xs">
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-sky-400">
+                      B: <strong className="text-white">{selectedGame.balls || 0}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-amber-400">
+                      S: <strong className="text-white">{selectedGame.strikes || 0}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-rose-400">
+                      O: <strong className="text-white">{selectedGame.outs || 0}</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Side-by-Side Starting Lineups */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Away Starting 9 */}
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <TeamLogo logo={selectedGame.awayTeam.logo} name={selectedGame.awayTeam.name} className="w-4 h-4" />
+                      <span className="font-bold text-xs text-white">{selectedGame.awayTeam.name} (Visitante)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">P: {awayLineup.startingPitcher?.name}</span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {awayLineup.battingOrder.slice(0, 9).map((b) => (
+                      <div key={b.order} className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-slate-900 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-slate-500 text-[10px] w-3">{b.order}</span>
+                          <span className="font-bold text-[10px] px-1 rounded bg-slate-800 text-emerald-400">{b.position}</span>
+                          <span className="font-medium text-slate-200">{b.name}</span>
+                        </div>
+                        <div className="font-mono text-[10px] text-slate-400">
+                          {b.h ?? 0}-{b.ab ?? 0} {b.rbi ? `• ${b.rbi} CI` : ''} ({b.avg || '.300'})
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Home Starting 9 */}
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <TeamLogo logo={selectedGame.homeTeam.logo} name={selectedGame.homeTeam.name} className="w-4 h-4" />
+                      <span className="font-bold text-xs text-white">{selectedGame.homeTeam.name} (Local)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">P: {homeLineup.startingPitcher?.name}</span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {homeLineup.battingOrder.slice(0, 9).map((b) => (
+                      <div key={b.order} className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-slate-900 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-slate-500 text-[10px] w-3">{b.order}</span>
+                          <span className="font-bold text-[10px] px-1 rounded bg-slate-800 text-emerald-400">{b.position}</span>
+                          <span className="font-medium text-slate-200">{b.name}</span>
+                        </div>
+                        <div className="font-mono text-[10px] text-slate-400">
+                          {b.h ?? 0}-{b.ab ?? 0} {b.rbi ? `• ${b.rbi} CI` : ''} ({b.avg || '.300'})
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
