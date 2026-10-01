@@ -98,6 +98,7 @@ export class BaseballRepository {
     customPlayers: Player[];
     deletedPlayerIds: string[];
     deletedTeamIds: string[];
+    deletedGameIds: string[];
   } = {
     teamLogos: {},
     teams: {},
@@ -106,8 +107,10 @@ export class BaseballRepository {
     customPlayers: [],
     deletedPlayerIds: [],
     deletedTeamIds: [],
+    deletedGameIds: [],
   };
 
+  private isInitialized = false;
   private competitions: Competition[] = [];
   private seasons: Season[] = [];
   private teams: Team[] = [];
@@ -143,7 +146,13 @@ export class BaseballRepository {
           else this.players.push(p);
         }
         if (cloudData.games && cloudData.games.length > 0) {
+          const deletedGameSet = new Set(this.userOverrides.deletedGameIds || []);
           for (const g of cloudData.games) {
+            // NEVER reload or retain demo test games (g-2026-*) or user-deleted games
+            if (g.id.startsWith('g-2026-') || deletedGameSet.has(g.id)) {
+              cloudSqlSync.deleteGame(g.id).catch(() => {});
+              continue;
+            }
             const idx = this.games.findIndex((item) => item.id === g.id);
             if (idx !== -1) this.games[idx] = g;
             else this.games.push(g);
@@ -166,8 +175,7 @@ export class BaseballRepository {
         this.applyUserOverrides();
         this.saveToDisk();
       } else {
-        console.log('[BaseballRepository] Cloud SQL database is fresh. Seeding data...');
-        await cloudSqlSync.seedInitialDataset(this.teams, this.players, this.games, this.news);
+        console.log('[BaseballRepository] Cloud SQL connected and active.');
       }
     } catch (err) {
       console.warn('[BaseballRepository] Cloud SQL initialization error (running on local persistence):', err);
@@ -189,6 +197,7 @@ export class BaseballRepository {
               customPlayers: Array.isArray(parsed.customPlayers) ? parsed.customPlayers : [],
               deletedPlayerIds: Array.isArray(parsed.deletedPlayerIds) ? parsed.deletedPlayerIds : [],
               deletedTeamIds: Array.isArray(parsed.deletedTeamIds) ? parsed.deletedTeamIds : [],
+              deletedGameIds: Array.isArray(parsed.deletedGameIds) ? parsed.deletedGameIds : [],
             };
           }
         }
@@ -309,6 +318,13 @@ export class BaseballRepository {
       }
     }
 
+    // 9. Remove deleted games and permanently purge demo test games
+    if (this.userOverrides.deletedGameIds && this.userOverrides.deletedGameIds.length > 0) {
+      const deletedGameSet = new Set(this.userOverrides.deletedGameIds);
+      this.games = this.games.filter((g) => !deletedGameSet.has(g.id));
+    }
+    this.games = this.games.filter((g) => !g.id.startsWith('g-2026-'));
+
     this.deduplicatePlayers();
   }
 
@@ -322,6 +338,9 @@ export class BaseballRepository {
           const raw = fs.readFileSync(filePath, 'utf-8');
           if (raw && raw.trim().length > 0) {
             const data = JSON.parse(raw);
+            if (data.initialized) {
+              this.isInitialized = true;
+            }
             if (Array.isArray(data.competitions)) {
               this.competitions = data.competitions;
             }
@@ -335,7 +354,7 @@ export class BaseballRepository {
               this.players = data.players;
             }
             if (Array.isArray(data.games)) {
-              this.games = data.games;
+              this.games = data.games.filter((g: any) => !g.id.startsWith('g-2026-'));
             }
             if (Array.isArray(data.battingStats)) {
               this.battingStats = data.battingStats;
@@ -373,20 +392,24 @@ export class BaseballRepository {
       loaded = true;
     }
 
-    // Fallback: If no teams or data loaded, initialize with full DEMO data
-    if (this.teams.length === 0) {
+    // Fallback: If no teams or data loaded AND not initialized, initialize with teams & players only (NEVER mock games)
+    if (this.teams.length === 0 && !this.isInitialized) {
       this.competitions = JSON.parse(JSON.stringify(DEMO_COMPETITIONS));
       this.seasons = JSON.parse(JSON.stringify(DEMO_SEASONS));
       this.teams = JSON.parse(JSON.stringify(DEMO_TEAMS));
       this.players = JSON.parse(JSON.stringify(DEMO_PLAYERS));
-      this.games = JSON.parse(JSON.stringify(DEMO_GAMES));
+      this.games = []; // Never re-inject demo test games!
       this.battingStats = JSON.parse(JSON.stringify(DEMO_BATTING_STATS));
       this.pitchingStats = JSON.parse(JSON.stringify(DEMO_PITCHING_STATS));
       this.standings = JSON.parse(JSON.stringify(DEMO_STANDINGS));
       this.news = JSON.parse(JSON.stringify(DEMO_NEWS));
       this.videos = JSON.parse(JSON.stringify(DEMO_VIDEOS));
       this.comments = JSON.parse(JSON.stringify(INITIAL_COMMENTS));
+      this.isInitialized = true;
     }
+
+    // Always filter out any legacy demo test games permanently
+    this.games = (this.games || []).filter((g) => !g.id.startsWith('g-2026-'));
 
     // 3. ALWAYS apply user overrides on top (guarantees user uploaded logos and data are NEVER lost!)
     this.applyUserOverrides();
@@ -416,12 +439,13 @@ export class BaseballRepository {
       }
       const payload = {
         version: '1.0',
+        initialized: true,
         lastUpdated: new Date().toISOString(),
         competitions: this.competitions,
         seasons: this.seasons,
         teams: this.teams,
         players: this.players,
-        games: this.games,
+        games: (this.games || []).filter((g) => !g.id.startsWith('g-2026-')),
         battingStats: this.battingStats,
         pitchingStats: this.pitchingStats,
         standings: this.standings,
@@ -2141,7 +2165,13 @@ export class BaseballRepository {
     return game;
   }
 
-  getGames(params?: { competitionId?: string; seasonId?: string; status?: string; teamId?: string }): Game[] {
+  getGames(params?: {
+    competitionId?: string;
+    seasonId?: string;
+    status?: string;
+    teamId?: string;
+    sortByDate?: 'asc' | 'desc';
+  }): Game[] {
     let result = this.games.map((g) => this.ensureGameDetails(g));
 
     if (params?.competitionId) {
@@ -2156,6 +2186,22 @@ export class BaseballRepository {
     if (params?.teamId) {
       result = result.filter((g) => g.homeTeam.id === params.teamId || g.awayTeam.id === params.teamId);
     }
+
+    // Sort by date and time (default: ascending chronological order)
+    const sortOrder = params?.sortByDate === 'desc' ? 'desc' : 'asc';
+    result.sort((a, b) => {
+      const dateA = a.date || '1970-01-01';
+      const dateB = b.date || '1970-01-01';
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      const fullA = `${dateA}T${timeA.length === 5 ? timeA : '00:00'}:00`;
+      const fullB = `${dateB}T${timeB.length === 5 ? timeB : '00:00'}:00`;
+      const cmp = fullA.localeCompare(fullB);
+      if (cmp !== 0) {
+        return sortOrder === 'asc' ? cmp : -cmp;
+      }
+      return sortOrder === 'asc' ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+    });
 
     return result;
   }
@@ -2969,7 +3015,12 @@ export class BaseballRepository {
       lineScore: data.lineScore || data.inningScores || [],
     };
 
-    this.games.unshift(newGame);
+    this.games.push(newGame);
+    this.games.sort((a, b) => {
+      const fullA = `${a.date || '1970-01-01'}T${a.time || '00:00'}:00`;
+      const fullB = `${b.date || '1970-01-01'}T${b.time || '00:00'}:00`;
+      return fullA.localeCompare(fullB);
+    });
     this.saveToDisk();
     cloudSqlSync.saveGame(newGame).catch(() => {});
     return newGame;
@@ -3006,13 +3057,19 @@ export class BaseballRepository {
     stadium?: string;
   }): Game[] {
     const createdGames: Game[] = [];
-    const baseDate = new Date(seriesData.startDate || new Date().toISOString().split('T')[0]);
+    const rawDate = seriesData.startDate || new Date().toISOString().split('T')[0];
+    const parts = rawDate.split('-').map(Number);
+    const startYear = parts[0] || new Date().getFullYear();
+    const startMonth = (parts[1] || 1) - 1;
+    const startDay = parts[2] || 1;
     const num = Math.min(Math.max(1, seriesData.numberOfGames || 3), 7);
 
     for (let i = 0; i < num; i++) {
-      const gDate = new Date(baseDate);
-      gDate.setDate(gDate.getDate() + i);
-      const dateStr = gDate.toISOString().split('T')[0];
+      const gDate = new Date(startYear, startMonth, startDay + i, 12, 0, 0);
+      const yStr = gDate.getFullYear();
+      const mStr = String(gDate.getMonth() + 1).padStart(2, '0');
+      const dStr = String(gDate.getDate()).padStart(2, '0');
+      const dateStr = `${yStr}-${mStr}-${dStr}`;
       const game = this.createGame({
         id: `game_${Date.now()}_${i + 1}`,
         awayTeamId: seriesData.awayTeamId,
@@ -3030,6 +3087,10 @@ export class BaseballRepository {
   deleteGame(id: string): boolean {
     const initialLen = this.games.length;
     this.games = this.games.filter((g) => g.id !== id);
+    if (!this.userOverrides.deletedGameIds.includes(id)) {
+      this.userOverrides.deletedGameIds.push(id);
+      this.saveUserOverridesToDisk();
+    }
     this.saveToDisk();
     cloudSqlSync.deleteGame(id).catch(() => {});
     return this.games.length < initialLen;
@@ -3522,6 +3583,7 @@ export class BaseballRepository {
         customPlayers: [],
         deletedPlayerIds: [],
         deletedTeamIds: [],
+        deletedGameIds: [],
       };
       this.saveUserOverridesToDisk();
     }

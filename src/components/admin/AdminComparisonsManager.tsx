@@ -73,6 +73,19 @@ export const AdminComparisonsManager: React.FC<AdminComparisonsManagerProps> = (
     setTimeout(() => setActionMessage(null), 3500);
   };
 
+  // Helper to sort games by date
+  const sortGamesByDate = (gameList: Game[]) => {
+    return [...gameList].sort((a, b) => {
+      const dateA = a.date || '1970-01-01';
+      const dateB = b.date || '1970-01-01';
+      const timeA = a.time && a.time.length === 5 ? a.time : '00:00';
+      const timeB = b.time && b.time.length === 5 ? b.time : '00:00';
+      const fullA = `${dateA}T${timeA}:00`;
+      const fullB = `${dateB}T${timeB}:00`;
+      return fullA.localeCompare(fullB);
+    });
+  };
+
   // Initial load of teams & games
   useEffect(() => {
     const loadData = async () => {
@@ -83,7 +96,7 @@ export const AdminComparisonsManager: React.FC<AdminComparisonsManagerProps> = (
           ApiClient.getGames(),
         ]);
         setTeams(fetchedTeams);
-        setGames(fetchedGames);
+        setGames(sortGamesByDate(fetchedGames));
 
         // Set defaults if not provided
         if (!teamAId && fetchedTeams.length >= 2) {
@@ -178,7 +191,7 @@ export const AdminComparisonsManager: React.FC<AdminComparisonsManagerProps> = (
         numberOfGames: seriesGamesCount,
         stadium: newGameVenue || undefined,
       });
-      setGames((prev) => [...created, ...prev]);
+      setGames((prev) => sortGamesByDate([...created, ...prev]));
       setIsCreatingSeries(false);
       showNotification(`¡Subserie de ${created.length} partidos creada con éxito!`);
     } catch (err: any) {

@@ -599,12 +599,21 @@ export class ApiClient {
   }
 
   // Games
-  static getGames(params?: { competition?: string; season?: string; status?: string; team?: string }): Promise<Game[]> {
+  static getGames(params?: {
+    competition?: string;
+    season?: string;
+    status?: string;
+    team?: string;
+    sort?: 'asc' | 'desc';
+    order?: 'asc' | 'desc';
+  }): Promise<Game[]> {
     const searchParams = new URLSearchParams();
     if (params?.competition) searchParams.set('competition', params.competition);
     if (params?.season) searchParams.set('season', params.season);
     if (params?.status) searchParams.set('status', params.status);
     if (params?.team) searchParams.set('team', params.team);
+    if (params?.sort) searchParams.set('sort', params.sort);
+    if (params?.order) searchParams.set('order', params.order);
 
     return this.request<Game[]>(`/games?${searchParams.toString()}`);
   }

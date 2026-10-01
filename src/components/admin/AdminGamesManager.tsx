@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar,
   Plus,
@@ -18,6 +18,7 @@ import {
   Swords,
   Layers,
   ArrowLeftRight,
+  ArrowUpDown,
 } from 'lucide-react';
 import { Game, GameStatus, Team } from '../../types/index.ts';
 import { ApiClient } from '../../services/api.ts';
@@ -42,6 +43,22 @@ export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
   const [filter, setFilter] = useState<'all' | 'live' | 'scheduled' | 'final'>('all');
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dateSortOrder, setDateSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Helper to sort games consistently by date and time
+  const sortGamesByDate = (gameList: Game[], order: 'asc' | 'desc' = 'asc') => {
+    return [...gameList].sort((a, b) => {
+      const dateA = a.date || '1970-01-01';
+      const dateB = b.date || '1970-01-01';
+      const timeA = a.time && a.time.length === 5 ? a.time : '00:00';
+      const timeB = b.time && b.time.length === 5 ? b.time : '00:00';
+      const fullA = `${dateA}T${timeA}:00`;
+      const fullB = `${dateB}T${timeB}:00`;
+      const cmp = fullA.localeCompare(fullB);
+      if (cmp !== 0) return order === 'asc' ? cmp : -cmp;
+      return order === 'asc' ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+    });
+  };
 
   // Modals
   const [liveConsoleGame, setLiveConsoleGame] = useState<Game | null>(null);
@@ -65,10 +82,10 @@ export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
     setLoading(true);
     try {
       const [fetchedGames, fetchedTeams] = await Promise.all([
-        ApiClient.getGames(),
+        ApiClient.getGames({ sort: dateSortOrder }),
         ApiClient.getTeams(),
       ]);
-      setGames(fetchedGames);
+      setGames(sortGamesByDate(fetchedGames, dateSortOrder));
       setTeams(fetchedTeams);
       if (fetchedTeams.length >= 2 && !newAwayTeamId) {
         setNewAwayTeamId(fetchedTeams[0].id);
@@ -168,7 +185,7 @@ export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
         isTopInning: true,
         outs: 0,
       } as any);
-      setGames((prev) => [created, ...prev]);
+      setGames((prev) => sortGamesByDate([created, ...prev], dateSortOrder));
       setIsCreatingGame(false);
       showMessage('Nuevo partido programado en el sistema.');
     } catch (err: any) {
@@ -192,7 +209,7 @@ export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
         numberOfGames: seriesGamesCount,
         stadium: newVenue || undefined,
       });
-      setGames((prev) => [...createdList, ...prev]);
+      setGames((prev) => sortGamesByDate([...createdList, ...prev], dateSortOrder));
       setIsCreatingSeries(false);
       showMessage(`Subserie de ${createdList.length} partidos programada exitosamente.`);
     } catch (err: any) {
@@ -201,38 +218,42 @@ export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
   };
 
   const handleGameUpdated = (updated: Game) => {
-    setGames((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+    setGames((prev) => sortGamesByDate(prev.map((g) => (g.id === updated.id ? updated : g)), dateSortOrder));
     showMessage(`Partido ${updated.awayTeam.shortName} vs ${updated.homeTeam.shortName} actualizado.`);
   };
 
-  // Filtered games
-  const filteredGames = games.filter((g) => {
-    // Status filter
-    if (filter === 'live' && g.status !== 'LIVE') return false;
-    if (filter === 'scheduled' && g.status !== 'SCHEDULED') return false;
-    if (filter === 'final' && g.status !== 'FINAL') return false;
+  // Filtered games (strictly sorted by date)
+  const filteredGames = useMemo(() => {
+    const list = games.filter((g) => {
+      // Status filter
+      if (filter === 'live' && g.status !== 'LIVE') return false;
+      if (filter === 'scheduled' && g.status !== 'SCHEDULED') return false;
+      if (filter === 'final' && g.status !== 'FINAL') return false;
 
-    // Team filter
-    if (teamFilter !== 'all') {
-      const matchesTeam = g.awayTeam.id === teamFilter || g.homeTeam.id === teamFilter;
-      if (!matchesTeam) return false;
-    }
+      // Team filter
+      if (teamFilter !== 'all') {
+        const matchesTeam = g.awayTeam.id === teamFilter || g.homeTeam.id === teamFilter;
+        if (!matchesTeam) return false;
+      }
 
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchText =
-        g.awayTeam.name.toLowerCase().includes(q) ||
-        g.awayTeam.shortName.toLowerCase().includes(q) ||
-        g.homeTeam.name.toLowerCase().includes(q) ||
-        g.homeTeam.shortName.toLowerCase().includes(q) ||
-        (g.stadium && g.stadium.toLowerCase().includes(q)) ||
-        g.date.includes(q);
-      if (!matchText) return false;
-    }
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchText =
+          g.awayTeam.name.toLowerCase().includes(q) ||
+          g.awayTeam.shortName.toLowerCase().includes(q) ||
+          g.homeTeam.name.toLowerCase().includes(q) ||
+          g.homeTeam.shortName.toLowerCase().includes(q) ||
+          (g.stadium && g.stadium.toLowerCase().includes(q)) ||
+          g.date.includes(q);
+        if (!matchText) return false;
+      }
 
-    return true;
-  });
+      return true;
+    });
+
+    return sortGamesByDate(list, dateSortOrder);
+  }, [games, filter, teamFilter, searchQuery, dateSortOrder]);
 
   return (
     <div className="space-y-6">
@@ -364,6 +385,20 @@ export const AdminGamesManager: React.FC<AdminGamesManagerProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label className="text-[11px] font-bold text-slate-400 whitespace-nowrap">Fecha:</label>
+            <button
+              type="button"
+              onClick={() => setDateSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 rounded-xl text-xs font-semibold text-slate-200 hover:text-white transition-all cursor-pointer whitespace-nowrap"
+              title="Alternar orden por fecha (cronológico ascendente o recientes primero)"
+            >
+              <Calendar className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>{dateSortOrder === 'asc' ? 'Por fecha: Cronológico (Antiguo a Nuevo)' : 'Por fecha: Recientes primero'}</span>
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            </button>
           </div>
         </div>
       </div>

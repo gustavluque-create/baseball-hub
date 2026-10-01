@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Flame,
   BellRing,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.tsx';
 import { useScoreNotifications } from '../context/ScoreNotificationContext.tsx';
@@ -51,6 +52,7 @@ export const GamesView: React.FC = () => {
   } = useScoreNotifications();
   const [games, setGames] = useState<Game[]>([]);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'LIVE' | 'FINAL' | 'SCHEDULED' | 'SUBSCRIBED'>('ALL');
+  const [dateSortOrder, setDateSortOrder] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(true);
 
   // Toast Notifications State
@@ -330,11 +332,22 @@ export const GamesView: React.FC = () => {
   const subscribedCount = games.filter((g) => subscribedGameIds.includes(g.id)).length;
 
   const displayedGames = React.useMemo(() => {
+    let list = games;
     if (statusFilter === 'SUBSCRIBED') {
-      return games.filter((g) => subscribedGameIds.includes(g.id));
+      list = games.filter((g) => subscribedGameIds.includes(g.id));
     }
-    return games;
-  }, [games, statusFilter, subscribedGameIds]);
+    return [...list].sort((a, b) => {
+      const dateA = a.date || '1970-01-01';
+      const dateB = b.date || '1970-01-01';
+      const timeA = a.time && a.time.length === 5 ? a.time : '00:00';
+      const timeB = b.time && b.time.length === 5 ? b.time : '00:00';
+      const fullA = `${dateA}T${timeA}:00`;
+      const fullB = `${dateB}T${timeB}:00`;
+      const cmp = fullA.localeCompare(fullB);
+      if (cmp !== 0) return dateSortOrder === 'asc' ? cmp : -cmp;
+      return dateSortOrder === 'asc' ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+    });
+  }, [games, statusFilter, subscribedGameIds, dateSortOrder]);
 
   return (
     <div className="space-y-6 pb-12 relative">
@@ -350,7 +363,7 @@ export const GamesView: React.FC = () => {
       />
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
             <Calendar className="w-6 h-6 text-emerald-500 dark:text-emerald-400" />
@@ -361,28 +374,41 @@ export const GamesView: React.FC = () => {
           </p>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 self-start sm:self-auto overflow-x-auto max-w-full">
-          {[
-            { id: 'ALL', label: 'Todos' },
-            { id: 'LIVE', label: `En Vivo (${liveCount})` },
-            { id: 'FINAL', label: `Finalizados (${finalCount})` },
-            { id: 'SCHEDULED', label: `Programados (${scheduledCount})` },
-            { id: 'SUBSCRIBED', label: `Mis Alertas (${subscribedCount})` },
-          ].map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setStatusFilter(f.id as any)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                statusFilter === f.id
-                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              {f.id === 'SUBSCRIBED' && <Bell className="w-3 h-3 text-amber-400 shrink-0" />}
-              <span>{f.label}</span>
-            </button>
-          ))}
+        {/* Filter Pills & Date Order Toggle */}
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          <button
+            type="button"
+            onClick={() => setDateSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all cursor-pointer whitespace-nowrap"
+            title="Alternar orden de partidos por fecha (cronológico o recientes primero)"
+          >
+            <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span>{dateSortOrder === 'asc' ? 'Por Fecha: Cronológico' : 'Por Fecha: Recientes primero'}</span>
+            <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
+          </button>
+
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-x-auto max-w-full">
+            {[
+              { id: 'ALL', label: 'Todos' },
+              { id: 'LIVE', label: `En Vivo (${liveCount})` },
+              { id: 'FINAL', label: `Finalizados (${finalCount})` },
+              { id: 'SCHEDULED', label: `Programados (${scheduledCount})` },
+              { id: 'SUBSCRIBED', label: `Mis Alertas (${subscribedCount})` },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setStatusFilter(f.id as any)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  statusFilter === f.id
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800'
+                }`}
+              >
+                {f.id === 'SUBSCRIBED' && <Bell className="w-3 h-3 text-amber-400 shrink-0" />}
+                <span>{f.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -62,7 +62,12 @@ export const HomeView: React.FC = () => {
       ApiClient.getTeams(activeCompetitionId),
     ])
       .then(([g, s, n, v, l, tm]) => {
-        setGames(g);
+        const sortedGames = [...g].sort((a, b) => {
+          const fullA = `${a.date || '1970-01-01'}T${a.time && a.time.length === 5 ? a.time : '00:00'}:00`;
+          const fullB = `${b.date || '1970-01-01'}T${b.time && b.time.length === 5 ? b.time : '00:00'}:00`;
+          return fullA.localeCompare(fullB);
+        });
+        setGames(sortedGames);
         setStandings(s);
         setNews(n);
         setVideos(v);

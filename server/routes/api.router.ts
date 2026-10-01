@@ -966,12 +966,14 @@ apiRouter.post('/admin/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto
 
 // Games
 apiRouter.get('/games', (req: Request, res: Response) => {
-  const { competition, season, status, team } = req.query;
+  const { competition, season, status, team, sort, order } = req.query;
+  const sortDirection = (sort === 'desc' || order === 'desc') ? 'desc' : 'asc';
   const games = baseballRepo.getGames({
     competitionId: competition as string,
     seasonId: season as string,
     status: status as string,
     teamId: team as string,
+    sortByDate: sortDirection,
   });
   res.json(games);
 });

@@ -21,5 +21,15 @@
   "players": {},
   "customPlayers": [],
   "deletedPlayerIds": [],
-  "deletedTeamIds": []
+  "deletedTeamIds": [],
+  "deletedGameIds": [
+    "g-2026-01",
+    "g-2026-02",
+    "g-2026-03",
+    "g-2026-04",
+    "g-2026-05",
+    "g-2026-06",
+    "g-2026-07",
+    "g-2026-08"
+  ]
 }

@@ -646,7 +646,9 @@ export class CloudSqlSyncService {
           await this.savePlayer(p);
         }
         for (const g of allGames) {
-          await this.saveGame(g);
+          if (!g.id.startsWith('g-2026-')) {
+            await this.saveGame(g);
+          }
         }
         for (const n of allNews) {
           await this.saveNews(n);
