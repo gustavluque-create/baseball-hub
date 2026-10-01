@@ -153,6 +153,8 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(new Date());
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
 
   const showNotification = (msg: string) => {
     setActionFeedback(msg);
@@ -201,28 +203,47 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
 
   // Flip half inning (Top <-> Bottom)
   const handleSwitchHalfInning = () => {
-    if (isTopInning) {
-      setIsTopInning(false);
-      setOuts(0);
-      setBalls(0);
-      setStrikes(0);
-      setRunnerFirst(false);
-      setRunnerSecond(false);
-      setRunnerThird(false);
-      setCurrentBatterIndex(0);
-      showNotification(`Cambio de entrada: ▼ Baja de la ${currentInning}ª`);
-    } else {
-      setIsTopInning(true);
+    const nextTop = !isTopInning;
+    const nextInning = isTopInning ? currentInning : currentInning + 1;
+    setIsTopInning(nextTop);
+    if (!isTopInning) {
       setCurrentInning((inn) => inn + 1);
-      setOuts(0);
-      setBalls(0);
-      setStrikes(0);
-      setRunnerFirst(false);
-      setRunnerSecond(false);
-      setRunnerThird(false);
-      setCurrentBatterIndex(0);
-      showNotification(`Cambio de entrada: ▲ Alta de la ${currentInning + 1}ª`);
     }
+    setOuts(0);
+    setBalls(0);
+    setStrikes(0);
+    setRunnerFirst(false);
+    setRunnerSecond(false);
+    setRunnerThird(false);
+    setCurrentBatterIndex(0);
+
+    const label = nextTop ? `▲ Alta de la ${nextInning}ª` : `▼ Baja de la ${nextInning}ª`;
+    showNotification(`Cambio de entrada: ${label}`);
+
+    // Persist half-inning flip
+    ApiClient.updateAdminGame(game.id, {
+      status,
+      currentInning: nextInning,
+      isTopInning: nextTop,
+      outs: 0,
+      balls: 0,
+      strikes: 0,
+      bases: { first: false, second: false, third: false },
+      awayScore,
+      homeScore,
+      awayHits,
+      homeHits,
+      awayErrors,
+      homeErrors,
+      lineScore,
+      lineups,
+      plays,
+    })
+      .then((updated) => {
+        onGameUpdated(updated);
+        setLastSyncTime(new Date());
+      })
+      .catch(() => {});
   };
 
   // Reset Count (Bolas y Strikes)
@@ -238,7 +259,7 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
     setRunnerThird(false);
   };
 
-  // Record a play and update scoreboard directly
+  // Record a play and update scoreboard directly + auto-sync to backend
   const recordPlayAndReflectScore = (options: {
     playType: string;
     description: string;
@@ -268,25 +289,32 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
     let newAwayErrors = awayErrors;
     let newHomeErrors = homeErrors;
 
-    // 1. Carreras y Hits
+    const updatedLineScore = [...lineScore];
+    while (updatedLineScore.length <= inningIndex) {
+      updatedLineScore.push({ inning: updatedLineScore.length + 1, home: 0, away: 0 });
+    }
+
+    // 1. Carreras y Pizarra
     if (runsToAdd > 0) {
       if (isTopInning) {
         newAwayScore += runsToAdd;
-        handleInningScoreChange(
-          inningIndex,
-          'away',
-          (lineScore[inningIndex]?.away || 0) + runsToAdd
-        );
+        updatedLineScore[inningIndex] = {
+          ...updatedLineScore[inningIndex],
+          away: (updatedLineScore[inningIndex]?.away || 0) + runsToAdd,
+        };
       } else {
         newHomeScore += runsToAdd;
-        handleInningScoreChange(
-          inningIndex,
-          'home',
-          (lineScore[inningIndex]?.home || 0) + runsToAdd
-        );
+        updatedLineScore[inningIndex] = {
+          ...updatedLineScore[inningIndex],
+          home: (updatedLineScore[inningIndex]?.home || 0) + runsToAdd,
+        };
       }
+      setLineScore(updatedLineScore);
+      setAwayScore(newAwayScore);
+      setHomeScore(newHomeScore);
     }
 
+    // Hits
     if (hitsToAdd > 0) {
       if (isTopInning) newAwayHits += hitsToAdd;
       else newHomeHits += hitsToAdd;
@@ -294,8 +322,9 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
       setHomeHits(newHomeHits);
     }
 
+    // Errores defensivos
     if (errorsToAdd > 0) {
-      if (isTopInning) newHomeErrors += errorsToAdd; // Defense makes error
+      if (isTopInning) newHomeErrors += errorsToAdd;
       else newAwayErrors += errorsToAdd;
       setAwayErrors(newAwayErrors);
       setHomeErrors(newHomeErrors);
@@ -309,44 +338,128 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
     }
 
     // 3. Bases
+    let finalRunnerFirst = newBases?.first !== undefined ? newBases.first : runnerFirst;
+    let finalRunnerSecond = newBases?.second !== undefined ? newBases.second : runnerSecond;
+    let finalRunnerThird = newBases?.third !== undefined ? newBases.third : runnerThird;
+
     if (newBases) {
       if (newBases.first !== undefined) setRunnerFirst(newBases.first);
       if (newBases.second !== undefined) setRunnerSecond(newBases.second);
       if (newBases.third !== undefined) setRunnerThird(newBases.third);
     }
 
-    // Reset ball/strike count on finished at-bat
+    // Reset count
     resetCount();
+
+    // 4. Update Lineup Player Stats (Bateador y Lanzador en tiempo real)
+    const battingSide = isTopInning ? 'away' : 'home';
+    const pitchingSide = isTopInning ? 'home' : 'away';
+
+    const updatedLineups = { ...lineups };
+    const battingTeamLineup = { ...updatedLineups[battingSide] };
+    const battingOrder = [...battingTeamLineup.battingOrder];
+    const batter = { ...(battingOrder[currentBatterIndex] || battingOrder[0]) };
+
+    const isOfficialAtBat = playType !== 'walk' && playType !== 'error' && playType !== 'sacrifice';
+    const newAB = (batter.ab || 0) + (isOfficialAtBat ? 1 : 0);
+    const newH = (batter.h || 0) + (hitsToAdd > 0 ? 1 : 0);
+    const newR = (batter.r || 0) + (playType === 'homerun' ? 1 : 0);
+    const newRBI = (batter.rbi || 0) + runsToAdd;
+    const newBB = (batter.bb || 0) + (playType === 'walk' ? 1 : 0);
+    const newSO = (batter.so || 0) + (playType === 'strikeout' ? 1 : 0);
+    const newAvg = newAB > 0 ? `.${Math.round((newH / newAB) * 1000).toString().padStart(3, '0')}` : (batter.avg || '.300');
+
+    batter.ab = newAB;
+    batter.h = newH;
+    batter.r = newR;
+    batter.rbi = newRBI;
+    batter.bb = newBB;
+    batter.so = newSO;
+    batter.avg = newAvg;
+    battingOrder[currentBatterIndex] = batter;
+    battingTeamLineup.battingOrder = battingOrder;
+    updatedLineups[battingSide] = battingTeamLineup;
+
+    // Pitcher line updates
+    const pitchingTeamLineup = { ...updatedLineups[pitchingSide] };
+    if (pitchingTeamLineup.startingPitcher) {
+      const sp = { ...pitchingTeamLineup.startingPitcher };
+      sp.h = (sp.h || 0) + (hitsToAdd > 0 ? 1 : 0);
+      sp.r = (sp.r || 0) + runsToAdd;
+      sp.er = (sp.er || 0) + runsToAdd;
+      sp.bb = (sp.bb || 0) + (playType === 'walk' ? 1 : 0);
+      sp.so = (sp.so || 0) + (playType === 'strikeout' ? 1 : 0);
+      sp.pitches = (sp.pitches || 0) + 4;
+      pitchingTeamLineup.startingPitcher = sp;
+      updatedLineups[pitchingSide] = pitchingTeamLineup;
+    }
+    setLineups(updatedLineups);
 
     // Inning string prefix
     const inningStr = `${isTopInning ? '▲ Alta' : '▼ Baja'} ${currentInning}ª`;
-    const scoreStr = `${newAwayScore} - ${newHomeScore}`;
+    const scoreStr = `${game.awayTeam.shortName} ${newAwayScore} - ${newHomeScore} ${game.homeTeam.shortName}`;
 
-    // 4. Create and prepend PlayEvent
+    // 5. Create PlayEvent
     const newPlay: PlayEvent = {
       id: `play_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       inning: currentInning,
       isTop: isTopInning,
       outs: updatedOuts,
       description: `[${inningStr}] ${description}`,
-      scoreAfter: `${game.awayTeam.shortName} ${newAwayScore} - ${newHomeScore} ${game.homeTeam.shortName}`,
+      scoreAfter: scoreStr,
       isScoringPlay: isScoringPlay || runsToAdd > 0,
       playType,
-      batterName: currentBatter?.name,
-      pitcherName: currentPitcher?.name,
+      batterName: batter?.name,
+      pitcherName: pitchingTeamLineup.startingPitcher?.name,
       runsScored: runsToAdd,
       timestamp: new Date().toISOString(),
     };
 
-    setPlays((prev) => [newPlay, ...prev]);
+    const updatedPlays = [newPlay, ...plays];
+    setPlays(updatedPlays);
     advanceToNextBatter();
 
-    showNotification(`¡Jugada registrada y marcador actualizado! (+${runsToAdd} C, +${hitsToAdd} H)`);
+    showNotification(
+      `¡Jugada narrada y marcador actualizado! (${scoreStr})${runsToAdd > 0 ? ` • +${runsToAdd} Carrera(s)` : ''}`
+    );
 
-    // If 3 outs reached, show helpful notice
     if (updatedOuts >= 3) {
-      showNotification('¡Tercer out registrado! Puedes cambiar a la siguiente media entrada.');
+      showNotification('¡Tercer out de la entrada! Listo para cambiar de mitad de inning.');
     }
+
+    // 6. IMMEDIATE REAL-TIME PERSISTENCE TO SERVER & CLOUD SQL
+    setIsSyncingLive(true);
+    ApiClient.updateAdminGame(game.id, {
+      status,
+      currentInning,
+      isTopInning,
+      outs: updatedOuts,
+      balls: 0,
+      strikes: 0,
+      bases: {
+        first: finalRunnerFirst,
+        second: finalRunnerSecond,
+        third: finalRunnerThird,
+      },
+      awayScore: newAwayScore,
+      homeScore: newHomeScore,
+      awayHits: newAwayHits,
+      homeHits: newHomeHits,
+      awayErrors: newAwayErrors,
+      homeErrors: newHomeErrors,
+      lineScore: updatedLineScore,
+      lineups: updatedLineups,
+      plays: updatedPlays,
+    })
+      .then((updated) => {
+        onGameUpdated(updated);
+        setLastSyncTime(new Date());
+        setIsSyncingLive(false);
+      })
+      .catch((err) => {
+        console.warn('Auto-sync error:', err);
+        setIsSyncingLive(false);
+      });
   };
 
   // Specific Quick Play Triggers
@@ -686,9 +799,13 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   {status}
                 </span>
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isSyncingLive ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-pulse'}`}></span>
+                  <span>{isSyncingLive ? 'Sincronizando marcador...' : 'Marcador sincronizado en vivo'}</span>
+                </span>
               </div>
               <p className="text-xs text-slate-400">
-                {game.awayTeam.name} vs {game.homeTeam.name} • {game.stadium}
+                {game.awayTeam.name} vs {game.homeTeam.name} • {game.stadium || 'Estadio Nacional'}
               </p>
             </div>
           </div>
@@ -1268,40 +1385,75 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
                   </div>
                 </div>
 
-                {/* Custom Narrative Formulation */}
-                <form
-                  onSubmit={handleAddCustomPlay}
-                  className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
-                >
-                  <div className="flex-1 flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={customPlayText}
-                      onChange={(e) => setCustomPlayText(e.target.value)}
-                      placeholder="Redactar narración personalizada de la jugada..."
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                    <select
-                      value={customPlayRuns}
-                      onChange={(e) => setCustomPlayRuns(Number(e.target.value))}
-                      className="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                      title="Carreras impulsadas en esta jugada"
-                    >
-                      <option value={0}>0 Carreras</option>
-                      <option value={1}>+1 Carrera</option>
-                      <option value={2}>+2 Carreras</option>
-                      <option value={3}>+3 Carreras</option>
-                      <option value={4}>+4 Carreras</option>
-                    </select>
+                {/* Custom Narrative Formulation & Quick Phrases */}
+                <div className="space-y-2 pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="font-bold uppercase tracking-wider text-slate-400">
+                      Plantillas y Narración Rápida
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Haz clic en una frase para insertarla y narrar al instante
+                    </span>
                   </div>
 
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer shadow-md shrink-0"
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { text: 'Conecta hit de línea al jardín derecho', runs: 1, outs: 0, hits: 1 },
+                      { text: 'Toque de sacrificio perfectamente colocado por tercera base', runs: 0, outs: 1, hits: 0 },
+                      { text: 'Robo de segunda base con deslizamiento impecable', runs: 0, outs: 0, hits: 0 },
+                      { text: 'Lanzamiento salvaje (Wild pitch), avanza corredor', runs: 0, outs: 0, hits: 0 },
+                      { text: 'Elevado de sacrificio profundo al jardín central', runs: 1, outs: 1, hits: 0 },
+                      { text: 'Gran atrapada corriendo hacia la pared en zona de advertencia', runs: 0, outs: 1, hits: 0 },
+                    ].map((item, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setCustomPlayText(item.text);
+                          setCustomPlayRuns(item.runs);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-[11px] text-slate-300 hover:text-white transition-colors cursor-pointer"
+                      >
+                        {item.text} {item.runs > 0 ? `(+${item.runs} C)` : ''}
+                      </button>
+                    ))}
+                  </div>
+
+                  <form
+                    onSubmit={handleAddCustomPlay}
+                    className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1"
                   >
-                    Añadir al Relato
-                  </button>
-                </form>
+                    <div className="flex-1 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customPlayText}
+                        onChange={(e) => setCustomPlayText(e.target.value)}
+                        placeholder="Redactar narración personalizada de la jugada..."
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      />
+                      <select
+                        value={customPlayRuns}
+                        onChange={(e) => setCustomPlayRuns(Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        title="Carreras impulsadas en esta jugada"
+                      >
+                        <option value={0}>0 Carreras</option>
+                        <option value={1}>+1 Carrera</option>
+                        <option value={2}>+2 Carreras</option>
+                        <option value={3}>+3 Carreras</option>
+                        <option value={4}>+4 Carreras</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer shadow-md shrink-0 flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Narrar Jugada</span>
+                    </button>
+                  </form>
+                </div>
               </div>
 
               {/* Feed of Recorded Plays */}

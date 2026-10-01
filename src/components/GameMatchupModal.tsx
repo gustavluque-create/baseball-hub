@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Share2,
   Sparkles,
+  ListOrdered,
 } from 'lucide-react';
 import { Game, MatchupComparisonData } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
@@ -46,7 +47,7 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
 
   const [data, setData] = useState<MatchupComparisonData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'summary' | 'batting' | 'pitching' | 'leaders' | 'boxscore'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'batting' | 'pitching' | 'leaders' | 'boxscore' | 'lineups'>('summary');
   const [copiedShare, setCopiedShare] = useState(false);
 
   // Close on Escape key
@@ -324,6 +325,18 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
                 >
                   <BarChart3 className="w-3.5 h-3.5" />
                   <span>Pizarra del Partido</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('lineups')}
+                  className={`px-3.5 py-2 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === 'lineups'
+                      ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10 rounded-t-lg'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  <span>Alineaciones Oficiales</span>
                 </button>
               </div>
 
@@ -832,6 +845,197 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
                           </tr>
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 6: Alineaciones Titulares del Partido */}
+              {activeTab === 'lineups' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                        Alineaciones Titulares para el Encuentro
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Orden al bate oficial y lanzadores abridores designados
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onOpenBoxScore) onOpenBoxScore(data.game.id);
+                        else navigateToGame(data.game.id);
+                        onClose();
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors cursor-pointer"
+                    >
+                      <span>Abrir Box Score Completo</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Away Team Lineup */}
+                    <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-1">
+                            <TeamLogo logo={data.awayTeam.logo} name={data.awayTeam.name} className="w-full h-full" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                              <span>{data.awayTeam.name}</span>
+                              {data.game.status === 'LIVE' && data.game.isTopInning && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
+                                  AL BATE
+                                </span>
+                              )}
+                            </h4>
+                            <p className="text-[11px] text-slate-400">Visitante • Orden Titular</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Starting Pitcher */}
+                      {data.game.lineups?.away?.startingPitcher && (
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-emerald-400 block">
+                              Lanzador Abridor
+                            </span>
+                            <span className="font-bold text-xs text-white">
+                              {data.game.lineups.away.startingPitcher.name}
+                            </span>
+                            <span className="text-[11px] text-slate-400 block">
+                              #{data.game.lineups.away.startingPitcher.jerseyNumber || 33} • Brazo: {data.game.lineups.away.startingPitcher.throws || 'R'}
+                            </span>
+                          </div>
+                          <div className="text-right font-mono text-[11px]">
+                            <span className="text-slate-200 font-bold block">
+                              PCL: {data.game.lineups.away.startingPitcher.era || '3.20'}
+                            </span>
+                            <span className="text-slate-400 text-[10px]">
+                              {data.game.lineups.away.startingPitcher.ip || '5.0'} IP • {data.game.lineups.away.startingPitcher.so || 4} SO
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Batting Order */}
+                      <div className="space-y-1.5">
+                        {(data.game.lineups?.away?.battingOrder || []).map((b) => (
+                          <div
+                            key={b.order}
+                            className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 transition-colors text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
+                                {b.order}
+                              </span>
+                              <div>
+                                <span className="font-medium text-slate-200 block">{b.name}</span>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                  <span className="font-bold text-emerald-400">{b.position}</span>
+                                  <span>#{b.jerseyNumber || 0}</span>
+                                  <span>Batea: {b.bats || 'R'}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right font-mono text-[11px]">
+                              <span className="font-bold text-slate-100 block">
+                                {b.h ?? 0}-{b.ab ?? 0} ({b.rbi ?? 0} CI)
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                AVG <strong className="text-emerald-400">{b.avg || '.300'}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Home Team Lineup */}
+                    <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-1">
+                            <TeamLogo logo={data.homeTeam.logo} name={data.homeTeam.name} className="w-full h-full" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                              <span>{data.homeTeam.name}</span>
+                              {data.game.status === 'LIVE' && !data.game.isTopInning && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
+                                  AL BATE
+                                </span>
+                              )}
+                            </h4>
+                            <p className="text-[11px] text-slate-400">Local • Orden Titular</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Starting Pitcher */}
+                      {data.game.lineups?.home?.startingPitcher && (
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-emerald-400 block">
+                              Lanzador Abridor
+                            </span>
+                            <span className="font-bold text-xs text-white">
+                              {data.game.lineups.home.startingPitcher.name}
+                            </span>
+                            <span className="text-[11px] text-slate-400 block">
+                              #{data.game.lineups.home.startingPitcher.jerseyNumber || 33} • Brazo: {data.game.lineups.home.startingPitcher.throws || 'R'}
+                            </span>
+                          </div>
+                          <div className="text-right font-mono text-[11px]">
+                            <span className="text-slate-200 font-bold block">
+                              PCL: {data.game.lineups.home.startingPitcher.era || '3.10'}
+                            </span>
+                            <span className="text-slate-400 text-[10px]">
+                              {data.game.lineups.home.startingPitcher.ip || '5.1'} IP • {data.game.lineups.home.startingPitcher.so || 6} SO
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Batting Order */}
+                      <div className="space-y-1.5">
+                        {(data.game.lineups?.home?.battingOrder || []).map((b) => (
+                          <div
+                            key={b.order}
+                            className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 transition-colors text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
+                                {b.order}
+                              </span>
+                              <div>
+                                <span className="font-medium text-slate-200 block">{b.name}</span>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                  <span className="font-bold text-emerald-400">{b.position}</span>
+                                  <span>#{b.jerseyNumber || 0}</span>
+                                  <span>Batea: {b.bats || 'R'}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right font-mono text-[11px]">
+                              <span className="font-bold text-slate-100 block">
+                                {b.h ?? 0}-{b.ab ?? 0} ({b.rbi ?? 0} CI)
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                AVG <strong className="text-emerald-400">{b.avg || '.300'}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>

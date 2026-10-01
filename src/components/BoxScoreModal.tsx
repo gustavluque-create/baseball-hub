@@ -675,8 +675,15 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                               <TeamLogo logo={game.awayTeam.logo} name={game.awayTeam.name} className="w-full h-full" />
                             </div>
                             <div>
-                              <h4 className="font-bold text-sm text-white">{game.awayTeam.name}</h4>
-                              <p className="text-[11px] text-slate-400">Visitante • Orden Titular</p>
+                              <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                                <span>{game.awayTeam.name}</span>
+                                {game.status === 'LIVE' && game.isTopInning && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                                    AL BATE
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-[11px] text-slate-400">Visitante • Alineación Oficial</p>
                             </div>
                           </div>
                         </div>
@@ -684,10 +691,15 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                         {/* Starting Pitcher Spotlight */}
                         <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
                           <div>
-                            <span className="text-[10px] uppercase font-bold text-emerald-400 block">
-                              Lanzador Abridor
+                            <span className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1.5">
+                              <span>Lanzador Abridor</span>
+                              {game.status === 'LIVE' && !game.isTopInning && (
+                                <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 text-[9px] font-bold border border-sky-500/30">
+                                  EN LA LOMA
+                                </span>
+                              )}
                             </span>
-                            <span className="font-bold text-xs text-white">
+                            <span className="font-bold text-xs text-white block mt-0.5">
                               {awayLineup.startingPitcher?.name}
                             </span>
                             <span className="text-[11px] text-slate-400 block">
@@ -695,55 +707,92 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                             </span>
                           </div>
                           <div className="text-right font-mono text-[11px]">
-                            <span className="text-slate-300 font-bold block">
-                              ERA: {awayLineup.startingPitcher?.era || '3.20'}
+                            <span className="text-slate-200 font-bold block">
+                              PCL: {awayLineup.startingPitcher?.era || '3.20'}
                             </span>
-                            <span className="text-slate-500">
-                              {awayLineup.startingPitcher?.ip || '5.0'} IP • {awayLineup.startingPitcher?.so || 4} SO
+                            <span className="text-slate-400 text-[10px]">
+                              {awayLineup.startingPitcher?.ip || '5.0'} IP • {awayLineup.startingPitcher?.so || 4} K • {awayLineup.startingPitcher?.bb || 2} BB
                             </span>
                           </div>
                         </div>
 
                         {/* Batting Order 1 to 9 */}
                         <div className="space-y-1.5">
-                          {awayLineup.battingOrder.map((b) => (
-                            <div
-                              key={b.order}
-                              className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 transition-colors text-xs"
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <span className="w-5 h-5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
-                                  {b.order}
-                                </span>
-                                <div>
-                                  <button
-                                    onClick={() => {
-                                      onClose();
-                                      navigateToPlayer(b.playerId);
-                                    }}
-                                    className="font-medium text-slate-200 hover:text-emerald-400 transition-colors cursor-pointer text-left"
-                                  >
-                                    {b.name}
-                                  </button>
-                                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                                    <span className="font-bold text-emerald-400">{b.position}</span>
-                                    <span>#{b.jerseyNumber || 0}</span>
-                                    <span>Batea: {b.bats || 'R'}</span>
+                          {awayLineup.battingOrder.map((b, idx) => {
+                            const isCurrentlyAtBat = game.status === 'LIVE' && game.isTopInning && idx === 0;
+                            return (
+                              <div
+                                key={b.order}
+                                className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors text-xs ${
+                                  isCurrentlyAtBat
+                                    ? 'bg-emerald-950/40 border-emerald-500/60 ring-1 ring-emerald-500/30'
+                                    : 'bg-slate-900/40 hover:bg-slate-900 border-slate-800/80'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <span className={`w-5 h-5 rounded-md font-mono font-bold text-[11px] flex items-center justify-center shrink-0 ${
+                                    isCurrentlyAtBat ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                                  }`}>
+                                    {b.order}
+                                  </span>
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          onClose();
+                                          navigateToPlayer(b.playerId);
+                                        }}
+                                        className="font-bold text-slate-100 hover:text-emerald-400 transition-colors cursor-pointer text-left"
+                                      >
+                                        {b.name}
+                                      </button>
+                                      {isCurrentlyAtBat && (
+                                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 animate-pulse">
+                                          AL BATE
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                      <span className="font-bold text-emerald-400 px-1 py-0.2 rounded bg-slate-800 border border-slate-700">
+                                        {b.position}
+                                      </span>
+                                      <span>#{b.jerseyNumber || 0}</span>
+                                      <span>Batea: {b.bats || 'R'}</span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="text-right font-mono text-[11px]">
-                                <span className="font-bold text-slate-200 block">
-                                  {b.h ?? 0}-{b.ab ?? 0}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {b.rbi ?? 0} CI • AVG {b.avg || '.300'}
-                                </span>
+                                <div className="text-right font-mono text-[11px]">
+                                  <span className="font-bold text-slate-100 block">
+                                    {b.h ?? 0}-{b.ab ?? 0} ({b.r ?? 0} C, {b.rbi ?? 0} CI)
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    AVG <strong className="text-emerald-400">{b.avg || '.300'}</strong> • {b.bb ?? 0} BB • {b.so ?? 0} K
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
+
+                        {/* Bench List */}
+                        {awayLineup.bench && awayLineup.bench.length > 0 && (
+                          <div className="pt-2 border-t border-slate-800/80">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
+                              Banquillo y Reservas ({awayLineup.bench.length})
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {awayLineup.bench.map((res, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300"
+                                >
+                                  {res.name} ({res.position})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -756,8 +805,15 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                               <TeamLogo logo={game.homeTeam.logo} name={game.homeTeam.name} className="w-full h-full" />
                             </div>
                             <div>
-                              <h4 className="font-bold text-sm text-white">{game.homeTeam.name}</h4>
-                              <p className="text-[11px] text-slate-400">Local • Orden Titular</p>
+                              <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                                <span>{game.homeTeam.name}</span>
+                                {game.status === 'LIVE' && !game.isTopInning && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                                    AL BATE
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-[11px] text-slate-400">Local • Alineación Oficial</p>
                             </div>
                           </div>
                         </div>
@@ -765,10 +821,15 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                         {/* Starting Pitcher Spotlight */}
                         <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
                           <div>
-                            <span className="text-[10px] uppercase font-bold text-emerald-400 block">
-                              Lanzador Abridor
+                            <span className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1.5">
+                              <span>Lanzador Abridor</span>
+                              {game.status === 'LIVE' && game.isTopInning && (
+                                <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 text-[9px] font-bold border border-sky-500/30">
+                                  EN LA LOMA
+                                </span>
+                              )}
                             </span>
-                            <span className="font-bold text-xs text-white">
+                            <span className="font-bold text-xs text-white block mt-0.5">
                               {homeLineup.startingPitcher?.name}
                             </span>
                             <span className="text-[11px] text-slate-400 block">
@@ -776,55 +837,92 @@ export const BoxScoreModal: React.FC<BoxScoreModalProps> = ({ gameId, onClose })
                             </span>
                           </div>
                           <div className="text-right font-mono text-[11px]">
-                            <span className="text-slate-300 font-bold block">
-                              ERA: {homeLineup.startingPitcher?.era || '3.10'}
+                            <span className="text-slate-200 font-bold block">
+                              PCL: {homeLineup.startingPitcher?.era || '3.10'}
                             </span>
-                            <span className="text-slate-500">
-                              {homeLineup.startingPitcher?.ip || '5.1'} IP • {homeLineup.startingPitcher?.so || 6} SO
+                            <span className="text-slate-400 text-[10px]">
+                              {homeLineup.startingPitcher?.ip || '5.1'} IP • {homeLineup.startingPitcher?.so || 6} K • {homeLineup.startingPitcher?.bb || 1} BB
                             </span>
                           </div>
                         </div>
 
                         {/* Batting Order 1 to 9 */}
                         <div className="space-y-1.5">
-                          {homeLineup.battingOrder.map((b) => (
-                            <div
-                              key={b.order}
-                              className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 transition-colors text-xs"
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <span className="w-5 h-5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
-                                  {b.order}
-                                </span>
-                                <div>
-                                  <button
-                                    onClick={() => {
-                                      onClose();
-                                      navigateToPlayer(b.playerId);
-                                    }}
-                                    className="font-medium text-slate-200 hover:text-emerald-400 transition-colors cursor-pointer text-left"
-                                  >
-                                    {b.name}
-                                  </button>
-                                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                                    <span className="font-bold text-emerald-400">{b.position}</span>
-                                    <span>#{b.jerseyNumber || 0}</span>
-                                    <span>Batea: {b.bats || 'R'}</span>
+                          {homeLineup.battingOrder.map((b, idx) => {
+                            const isCurrentlyAtBat = game.status === 'LIVE' && !game.isTopInning && idx === 0;
+                            return (
+                              <div
+                                key={b.order}
+                                className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors text-xs ${
+                                  isCurrentlyAtBat
+                                    ? 'bg-emerald-950/40 border-emerald-500/60 ring-1 ring-emerald-500/30'
+                                    : 'bg-slate-900/40 hover:bg-slate-900 border-slate-800/80'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <span className={`w-5 h-5 rounded-md font-mono font-bold text-[11px] flex items-center justify-center shrink-0 ${
+                                    isCurrentlyAtBat ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                                  }`}>
+                                    {b.order}
+                                  </span>
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          onClose();
+                                          navigateToPlayer(b.playerId);
+                                        }}
+                                        className="font-bold text-slate-100 hover:text-emerald-400 transition-colors cursor-pointer text-left"
+                                      >
+                                        {b.name}
+                                      </button>
+                                      {isCurrentlyAtBat && (
+                                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 animate-pulse">
+                                          AL BATE
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                      <span className="font-bold text-emerald-400 px-1 py-0.2 rounded bg-slate-800 border border-slate-700">
+                                        {b.position}
+                                      </span>
+                                      <span>#{b.jerseyNumber || 0}</span>
+                                      <span>Batea: {b.bats || 'R'}</span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="text-right font-mono text-[11px]">
-                                <span className="font-bold text-slate-200 block">
-                                  {b.h ?? 0}-{b.ab ?? 0}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {b.rbi ?? 0} CI • AVG {b.avg || '.300'}
-                                </span>
+                                <div className="text-right font-mono text-[11px]">
+                                  <span className="font-bold text-slate-100 block">
+                                    {b.h ?? 0}-{b.ab ?? 0} ({b.r ?? 0} C, {b.rbi ?? 0} CI)
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    AVG <strong className="text-emerald-400">{b.avg || '.300'}</strong> • {b.bb ?? 0} BB • {b.so ?? 0} K
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
+
+                        {/* Bench List */}
+                        {homeLineup.bench && homeLineup.bench.length > 0 && (
+                          <div className="pt-2 border-t border-slate-800/80">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
+                              Banquillo y Reservas ({homeLineup.bench.length})
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {homeLineup.bench.map((res, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300"
+                                >
+                                  {res.name} ({res.position})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

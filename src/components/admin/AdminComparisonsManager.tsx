@@ -378,7 +378,7 @@ FIGURAS DESTACADAS A SEGUIR:
               className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Programar Subserie (3 o 5 juegos)</span>
+              <span>Programar Subserie (2 a 5 juegos)</span>
             </button>
           </div>
 
@@ -495,7 +495,36 @@ FIGURAS DESTACADAS A SEGUIR:
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Número de Juegos</label>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                Número de Partidos en la Subserie
+              </label>
+              {/* Quick Preset Selector Buttons */}
+              <div className="grid grid-cols-4 gap-1.5 mb-2">
+                {[
+                  { count: 2, label: '2 Partidos' },
+                  { count: 3, label: '3 Partidos' },
+                  { count: 4, label: '⭐ 4 Partidos', highlight: true },
+                  { count: 5, label: '5 Partidos (SNB)' },
+                ].map((item) => (
+                  <button
+                    key={item.count}
+                    type="button"
+                    onClick={() => setSeriesGamesCount(item.count)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer text-center border ${
+                      seriesGamesCount === item.count
+                        ? item.highlight
+                          ? 'bg-indigo-600 border-indigo-400 text-white shadow-md shadow-indigo-600/30 ring-2 ring-indigo-400/40'
+                          : 'bg-emerald-600 border-emerald-400 text-white shadow-sm'
+                        : item.highlight
+                        ? 'bg-slate-900 border-indigo-500/40 text-indigo-300 hover:bg-indigo-950/40'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
               <select
                 value={seriesGamesCount}
                 onChange={(e) => setSeriesGamesCount(parseInt(e.target.value, 10))}
@@ -503,7 +532,10 @@ FIGURAS DESTACADAS A SEGUIR:
               >
                 <option value={2}>2 Juegos Consecutivos</option>
                 <option value={3}>Subserie de 3 Juegos</option>
+                <option value={4}>Subserie de 4 Partidos (4 Juegos Consecutivos)</option>
                 <option value={5}>Subserie Oficial SNB (5 Juegos)</option>
+                <option value={6}>Serie Larga (6 Juegos)</option>
+                <option value={7}>Serie Final (7 Juegos)</option>
               </select>
             </div>
             <div>
