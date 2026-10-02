@@ -140,26 +140,26 @@ export class BaseballRepository {
           if (idx !== -1) this.teams[idx] = t;
           else this.teams.push(t);
         }
-        for (const p of cloudData.players) {
-          const idx = this.players.findIndex((item) => item.id === p.id);
-          if (idx !== -1) this.players[idx] = p;
-          else this.players.push(p);
-        }
-        if (cloudData.games && cloudData.games.length > 0) {
-          const deletedGameSet = new Set(this.userOverrides.deletedGameIds || []);
-          for (const g of cloudData.games) {
-            // NEVER reload or retain demo test games (g-2026-*) or user-deleted games
-            if (g.id.startsWith('g-2026-') || deletedGameSet.has(g.id)) {
-              cloudSqlSync.deleteGame(g.id).catch(() => {});
+        if (cloudData.players && cloudData.players.length > 0) {
+          const deletedPlayerSet = new Set(this.userOverrides.deletedPlayerIds || []);
+          for (const p of cloudData.players) {
+            // NEVER reload or retain demo test players (p-*)
+            if (p.id.startsWith('p-') || deletedPlayerSet.has(p.id)) {
+              cloudSqlSync.deletePlayer(p.id).catch(() => {});
               continue;
             }
-            const idx = this.games.findIndex((item) => item.id === g.id);
-            if (idx !== -1) this.games[idx] = g;
-            else this.games.push(g);
+            const idx = this.players.findIndex((item) => item.id === p.id);
+            if (idx !== -1) this.players[idx] = p;
+            else this.players.push(p);
           }
         }
         if (cloudData.news && cloudData.news.length > 0) {
           for (const n of cloudData.news) {
+            // NEVER reload or retain demo test news (news-*)
+            if (n.id.startsWith('news-')) {
+              cloudSqlSync.deleteNews(n.id).catch(() => {});
+              continue;
+            }
             const idx = this.news.findIndex((item) => item.id === n.id);
             if (idx !== -1) this.news[idx] = n;
             else this.news.push(n);
@@ -392,24 +392,22 @@ export class BaseballRepository {
       loaded = true;
     }
 
-    // Fallback: If no teams or data loaded AND not initialized, initialize with teams & players only (NEVER mock games)
-    if (this.teams.length === 0 && !this.isInitialized) {
-      this.competitions = JSON.parse(JSON.stringify(DEMO_COMPETITIONS));
-      this.seasons = JSON.parse(JSON.stringify(DEMO_SEASONS));
-      this.teams = JSON.parse(JSON.stringify(DEMO_TEAMS));
-      this.players = JSON.parse(JSON.stringify(DEMO_PLAYERS));
-      this.games = []; // Never re-inject demo test games!
-      this.battingStats = JSON.parse(JSON.stringify(DEMO_BATTING_STATS));
-      this.pitchingStats = JSON.parse(JSON.stringify(DEMO_PITCHING_STATS));
-      this.standings = JSON.parse(JSON.stringify(DEMO_STANDINGS));
-      this.news = JSON.parse(JSON.stringify(DEMO_NEWS));
-      this.videos = JSON.parse(JSON.stringify(DEMO_VIDEOS));
-      this.comments = JSON.parse(JSON.stringify(INITIAL_COMMENTS));
-      this.isInitialized = true;
-    }
-
-    // Always filter out any legacy demo test games permanently
+    // Ensure test collections remain strictly empty and never load demo test data
     this.games = (this.games || []).filter((g) => !g.id.startsWith('g-2026-'));
+    this.players = (this.players || []).filter((p) => !p.id.startsWith('p-'));
+    this.news = (this.news || []).filter((n) => !n.id.startsWith('news-'));
+    this.videos = [];
+    this.comments = [];
+    this.battingStats = [];
+    this.pitchingStats = [];
+    this.standings = [];
+
+    // Reset team records to clean 0-0 so no fake standings or records exist
+    this.teams.forEach((t, idx) => {
+      t.record = { wins: 0, losses: 0, pct: 0.0, streak: '-', lastTen: '0-0', position: idx + 1 };
+    });
+
+    this.isInitialized = true;
 
     // 3. ALWAYS apply user overrides on top (guarantees user uploaded logos and data are NEVER lost!)
     this.applyUserOverrides();

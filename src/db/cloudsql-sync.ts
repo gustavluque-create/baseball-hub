@@ -638,25 +638,14 @@ export class CloudSqlSyncService {
     try {
       const hasTeams = await this.hasData();
       if (!hasTeams && allTeams.length > 0) {
-        console.log(`🌱 [CloudSqlSync] Seeding initial ${allTeams.length} teams and ${allPlayers.length} players to Cloud SQL...`);
+        console.log(`🌱 [CloudSqlSync] Synchronizing ${allTeams.length} teams to Cloud SQL...`);
         for (const t of allTeams) {
           await this.saveTeam(t);
         }
-        for (const p of allPlayers) {
-          await this.savePlayer(p);
-        }
-        for (const g of allGames) {
-          if (!g.id.startsWith('g-2026-')) {
-            await this.saveGame(g);
-          }
-        }
-        for (const n of allNews) {
-          await this.saveNews(n);
-        }
-        console.log('✅ [CloudSqlSync] Initial Cloud SQL database seeding completed successfully.');
+        console.log('✅ [CloudSqlSync] Team sync completed successfully.');
       }
     } catch (err) {
-      console.error('[CloudSqlSync] Error seeding initial dataset to Cloud SQL:', err);
+      console.error('[CloudSqlSync] Error syncing teams to Cloud SQL:', err);
     }
   }
 }
