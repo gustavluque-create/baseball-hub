@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "initialized": true,
-  "lastUpdated": "2026-10-02T16:12:49.719Z",
+  "lastUpdated": "2026-10-02T18:16:50.808Z",
   "competitions": [
     {
       "id": "snb",
@@ -12,16 +12,6 @@
       "logo": "https://images.unsplash.com/photo-1508344928928-7165b67de128?w=128&auto=format&fit=crop&q=80",
       "status": "active",
       "currentSeasonId": "snb-65"
-    },
-    {
-      "id": "lebc",
-      "name": "Liga Élite del Béisbol Cubano",
-      "shortName": "Liga Élite",
-      "country": "Cuba",
-      "type": "tournament",
-      "logo": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=128&auto=format&fit=crop&q=80",
-      "status": "upcoming",
-      "currentSeasonId": "lebc-2026"
     }
   ],
   "seasons": [
@@ -34,36 +24,6 @@
       "endDate": "2027-02-15",
       "isCurrent": true,
       "status": "in_progress"
-    },
-    {
-      "id": "snb-64",
-      "competitionId": "snb",
-      "year": 2026,
-      "name": "64 Serie Nacional (2025-2026)",
-      "startDate": "2025-09-01",
-      "endDate": "2026-04-10",
-      "isCurrent": false,
-      "status": "finished"
-    },
-    {
-      "id": "snb-56",
-      "competitionId": "snb",
-      "year": 2017,
-      "name": "56 Serie Nacional (2016-2017)",
-      "startDate": "2016-08-07",
-      "endDate": "2017-01-22",
-      "isCurrent": false,
-      "status": "finished"
-    },
-    {
-      "id": "lebc-2026",
-      "competitionId": "lebc",
-      "year": 2026,
-      "name": "3ra Liga Élite (2026)",
-      "startDate": "2026-10-10",
-      "endDate": "2027-01-25",
-      "isCurrent": true,
-      "status": "scheduled"
     }
   ],
   "teams": [
@@ -124,187 +84,7 @@
         "pct": 0,
         "streak": "-",
         "lastTen": "0-0",
-        "position": 2
-      }
-    },
-    {
-      "id": "ltu",
-      "name": "Leñadores de Las Tunas",
-      "nickname": "Leñadores",
-      "shortName": "LTU",
-      "city": "Las Tunas",
-      "stadium": "Estadio Julio Antonio Mella",
-      "capacity": 13000,
-      "stadiumCapacity": 13000,
-      "manager": "Abeysi Pantoja",
-      "foundedYear": 1977,
-      "championships": 3,
-      "colors": {
-        "primary": "#047857",
-        "secondary": "#FBBF24",
-        "text": "#FFFFFF"
-      },
-      "primaryColor": "#047857",
-      "logo": "🪓",
-      "competitionId": "snb",
-      "seasonId": "snb-65",
-      "record": {
-        "wins": 0,
-        "losses": 0,
-        "pct": 0,
-        "streak": "-",
-        "lastTen": "0-0",
-        "position": 3
-      }
-    },
-    {
-      "id": "pri",
-      "name": "Vegueros de Pinar del Río",
-      "nickname": "Vegueros",
-      "shortName": "PRI",
-      "city": "Pinar del Río",
-      "stadium": "Estadio Capitán San Luis",
-      "capacity": 10000,
-      "stadiumCapacity": 10000,
-      "manager": "Alexander Urquiola",
-      "foundedYear": 1967,
-      "championships": 10,
-      "colors": {
-        "primary": "#15803D",
-        "secondary": "#E2E8F0",
-        "text": "#FFFFFF"
-      },
-      "primaryColor": "#15803D",
-      "logo": "🌿",
-      "competitionId": "snb",
-      "seasonId": "snb-65",
-      "record": {
-        "wins": 0,
-        "losses": 0,
-        "pct": 0,
-        "streak": "-",
-        "lastTen": "0-0",
-        "position": 4
-      }
-    },
-    {
-      "id": "scu",
-      "name": "Avispas de Santiago de Cuba",
-      "nickname": "Avispas",
-      "shortName": "SCU",
-      "city": "Santiago de Cuba",
-      "stadium": "Estadio Guillermón Moncada",
-      "capacity": 25000,
-      "stadiumCapacity": 25000,
-      "manager": "Eddy Cajigal",
-      "foundedYear": 1977,
-      "championships": 8,
-      "colors": {
-        "primary": "#B91C1C",
-        "secondary": "#111827",
-        "text": "#FFFFFF"
-      },
-      "primaryColor": "#B91C1C",
-      "logo": "🐝",
-      "competitionId": "snb",
-      "seasonId": "snb-65",
-      "record": {
-        "wins": 0,
-        "losses": 0,
-        "pct": 0,
-        "streak": "-",
-        "lastTen": "0-0",
-        "position": 5
-      }
-    },
-    {
-      "id": "gra",
-      "name": "Alazanes de Granma",
-      "nickname": "Alazanes",
-      "shortName": "GRA",
-      "city": "Bayamo",
-      "stadium": "Estadio Mártires de Barbados",
-      "capacity": 12000,
-      "stadiumCapacity": 12000,
-      "manager": "Ángel Ortega",
-      "foundedYear": 1977,
-      "championships": 4,
-      "colors": {
-        "primary": "#2563EB",
-        "secondary": "#DC2626",
-        "text": "#FFFFFF"
-      },
-      "primaryColor": "#2563EB",
-      "logo": "🐎",
-      "competitionId": "snb",
-      "seasonId": "snb-65",
-      "record": {
-        "wins": 0,
-        "losses": 0,
-        "pct": 0,
-        "streak": "-",
-        "lastTen": "0-0",
-        "position": 6
-      }
-    },
-    {
-      "id": "vcl",
-      "name": "Azucareros de Villa Clara",
-      "nickname": "Azucareros",
-      "shortName": "VCL",
-      "city": "Santa Clara",
-      "stadium": "Estadio Augusto César Sandino",
-      "capacity": 20000,
-      "stadiumCapacity": 20000,
-      "manager": "Ramón Moré",
-      "foundedYear": 1977,
-      "championships": 5,
-      "colors": {
-        "primary": "#EA580C",
-        "secondary": "#1E293B",
-        "text": "#FFFFFF"
-      },
-      "primaryColor": "#EA580C",
-      "logo": "🚜",
-      "competitionId": "snb",
-      "seasonId": "snb-65",
-      "record": {
-        "wins": 0,
-        "losses": 0,
-        "pct": 0,
-        "streak": "-",
-        "lastTen": "0-0",
-        "position": 7
-      }
-    },
-    {
-      "id": "cav",
-      "name": "Tigres de Ciego de Ávila",
-      "nickname": "Tigres",
-      "shortName": "CAV",
-      "city": "Ciego de Ávila",
-      "stadium": "Estadio José Ramón Cepero",
-      "capacity": 13000,
-      "stadiumCapacity": 13000,
-      "manager": "Dany Miranda",
-      "foundedYear": 1977,
-      "championships": 3,
-      "colors": {
-        "primary": "#D97706",
-        "secondary": "#1E1B4B",
-        "text": "#FFFFFF"
-      },
-      "primaryColor": "#D97706",
-      "logo": "🐯",
-      "competitionId": "snb",
-      "seasonId": "snb-65",
-      "record": {
-        "wins": 0,
-        "losses": 0,
-        "pct": 0,
-        "streak": "-",
-        "lastTen": "0-0",
-        "position": 8
+        "position": 1
       }
     }
   ],

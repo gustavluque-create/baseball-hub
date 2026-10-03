@@ -84,45 +84,53 @@ export interface Player {
   status: 'active' | 'injured' | 'minors';
 }
 
+export interface CareerBattingTotals {
+  seasons: number;
+  games: number;
+  pa: number;
+  ab: number;
+  r: number;
+  h: number;
+  doubles: number;
+  triples: number;
+  hr: number;
+  rbi: number;
+  bb: number;
+  so: number;
+  sb: number;
+  avg: number;
+  obp: number;
+  slg: number;
+  ops: number;
+  war: number;
+}
+
+export interface CareerPitchingTotals {
+  seasons: number;
+  games: number;
+  gs: number;
+  w: number;
+  l: number;
+  sv: number;
+  ip: number;
+  h: number;
+  r: number;
+  er: number;
+  bb: number;
+  so: number;
+  hr: number;
+  era: number;
+  whip: number;
+  war: number;
+}
+
 export interface PlayerCareerTotals {
-  batting?: {
-    seasons: number;
-    games: number;
-    pa: number;
-    ab: number;
-    r: number;
-    h: number;
-    doubles: number;
-    triples: number;
-    hr: number;
-    rbi: number;
-    bb: number;
-    so: number;
-    sb: number;
-    avg: number;
-    obp: number;
-    slg: number;
-    ops: number;
-    war: number;
-  };
-  pitching?: {
-    seasons: number;
-    games: number;
-    gs: number;
-    w: number;
-    l: number;
-    sv: number;
-    ip: number;
-    h: number;
-    r: number;
-    er: number;
-    bb: number;
-    so: number;
-    hr: number;
-    era: number;
-    whip: number;
-    war: number;
-  };
+  batting?: CareerBattingTotals;
+  pitching?: CareerPitchingTotals;
+  regularBatting?: CareerBattingTotals;
+  postseasonBatting?: CareerBattingTotals;
+  regularPitching?: CareerPitchingTotals;
+  postseasonPitching?: CareerPitchingTotals;
 }
 
 export interface PlayerGameLogItem {
@@ -333,6 +341,7 @@ export interface BattingStats {
   position: PlayerPosition;
   seasonYear: number;
   seasonId?: string;
+  stage?: 'regular' | 'postseason';
   games: number;
   pa: number;
   ab: number;
@@ -367,6 +376,7 @@ export interface PitchingStats {
   position: 'SP' | 'RP';
   seasonYear: number;
   seasonId?: string;
+  stage?: 'regular' | 'postseason';
   games: number;
   gs: number;
   cg: number;

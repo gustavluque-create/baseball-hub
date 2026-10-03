@@ -21,7 +21,14 @@
   "players": {},
   "customPlayers": [],
   "deletedPlayerIds": [],
-  "deletedTeamIds": [],
+  "deletedTeamIds": [
+    "ltu",
+    "pri",
+    "scu",
+    "gra",
+    "vcl",
+    "cav"
+  ],
   "deletedGameIds": [
     "g-2026-01",
     "g-2026-02",

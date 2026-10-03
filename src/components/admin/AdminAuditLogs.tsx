@@ -37,10 +37,9 @@ export const AdminAuditLogs: React.FC = () => {
 
   const handleResetDemo = async () => {
     const confirmation = prompt(
-      'ADVERTENCIA: Esta acción restablecerá todas las tablas de partidos, jugadores, estadísticas y noticias a los valores iniciales de demostración.\n\nEscriba "RESTABLECER" para confirmar:'
+      'ADVERTENCIA: Esta acción vaciará y purgará todos los datos de prueba de las tablas del sistema.\n\nEscriba "CONFIRMAR" para proceder:'
     );
-    if (confirmation !== 'RESTABLECER') {
-      alert('Operación cancelada.');
+    if (confirmation !== 'CONFIRMAR') {
       return;
     }
 
@@ -50,7 +49,7 @@ export const AdminAuditLogs: React.FC = () => {
       setStatusMessage(res.message);
       await fetchLogs();
     } catch (err: any) {
-      alert(`Error al restablecer sistema: ${err.message}`);
+      alert(`Error al purgar datos: ${err.message}`);
     } finally {
       setIsResetting(false);
     }
@@ -125,10 +124,10 @@ export const AdminAuditLogs: React.FC = () => {
             onClick={handleResetDemo}
             disabled={isResetting}
             className="px-3.5 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-            title="Restablecer base de datos a los valores demo de fábrica"
+            title="Purgar y vaciar datos de prueba"
           >
             <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
-            <span>Restablecer Datos Demo</span>
+            <span>Purgar Datos de Prueba</span>
           </button>
         </div>
       </div>

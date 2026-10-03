@@ -253,3 +253,90 @@ export const SeasonBadge: React.FC<SeasonBadgeProps> = ({
     </div>
   );
 };
+
+export type SeasonStage = 'regular' | 'postseason';
+
+export interface StageBadgeInfo {
+  stage: SeasonStage;
+  label: string;
+  shortLabel: string;
+  code: string;
+  bgClass: string;
+  textClass: string;
+  borderClass: string;
+  dotClass: string;
+  icon: string;
+}
+
+export function getStageInfo(stage?: string): StageBadgeInfo {
+  const normalized = (stage || '').toLowerCase().trim();
+  const isPost =
+    normalized === 'postseason' ||
+    normalized.includes('post') ||
+    normalized.includes('playoff') ||
+    normalized.includes('final') ||
+    normalized.includes('semifinal') ||
+    normalized.includes('cuartos');
+
+  if (isPost) {
+    return {
+      stage: 'postseason',
+      label: 'Postemporada / Playoffs',
+      shortLabel: 'Postemporada',
+      code: 'POST',
+      bgClass: 'bg-amber-500/15',
+      textClass: 'text-amber-300',
+      borderClass: 'border-amber-500/35',
+      dotClass: 'bg-amber-400',
+      icon: '🏆',
+    };
+  }
+
+  return {
+    stage: 'regular',
+    label: 'Temporada Regular',
+    shortLabel: 'Regular',
+    code: 'REG',
+    bgClass: 'bg-blue-500/15',
+    textClass: 'text-blue-300',
+    borderClass: 'border-blue-500/35',
+    dotClass: 'bg-blue-400',
+    icon: '⚾',
+  };
+}
+
+export interface StageBadgeProps {
+  stage?: string;
+  showIcon?: boolean;
+  showFullLabel?: boolean;
+  size?: 'xs' | 'sm' | 'md';
+  className?: string;
+}
+
+export const StageBadge: React.FC<StageBadgeProps> = ({
+  stage,
+  showIcon = true,
+  showFullLabel = false,
+  size = 'sm',
+  className = '',
+}) => {
+  const info = getStageInfo(stage);
+  const sizeClasses = {
+    xs: 'text-[9px] px-1.5 py-0.5 gap-1',
+    sm: 'text-[10px] px-2 py-0.5 gap-1',
+    md: 'text-xs px-2.5 py-1 gap-1.5',
+  }[size];
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-md border font-sans font-bold select-none tracking-tight ${info.bgClass} ${info.textClass} ${info.borderClass} ${sizeClasses} ${className}`}
+      title={info.label}
+    >
+      {showIcon && <span className="text-[11px] leading-none shrink-0">{info.icon}</span>}
+      <span className="uppercase tracking-wider">
+        {showFullLabel ? info.label : info.code}
+      </span>
+    </span>
+  );
+};
+

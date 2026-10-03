@@ -23,48 +23,6 @@ import {
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
 import { cloudSqlSync } from '../../src/db/cloudsql-sync.ts';
-import {
-  DEMO_COMPETITIONS,
-  DEMO_SEASONS,
-  DEMO_TEAMS,
-  DEMO_PLAYERS,
-  DEMO_GAMES,
-  DEMO_BATTING_STATS,
-  DEMO_PITCHING_STATS,
-  DEMO_STANDINGS,
-  DEMO_NEWS,
-  DEMO_VIDEOS,
-} from '../data/seed-data.ts';
-
-const INITIAL_COMMENTS: ArticleComment[] = [
-  {
-    id: 'comm_1',
-    articleSlug: 'final-serie-nacional-63-las-tunas-vs-pinar-del-rio',
-    authorName: 'Yordanis Morales',
-    favoriteTeam: 'Leñadores de Las Tunas',
-    content: '¡Tremendo análisis! Los Leñadores han demostrado una consistencia bárbara en el Julio Antonio Mella.',
-    createdAt: '2026-09-20T14:30:00Z',
-    likes: 8,
-  },
-  {
-    id: 'comm_2',
-    articleSlug: 'final-serie-nacional-63-las-tunas-vs-pinar-del-rio',
-    authorName: 'Alejandro Valdés',
-    favoriteTeam: 'Vegueros de Pinar del Río',
-    content: 'El pitcheo de relevo de Pinar va a decidir esta serie. Si los abridores caminan 6 innings, la ventaja es verde.',
-    createdAt: '2026-09-20T16:15:00Z',
-    likes: 5,
-  },
-  {
-    id: 'comm_3',
-    articleSlug: 'analisis-snb-63-lideres-estadisticos-temporada-regular',
-    authorName: 'Ernesto Santana',
-    favoriteTeam: 'Industriales',
-    content: 'Gran trabajo recopilando estos datos. Ojalá sigan publicando estas métricas avanzadas antes de cada subserie.',
-    createdAt: '2026-09-20T18:40:00Z',
-    likes: 12,
-  },
-];
 
 const KNOWN_SLUG_MAP: Record<string, string> = {
   mtz: 'mtz', matanzas: 'mtz', cocodrilos: 'mtz',
@@ -135,7 +93,12 @@ export class BaseballRepository {
     try {
       const cloudData = await cloudSqlSync.loadFromCloudSql();
       if (cloudData && cloudData.teams.length > 0) {
+        const deletedTeamSet = new Set(this.userOverrides.deletedTeamIds || []);
         for (const t of cloudData.teams) {
+          if (deletedTeamSet.has(t.id)) {
+            cloudSqlSync.deleteTeam(t.id).catch(() => {});
+            continue;
+          }
           const idx = this.teams.findIndex((item) => item.id === t.id);
           if (idx !== -1) this.teams[idx] = t;
           else this.teams.push(t);
@@ -393,6 +356,8 @@ export class BaseballRepository {
     }
 
     // Ensure test collections remain strictly empty and never load demo test data
+    const deletedTeamSet = new Set(this.userOverrides.deletedTeamIds || []);
+    this.teams = (this.teams || []).filter((t) => !deletedTeamSet.has(t.id));
     this.games = (this.games || []).filter((g) => !g.id.startsWith('g-2026-'));
     this.players = (this.players || []).filter((p) => !p.id.startsWith('p-'));
     this.news = (this.news || []).filter((n) => !n.id.startsWith('news-'));
@@ -401,6 +366,8 @@ export class BaseballRepository {
     this.battingStats = [];
     this.pitchingStats = [];
     this.standings = [];
+    this.competitions = (this.competitions || []).filter((c) => c.id === 'snb');
+    this.seasons = (this.seasons || []).filter((s) => s.id === 'snb-65');
 
     // Reset team records to clean 0-0 so no fake standings or records exist
     this.teams.forEach((t, idx) => {
@@ -435,19 +402,20 @@ export class BaseballRepository {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
+      const deletedTeamSet = new Set(this.userOverrides.deletedTeamIds || []);
       const payload = {
         version: '1.0',
         initialized: true,
         lastUpdated: new Date().toISOString(),
-        competitions: this.competitions,
-        seasons: this.seasons,
-        teams: this.teams,
-        players: this.players,
+        competitions: (this.competitions || []).filter((c) => c.id === 'snb'),
+        seasons: (this.seasons || []).filter((s) => s.id === 'snb-65'),
+        teams: (this.teams || []).filter((t) => !deletedTeamSet.has(t.id)),
+        players: (this.players || []).filter((p) => !p.id.startsWith('p-')),
         games: (this.games || []).filter((g) => !g.id.startsWith('g-2026-')),
         battingStats: this.battingStats,
         pitchingStats: this.pitchingStats,
         standings: this.standings,
-        news: this.news,
+        news: (this.news || []).filter((n) => !n.id.startsWith('news-')),
         videos: this.videos,
         comments: this.comments,
       };
@@ -1107,65 +1075,29 @@ export class BaseballRepository {
     careerBatting: BattingStats[];
     careerPitching: PitchingStats[];
     careerTotals: {
-      batting?: {
-        seasons: number;
-        games: number;
-        pa: number;
-        ab: number;
-        r: number;
-        h: number;
-        doubles: number;
-        triples: number;
-        hr: number;
-        rbi: number;
-        bb: number;
-        so: number;
-        sb: number;
-        avg: number;
-        obp: number;
-        slg: number;
-        ops: number;
-        war: number;
-      };
-      pitching?: {
-        seasons: number;
-        games: number;
-        gs: number;
-        w: number;
-        l: number;
-        sv: number;
-        ip: number;
-        h: number;
-        r: number;
-        er: number;
-        bb: number;
-        so: number;
-        hr: number;
-        era: number;
-        whip: number;
-        war: number;
-      };
+      batting?: any;
+      pitching?: any;
+      regularBatting?: any;
+      postseasonBatting?: any;
+      regularPitching?: any;
+      postseasonPitching?: any;
     };
   } {
-    const careerBatting = this.battingStats
-      .filter((b) => b.playerId === playerId)
-      .sort((a, b) => (a.seasonYear || 0) - (b.seasonYear || 0));
-
-    let battingTotals: any = undefined;
-    if (careerBatting.length > 0) {
-      const games = careerBatting.reduce((sum, b) => sum + (b.games || 0), 0);
-      const pa = careerBatting.reduce((sum, b) => sum + (b.pa || 0), 0);
-      const ab = careerBatting.reduce((sum, b) => sum + (b.ab || 0), 0);
-      const r = careerBatting.reduce((sum, b) => sum + (b.r || 0), 0);
-      const h = careerBatting.reduce((sum, b) => sum + (b.h || 0), 0);
-      const doubles = careerBatting.reduce((sum, b) => sum + (b.doubles || 0), 0);
-      const triples = careerBatting.reduce((sum, b) => sum + (b.triples || 0), 0);
-      const hr = careerBatting.reduce((sum, b) => sum + (b.hr || 0), 0);
-      const rbi = careerBatting.reduce((sum, b) => sum + (b.rbi || 0), 0);
-      const bb = careerBatting.reduce((sum, b) => sum + (b.bb || 0), 0);
-      const so = careerBatting.reduce((sum, b) => sum + (b.so || 0), 0);
-      const sb = careerBatting.reduce((sum, b) => sum + (b.sb || 0), 0);
-      const totalWar = careerBatting.reduce((sum, b) => sum + (Number(b.war) || 0), 0);
+    const computeBattingTotals = (list: BattingStats[]) => {
+      if (list.length === 0) return undefined;
+      const games = list.reduce((sum, b) => sum + (b.games || 0), 0);
+      const pa = list.reduce((sum, b) => sum + (b.pa || 0), 0);
+      const ab = list.reduce((sum, b) => sum + (b.ab || 0), 0);
+      const r = list.reduce((sum, b) => sum + (b.r || 0), 0);
+      const h = list.reduce((sum, b) => sum + (b.h || 0), 0);
+      const doubles = list.reduce((sum, b) => sum + (b.doubles || 0), 0);
+      const triples = list.reduce((sum, b) => sum + (b.triples || 0), 0);
+      const hr = list.reduce((sum, b) => sum + (b.hr || 0), 0);
+      const rbi = list.reduce((sum, b) => sum + (b.rbi || 0), 0);
+      const bb = list.reduce((sum, b) => sum + (b.bb || 0), 0);
+      const so = list.reduce((sum, b) => sum + (b.so || 0), 0);
+      const sb = list.reduce((sum, b) => sum + (b.sb || 0), 0);
+      const totalWar = list.reduce((sum, b) => sum + (Number(b.war) || 0), 0);
 
       const avg = ab > 0 ? Number((h / ab).toFixed(3)) : 0;
       const obpDenom = ab + bb;
@@ -1174,8 +1106,8 @@ export class BaseballRepository {
       const slg = ab > 0 ? Number(((singles + doubles * 2 + triples * 3 + hr * 4) / ab).toFixed(3)) : 0;
       const ops = Number((obp + slg).toFixed(3));
 
-      battingTotals = {
-        seasons: careerBatting.length,
+      return {
+        seasons: list.length,
         games,
         pa,
         ab,
@@ -1194,33 +1126,29 @@ export class BaseballRepository {
         ops,
         war: Number(totalWar.toFixed(1)),
       };
-    }
+    };
 
-    const careerPitching = this.pitchingStats
-      .filter((p) => p.playerId === playerId)
-      .sort((a, b) => (a.seasonYear || 0) - (b.seasonYear || 0));
-
-    let pitchingTotals: any = undefined;
-    if (careerPitching.length > 0) {
-      const games = careerPitching.reduce((sum, p) => sum + (p.games || 0), 0);
-      const gs = careerPitching.reduce((sum, p) => sum + (p.gs || 0), 0);
-      const w = careerPitching.reduce((sum, p) => sum + (p.w ?? p.wins ?? 0), 0);
-      const l = careerPitching.reduce((sum, p) => sum + (p.l ?? p.losses ?? 0), 0);
-      const sv = careerPitching.reduce((sum, p) => sum + (p.sv ?? p.saves ?? 0), 0);
-      const ip = careerPitching.reduce((sum, p) => sum + (Number(p.ip) || 0), 0);
-      const h = careerPitching.reduce((sum, p) => sum + (p.h || 0), 0);
-      const r = careerPitching.reduce((sum, p) => sum + (p.r || 0), 0);
-      const er = careerPitching.reduce((sum, p) => sum + (p.er || 0), 0);
-      const bb = careerPitching.reduce((sum, p) => sum + (p.bb || 0), 0);
-      const so = careerPitching.reduce((sum, p) => sum + (p.so || 0), 0);
-      const hr = careerPitching.reduce((sum, p) => sum + (p.hr || 0), 0);
-      const totalWar = careerPitching.reduce((sum, p) => sum + (Number(p.war) || 0), 0);
+    const computePitchingTotals = (list: PitchingStats[]) => {
+      if (list.length === 0) return undefined;
+      const games = list.reduce((sum, p) => sum + (p.games || 0), 0);
+      const gs = list.reduce((sum, p) => sum + (p.gs || 0), 0);
+      const w = list.reduce((sum, p) => sum + (p.w ?? p.wins ?? 0), 0);
+      const l = list.reduce((sum, p) => sum + (p.l ?? p.losses ?? 0), 0);
+      const sv = list.reduce((sum, p) => sum + (p.sv ?? p.saves ?? 0), 0);
+      const ip = list.reduce((sum, p) => sum + (Number(p.ip) || 0), 0);
+      const h = list.reduce((sum, p) => sum + (p.h || 0), 0);
+      const r = list.reduce((sum, p) => sum + (p.r || 0), 0);
+      const er = list.reduce((sum, p) => sum + (p.er || 0), 0);
+      const bb = list.reduce((sum, p) => sum + (p.bb || 0), 0);
+      const so = list.reduce((sum, p) => sum + (p.so || 0), 0);
+      const hr = list.reduce((sum, p) => sum + (p.hr || 0), 0);
+      const totalWar = list.reduce((sum, p) => sum + (Number(p.war) || 0), 0);
 
       const era = ip > 0 ? Number(((er * 9) / ip).toFixed(2)) : 0;
       const whip = ip > 0 ? Number(((bb + h) / ip).toFixed(2)) : 0;
 
-      pitchingTotals = {
-        seasons: careerPitching.length,
+      return {
+        seasons: list.length,
         games,
         gs,
         w,
@@ -1237,14 +1165,40 @@ export class BaseballRepository {
         whip,
         war: Number(totalWar.toFixed(1)),
       };
-    }
+    };
+
+    const careerBatting = this.battingStats
+      .filter((b) => b.playerId === playerId)
+      .map((b) => ({
+        ...b,
+        stage: b.stage === 'postseason' ? ('postseason' as const) : ('regular' as const),
+      }))
+      .sort((a, b) => (a.seasonYear || 0) - (b.seasonYear || 0));
+
+    const careerPitching = this.pitchingStats
+      .filter((p) => p.playerId === playerId)
+      .map((p) => ({
+        ...p,
+        stage: p.stage === 'postseason' ? ('postseason' as const) : ('regular' as const),
+      }))
+      .sort((a, b) => (a.seasonYear || 0) - (b.seasonYear || 0));
+
+    const regularBatting = careerBatting.filter((b) => b.stage !== 'postseason');
+    const postseasonBatting = careerBatting.filter((b) => b.stage === 'postseason');
+
+    const regularPitching = careerPitching.filter((p) => p.stage !== 'postseason');
+    const postseasonPitching = careerPitching.filter((p) => p.stage === 'postseason');
 
     return {
       careerBatting,
       careerPitching,
       careerTotals: {
-        batting: battingTotals,
-        pitching: pitchingTotals,
+        batting: computeBattingTotals(careerBatting),
+        pitching: computePitchingTotals(careerPitching),
+        regularBatting: computeBattingTotals(regularBatting),
+        postseasonBatting: computeBattingTotals(postseasonBatting),
+        regularPitching: computePitchingTotals(regularPitching),
+        postseasonPitching: computePitchingTotals(postseasonPitching),
       },
     };
   }
@@ -1568,10 +1522,20 @@ export class BaseballRepository {
   addOrUpdatePlayerSeasonBatting(playerId: string, statData: Partial<BattingStats>): BattingStats {
     const player = this.getPlayerById(playerId);
     const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
-    const statId = statData.id || `bs_${playerId}_${seasonYear}`;
+    const stage =
+      statData.stage === 'postseason' ||
+      (statData as any).seasonType === 'postseason' ||
+      (statData as any).etapa === 'postseason'
+        ? 'postseason'
+        : 'regular';
+    const statId = statData.id || `bs_${playerId}_${seasonYear}_${stage}`;
 
     const existingIndex = this.battingStats.findIndex(
-      (b) => b.id === statId || (b.playerId === playerId && b.seasonYear === seasonYear)
+      (b) =>
+        b.id === statId ||
+        (b.playerId === playerId &&
+          b.seasonYear === seasonYear &&
+          (b.stage || 'regular') === stage)
     );
 
     const ab = Number(statData.ab) || 0;
@@ -1596,6 +1560,7 @@ export class BaseballRepository {
       position: (statData.position || player?.position || 'OF') as PlayerPosition,
       seasonYear,
       seasonId: statData.seasonId || `snb-${seasonYear}`,
+      stage,
       games: Number(statData.games) || 0,
       pa,
       ab,
@@ -1629,10 +1594,20 @@ export class BaseballRepository {
   addOrUpdatePlayerSeasonPitching(playerId: string, statData: Partial<PitchingStats>): PitchingStats {
     const player = this.getPlayerById(playerId);
     const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
-    const statId = statData.id || `ps_${playerId}_${seasonYear}`;
+    const stage =
+      statData.stage === 'postseason' ||
+      (statData as any).seasonType === 'postseason' ||
+      (statData as any).etapa === 'postseason'
+        ? 'postseason'
+        : 'regular';
+    const statId = statData.id || `ps_${playerId}_${seasonYear}_${stage}`;
 
     const existingIndex = this.pitchingStats.findIndex(
-      (p) => p.id === statId || (p.playerId === playerId && p.seasonYear === seasonYear)
+      (p) =>
+        p.id === statId ||
+        (p.playerId === playerId &&
+          p.seasonYear === seasonYear &&
+          (p.stage || 'regular') === stage)
     );
 
     const ip = Number(statData.ip) || 0;
@@ -1651,6 +1626,7 @@ export class BaseballRepository {
       position: (statData.position || (player?.position === 'SP' || player?.position === 'RP' ? player.position : 'SP')) as 'SP' | 'RP',
       seasonYear,
       seasonId: statData.seasonId || `snb-${seasonYear}`,
+      stage,
       games: Number(statData.games) || 0,
       gs: Number(statData.gs) || 0,
       cg: Number(statData.cg) || 0,
@@ -1915,6 +1891,25 @@ export class BaseballRepository {
       const teamId = teamObj ? teamObj.id : matchedPlayer.teamId;
       const teamShort = teamObj ? teamObj.shortName : matchedPlayer.teamShort;
 
+      const rawStage = (
+        raw.stage ||
+        raw.etapa ||
+        raw.fase ||
+        raw.seasonType ||
+        raw.tipoTemporada ||
+        ''
+      )
+        .toString()
+        .toLowerCase()
+        .trim();
+      const isPost =
+        rawStage.includes('post') ||
+        rawStage.includes('playoff') ||
+        rawStage.includes('final') ||
+        rawStage.includes('semifinal') ||
+        rawStage.includes('cuartos');
+      const stage: 'regular' | 'postseason' = isPost ? 'postseason' : 'regular';
+
       // 5. Add or update stat
       if (statType === 'batting') {
         const games = Number(raw.games ?? raw.jj ?? raw.j ?? raw.juegos ?? 0);
@@ -1934,6 +1929,7 @@ export class BaseballRepository {
         this.addOrUpdatePlayerSeasonBatting(matchedPlayer.id, {
           seasonYear,
           seasonId,
+          stage,
           teamId,
           teamShort,
           games,
@@ -1974,6 +1970,7 @@ export class BaseballRepository {
         this.addOrUpdatePlayerSeasonPitching(matchedPlayer.id, {
           seasonYear,
           seasonId,
+          stage,
           teamId,
           teamShort,
           games,
