@@ -4,5 +4,36 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+
+# Sensitive administrative security and sessions
+server/data/admin-security.json
+server/data/admin-security.json.tmp
+server/data/*.backup.json
+server/data/pre_supabase_backup.json
+*.tmp
+*.bak
+*.backup
+*.backup.json
+
+# Private credentials, secrets, keys and certificates
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*serviceAccount*.json
+*service-account*.json
+*credentials*.json
+*credential*.json
+
+# Authentication tokens and temporary session dumps
+*auth-token*
+*.session
+*admin-token*
+
+# Environment files
+.env
+.env.*
 !.env.example
+

@@ -21,15 +21,15 @@ interface StoredCredential {
 const DEFAULT_SUPERADMIN_HASH =
   process.env.ADMIN_SUPERADMIN_PASSWORD_HASH ||
   process.env.ADMIN_PASSWORD_HASH ||
-  '$2b$10$CDk0D841SHPKUSuOTY0xGO0fM6Iw8rd0Lc2C7enUUJ2O343Or5E3S'; // 'baseball2026'
+  '$2b$10$CDk0D841SHPKUSuOTY0xGO0fM6Iw8rd0Lc2C7enUUJ2O343Or5E3S';
 
 const DEFAULT_SCORER_HASH =
   process.env.ADMIN_SCORER_PASSWORD_HASH ||
-  '$2b$10$yLO8R9RX9/VKsluotvZx4.CRAzDLpANWGLgT42bf.vCQ1yMpceqd.'; // 'anotador2026'
+  '$2b$10$yLO8R9RX9/VKsluotvZx4.CRAzDLpANWGLgT42bf.vCQ1yMpceqd.';
 
 const DEFAULT_EDITOR_HASH =
   process.env.ADMIN_EDITOR_PASSWORD_HASH ||
-  '$2b$10$7yvfzq09r4hn8ED4p11ePehqPMBKXNd1GD9aIXgKs.a9h9hiXbMxS'; // 'prensa2026'
+  '$2b$10$7yvfzq09r4hn8ED4p11ePehqPMBKXNd1GD9aIXgKs.a9h9hiXbMxS';
 
 const REGISTERED_ADMINS: StoredCredential[] = [
   {
@@ -98,15 +98,8 @@ export class AdminAuthService {
         const raw = fs.readFileSync(this.securityFilePath, 'utf-8');
         if (raw && raw.trim().length > 0) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed.sessions)) {
-            const now = Date.now();
-            for (const s of parsed.sessions) {
-              // Only load non-expired sessions
-              if (s && s.token && typeof s.expiresAt === 'number' && s.expiresAt > now) {
-                this.sessions.set(s.token, s);
-              }
-            }
-          }
+          // CRITICAL SECURITY (FASE 2.1): Sessions are never read from disk.
+          // Invalidate and reject any legacy session files.
           if (Array.isArray(parsed.auditLogs)) {
             this.auditLogs = parsed.auditLogs;
           }
@@ -126,10 +119,9 @@ export class AdminAuthService {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      const now = Date.now();
-      const sessionsArr = Array.from(this.sessions.values()).filter((s) => s.expiresAt > now);
+      // CRITICAL SECURITY (FASE 2.1): Never write session tokens or credentials to disk.
       const payload = {
-        sessions: sessionsArr,
+        sessions: [],
         auditLogs: this.auditLogs.slice(0, 300),
         lastIngestionTime: this.lastIngestionTime,
       };
@@ -236,14 +228,8 @@ export class AdminAuthService {
     const cleanToken = token.trim();
     if (!cleanToken) return null;
 
-    let session = this.sessions.get(cleanToken);
-    if (!session) {
-      // Re-read from disk in case updated by another worker/process
-      this.loadFromDisk();
-      session = this.sessions.get(cleanToken);
-    }
-
-    // If session is still not found in store, REJECT immediately (NO bypass!)
+    const session = this.sessions.get(cleanToken);
+    // If session is not found in memory store, REJECT immediately (NO bypass!)
     if (!session) {
       return null;
     }
@@ -251,7 +237,6 @@ export class AdminAuthService {
     // Check expiration
     if (Date.now() > session.expiresAt) {
       this.sessions.delete(cleanToken);
-      this.saveToDisk();
       return null;
     }
 

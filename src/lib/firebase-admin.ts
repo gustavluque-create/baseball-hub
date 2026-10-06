@@ -17,8 +17,8 @@ if (clientEmail && privateKey) {
       clientEmail,
       privateKey,
     });
-  } catch (err) {
-    console.warn('[Firebase Admin] Warning loading explicit cert credential, falling back to projectId:', err);
+  } catch (err: any) {
+    console.warn('[Firebase Admin] Warning loading explicit cert credential, falling back to projectId:', err?.message || 'Certificate parse failure');
   }
 }
 

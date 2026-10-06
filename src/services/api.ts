@@ -143,8 +143,44 @@ export class ApiClient {
       epochMs: Date.now(),
       durationMs: entry.durationMs || 0,
       ...entry,
+      requestPayload: this.sanitizeForLog(entry.requestPayload),
+      responsePreview: this.sanitizeForLog(entry.responsePreview),
     };
     this.recordLog(fullEntry);
+  }
+
+  public static sanitizeForLog(data: any): any {
+    if (data === null || data === undefined) return data;
+    if (typeof data === 'string') {
+      if (data.startsWith('adm_') || data.startsWith('eyJh') || (data.length > 60 && !data.startsWith('http') && !data.startsWith('/'))) {
+        return '[REDACTED]';
+      }
+      return data;
+    }
+    if (typeof data !== 'object') return data;
+    if (Array.isArray(data)) return data.map((item) => this.sanitizeForLog(item));
+
+    const sanitized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      const lower = key.toLowerCase();
+      if (
+        lower.includes('password') ||
+        lower.includes('secret') ||
+        lower.includes('token') ||
+        lower.includes('auth') ||
+        lower.includes('credential') ||
+        lower.includes('cookie') ||
+        lower.includes('privatekey') ||
+        lower.includes('private_key')
+      ) {
+        sanitized[key] = '[REDACTED]';
+      } else if (typeof value === 'object' && value !== null) {
+        sanitized[key] = this.sanitizeForLog(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
   }
 
   private static parsePayload(body: any): any {
@@ -226,7 +262,7 @@ export class ApiClient {
       );
       console.log('⏰ Timestamp:', new Date().toISOString());
       if (requestPayload !== undefined) {
-        console.log('📦 Request Payload:', requestPayload);
+        console.log('📦 Request Payload:', this.sanitizeForLog(requestPayload));
       }
       console.groupEnd();
     }
@@ -315,7 +351,7 @@ export class ApiClient {
             console.warn('📊 HTTP Status:', `${res.status} ${res.statusText}`);
             console.warn('⏱️ Latency:', `${durationMs}ms`);
             if (isWrite && requestPayload !== undefined) {
-              console.warn('📦 Write Payload:', requestPayload);
+              console.warn('📦 Write Payload:', this.sanitizeForLog(requestPayload));
             }
             console.groupEnd();
           }
@@ -377,9 +413,9 @@ export class ApiClient {
           );
           console.log('⏱️ Duration:', `${durationMs}ms`);
           if (requestPayload !== undefined) {
-            console.log('📦 Saved Payload:', requestPayload);
+            console.log('📦 Saved Payload:', this.sanitizeForLog(requestPayload));
           }
-          console.log('📬 Response Data:', data);
+          console.log('📬 Response Data:', this.sanitizeForLog(data));
           console.groupEnd();
         }
 

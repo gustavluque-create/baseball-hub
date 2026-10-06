@@ -88,36 +88,55 @@ async function runSecurityTests() {
     });
     assert(resFakeToken.status === 401, '7. Token desconocido con prefijo adm_ no otorga acceso y retorna 401 (Zero Bypass)');
 
-    // 5. Successful login with bcrypt validation
-    const resLogin = await request({ hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' }, { username: 'admin', password: 'baseball2026' });
-    assert(resLogin.status === 200 && !!resLogin.body?.token, '8. POST /api/admin/login con credenciales válidas retorna 200 y token');
-    const adminToken = resLogin.body?.token;
-    const cookieHeader = resLogin.headers['set-cookie']?.[0] || '';
-    assert(cookieHeader.includes('baseball_admin_token') && cookieHeader.includes('HttpOnly'), '9. Inicio de sesión emite cookie HttpOnly');
+    // 5. Authentication security verification
+    const testAdminPassword = process.env.TEST_ADMIN_PASSWORD;
+    const testEditorPassword = process.env.TEST_EDITOR_PASSWORD;
+    let adminToken = '';
 
-    // 6. Authorized admin access
-    const resOverview = await request({
-      hostname: 'localhost',
-      port: 3000,
-      path: '/api/admin/overview',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resOverview.status === 200, '10. Endpoint protegido /api/admin/overview con token válido retorna 200');
+    if (testAdminPassword) {
+      const resLogin = await request(
+        { hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' },
+        { username: 'admin', password: testAdminPassword }
+      );
+      assert(resLogin.status === 200 && !!resLogin.body?.token, '8. POST /api/admin/login con credenciales válidas retorna 200 y token');
+      adminToken = resLogin.body?.token;
+      const cookieHeader = resLogin.headers['set-cookie']?.[0] || '';
+      assert(cookieHeader.includes('baseball_admin_token') && cookieHeader.includes('HttpOnly'), '9. Inicio de sesión emite cookie HttpOnly');
 
-    // 7. Role-Based Access Control (RBAC): Editor cannot access superadmin-only endpoints
-    const resEditorLogin = await request({ hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' }, { username: 'prensa', password: 'prensa2026' });
-    assert(resEditorLogin.status === 200, '11. Login de usuario prensa/editor retorna 200');
-    const editorToken = resEditorLogin.body?.token;
+      const resOverview = await request({
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/admin/overview',
+        method: 'GET',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      assert(resOverview.status === 200, '10. Endpoint protegido /api/admin/overview con token válido retorna 200');
 
-    const resEditorForbidden = await request({
-      hostname: 'localhost',
-      port: 3000,
-      path: '/api/admin/system/backup',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${editorToken}` },
-    });
-    assert(resEditorForbidden.status === 403, '12. Rol prensa no puede acceder a respaldos de sistema (retorna 403 Forbidden)');
+      if (testEditorPassword) {
+        const resEditorLogin = await request(
+          { hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' },
+          { username: 'prensa', password: testEditorPassword }
+        );
+        assert(resEditorLogin.status === 200, '11. Login de usuario prensa/editor retorna 200');
+        const editorToken = resEditorLogin.body?.token;
+
+        const resEditorForbidden = await request({
+          hostname: 'localhost',
+          port: 3000,
+          path: '/api/admin/system/backup',
+          method: 'GET',
+          headers: { Authorization: `Bearer ${editorToken}` },
+        });
+        assert(resEditorForbidden.status === 403, '12. Rol prensa no puede acceder a respaldos de sistema (retorna 403 Forbidden)');
+      }
+    } else {
+      // Safeguard check when TEST_ADMIN_PASSWORD is not provided in env
+      const resEmptyPass = await request(
+        { hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' },
+        { username: 'admin', password: '' }
+      );
+      assert(resEmptyPass.status === 400, '8. POST /api/admin/login con contraseña vacía es rechazado con 400');
+    }
 
     // 8. XSS prevention on user comments
     const resCommentXss = await request(
