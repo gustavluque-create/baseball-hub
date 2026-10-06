@@ -16,47 +16,66 @@ interface StoredCredential {
   role: 'superadmin' | 'official_scorer' | 'editor';
 }
 
-// Default Bcrypt-hashed credentials with env-override support
-// Generated with bcrypt cost factor 10
-const DEFAULT_SUPERADMIN_HASH =
-  process.env.ADMIN_SUPERADMIN_PASSWORD_HASH ||
-  process.env.ADMIN_PASSWORD_HASH ||
-  '$2b$10$CDk0D841SHPKUSuOTY0xGO0fM6Iw8rd0Lc2C7enUUJ2O343Or5E3S';
+// Helper to validate strict Bcrypt hash format ($2a$, $2b$, $2y$, $2x$)
+export function isValidBcryptHash(hash?: string): boolean {
+  if (!hash || typeof hash !== 'string') return false;
+  const trimmed = hash.trim();
+  return /^\$2[abxy]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(trimmed);
+}
 
-const DEFAULT_SCORER_HASH =
-  process.env.ADMIN_SCORER_PASSWORD_HASH ||
-  '$2b$10$yLO8R9RX9/VKsluotvZx4.CRAzDLpANWGLgT42bf.vCQ1yMpceqd.';
+// Dynamically retrieve stored admin credential from environment variables.
+// CRITICAL SECURITY (FASE 2.1): NO default credentials or hashes exist in code.
+// Hashes must be strictly supplied via ADMIN_*_PASSWORD_HASH in valid bcrypt format.
+export function getAdminCredential(username: string): StoredCredential | null {
+  const clean = username.trim().toLowerCase();
 
-const DEFAULT_EDITOR_HASH =
-  process.env.ADMIN_EDITOR_PASSWORD_HASH ||
-  '$2b$10$7yvfzq09r4hn8ED4p11ePehqPMBKXNd1GD9aIXgKs.a9h9hiXbMxS';
+  if (clean === 'admin') {
+    const rawHash = (process.env.ADMIN_SUPERADMIN_PASSWORD_HASH || process.env.ADMIN_PASSWORD_HASH || '').trim();
+    if (!rawHash || !isValidBcryptHash(rawHash)) {
+      return null;
+    }
+    return {
+      id: 'admin_1',
+      username: 'admin',
+      passwordHash: rawHash,
+      name: 'Administrador General',
+      email: 'admin@baseballhub.cu',
+      role: 'superadmin',
+    };
+  }
 
-const REGISTERED_ADMINS: StoredCredential[] = [
-  {
-    id: 'admin_1',
-    username: 'admin',
-    passwordHash: DEFAULT_SUPERADMIN_HASH,
-    name: 'Administrador General',
-    email: 'admin@baseballhub.cu',
-    role: 'superadmin',
-  },
-  {
-    id: 'admin_2',
-    username: 'anotador',
-    passwordHash: DEFAULT_SCORER_HASH,
-    name: 'Anotador Oficial SNB',
-    email: 'anotador@baseballhub.cu',
-    role: 'official_scorer',
-  },
-  {
-    id: 'admin_3',
-    username: 'prensa',
-    passwordHash: DEFAULT_EDITOR_HASH,
-    name: 'Editor de Contenido y Noticias',
-    email: 'prensa@baseballhub.cu',
-    role: 'editor',
-  },
-];
+  if (clean === 'anotador') {
+    const rawHash = (process.env.ADMIN_SCORER_PASSWORD_HASH || '').trim();
+    if (!rawHash || !isValidBcryptHash(rawHash)) {
+      return null;
+    }
+    return {
+      id: 'admin_2',
+      username: 'anotador',
+      passwordHash: rawHash,
+      name: 'Anotador Oficial SNB',
+      email: 'anotador@baseballhub.cu',
+      role: 'official_scorer',
+    };
+  }
+
+  if (clean === 'prensa') {
+    const rawHash = (process.env.ADMIN_EDITOR_PASSWORD_HASH || '').trim();
+    if (!rawHash || !isValidBcryptHash(rawHash)) {
+      return null;
+    }
+    return {
+      id: 'admin_3',
+      username: 'prensa',
+      passwordHash: rawHash,
+      name: 'Editor de Contenido y Noticias',
+      email: 'prensa@baseballhub.cu',
+      role: 'editor',
+    };
+  }
+
+  return null;
+}
 
 interface SessionData {
   token: string;
@@ -75,6 +94,9 @@ export class AdminAuthService {
 
   constructor() {
     this.loadFromDisk();
+    if (!this.isConfigured()) {
+      console.warn('[Security] Administrative credentials not configured via environment variables.');
+    }
     if (this.auditLogs.length === 0) {
       // Seed initial audit log entries if first run
       this.addAuditLog(
@@ -150,26 +172,34 @@ export class AdminAuthService {
       };
     }
 
-    const matched = REGISTERED_ADMINS.find((a) => a.username.toLowerCase() === cleanUser);
+    const matched = getAdminCredential(cleanUser);
 
-    let passwordValid = false;
-    if (matched) {
-      try {
-        if (matched.passwordHash.startsWith('$2')) {
-          passwordValid = bcrypt.compareSync(cleanPass, matched.passwordHash);
-        } else {
-          // Fallback constant-time check if legacy non-bcrypt hash
-          passwordValid = matched.passwordHash === cleanPass;
-        }
-      } catch (err) {
-        console.error('[Security] Error during bcrypt password comparison:', err);
-        passwordValid = false;
-      }
-    }
-
-    if (!matched || !passwordValid) {
+    if (!matched) {
       this.addAuditLog(
         cleanUser || 'ANÓNIMO',
+        'Intento Fallido de Acceso',
+        `Intento de acceso denegado: credenciales no configuradas o usuario inexistente.`,
+        'auth'
+      );
+      return {
+        success: false,
+        error: 'Usuario o contraseña incorrectos. Verifique sus credenciales de acceso.',
+      };
+    }
+
+    // STRICT BCRYPT VALIDATION: Only valid bcrypt comparison is accepted.
+    // Absolutely NO fallback to plaintext comparison.
+    let passwordValid = false;
+    try {
+      passwordValid = bcrypt.compareSync(cleanPass, matched.passwordHash);
+    } catch (err) {
+      console.error('[Security] Error during bcrypt password comparison:', err);
+      passwordValid = false;
+    }
+
+    if (!passwordValid) {
+      this.addAuditLog(
+        matched.username,
         'Intento Fallido de Acceso',
         `Credenciales incorrectas ingresadas desde el portal de administración.`,
         'auth'
@@ -371,6 +401,30 @@ export class AdminAuthService {
       uptimeSeconds,
       lastIngestionDate: this.lastIngestionTime,
     };
+  }
+
+  /**
+   * Check if administrative authentication is configured via environment variables
+   */
+  isConfigured(role?: 'superadmin' | 'official_scorer' | 'editor'): boolean {
+    if (!role) {
+      return Boolean(
+        getAdminCredential('admin') ||
+        getAdminCredential('anotador') ||
+        getAdminCredential('prensa')
+      );
+    }
+    if (role === 'superadmin') return Boolean(getAdminCredential('admin'));
+    if (role === 'official_scorer') return Boolean(getAdminCredential('anotador'));
+    if (role === 'editor') return Boolean(getAdminCredential('prensa'));
+    return false;
+  }
+
+  /**
+   * Get credential by username
+   */
+  getCredential(username: string): StoredCredential | null {
+    return getAdminCredential(username);
   }
 }
 

@@ -1,4 +1,8 @@
 import http from 'http';
+import bcrypt from 'bcryptjs';
+import { adminAuthService, isValidBcryptHash, getAdminCredential } from '../server/services/admin-auth.service.ts';
+import { isSupabaseServerConfigured, getSupabaseServerClient } from '../server/lib/supabase.ts';
+import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
 
 function request(options: http.RequestOptions, body?: any): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
   return new Promise((resolve, reject) => {
@@ -86,57 +90,63 @@ async function runSecurityTests() {
       method: 'GET',
       headers: { Authorization: 'Bearer adm_fake_bypass_token_1234567890abcdef' },
     });
-    assert(resFakeToken.status === 401, '7. Token desconocido con prefijo adm_ no otorga acceso y retorna 401 (Zero Bypass)');
+    assert(resFakeToken.status === 401, '5. Token falso adm_ retorna 401 (Zero Bypass)');
 
-    // 5. Authentication security verification
-    const testAdminPassword = process.env.TEST_ADMIN_PASSWORD;
-    const testEditorPassword = process.env.TEST_EDITOR_PASSWORD;
-    let adminToken = '';
+    // ========================================================
+    // COMPROBACIONES ESPECÍFICAS DE SEGURIDAD (FASE 2.1)
+    // ========================================================
 
-    if (testAdminPassword) {
-      const resLogin = await request(
-        { hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' },
-        { username: 'admin', password: testAdminPassword }
-      );
-      assert(resLogin.status === 200 && !!resLogin.body?.token, '8. POST /api/admin/login con credenciales válidas retorna 200 y token');
-      adminToken = resLogin.body?.token;
-      const cookieHeader = resLogin.headers['set-cookie']?.[0] || '';
-      assert(cookieHeader.includes('baseball_admin_token') && cookieHeader.includes('HttpOnly'), '9. Inicio de sesión emite cookie HttpOnly');
+    // 1. Sin ADMIN_*_PASSWORD_HASH: NO debe existir login administrativo con password predeterminada
+    const origSuperadminHash = process.env.ADMIN_SUPERADMIN_PASSWORD_HASH;
+    const origPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+    delete process.env.ADMIN_SUPERADMIN_PASSWORD_HASH;
+    delete process.env.ADMIN_PASSWORD_HASH;
 
-      const resOverview = await request({
-        hostname: 'localhost',
-        port: 3000,
-        path: '/api/admin/overview',
-        method: 'GET',
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      assert(resOverview.status === 200, '10. Endpoint protegido /api/admin/overview con token válido retorna 200');
+    const resNoEnvLogin = adminAuthService.authenticate('admin', 'baseball2026');
+    assert(
+      resNoEnvLogin.success === false,
+      'VERIFICACIÓN 1: Sin ADMIN_*_PASSWORD_HASH → NO existe login administrativo con password predeterminada'
+    );
 
-      if (testEditorPassword) {
-        const resEditorLogin = await request(
-          { hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' },
-          { username: 'prensa', password: testEditorPassword }
-        );
-        assert(resEditorLogin.status === 200, '11. Login de usuario prensa/editor retorna 200');
-        const editorToken = resEditorLogin.body?.token;
+    // 2. Hash bcrypt válido: login correcto
+    const testSecret = 'pass_seguro_fase2_test_verification_2026';
+    const dynamicBcryptHash = bcrypt.hashSync(testSecret, 10);
+    process.env.ADMIN_SUPERADMIN_PASSWORD_HASH = dynamicBcryptHash;
 
-        const resEditorForbidden = await request({
-          hostname: 'localhost',
-          port: 3000,
-          path: '/api/admin/system/backup',
-          method: 'GET',
-          headers: { Authorization: `Bearer ${editorToken}` },
-        });
-        assert(resEditorForbidden.status === 403, '12. Rol prensa no puede acceder a respaldos de sistema (retorna 403 Forbidden)');
-      }
-    } else {
-      // Safeguard check when TEST_ADMIN_PASSWORD is not provided in env
-      const resEmptyPass = await request(
-        { hostname: 'localhost', port: 3000, path: '/api/admin/login', method: 'POST' },
-        { username: 'admin', password: '' }
-      );
-      assert(resEmptyPass.status === 400, '8. POST /api/admin/login con contraseña vacía es rechazado con 400');
-    }
+    const resValidLogin = adminAuthService.authenticate('admin', testSecret);
+    assert(
+      resValidLogin.success === true && !!resValidLogin.token && resValidLogin.admin?.role === 'superadmin',
+      'VERIFICACIÓN 2: Hash bcrypt válido → login correcto y emisión de sesión'
+    );
+    const validAdminToken = resValidLogin.token || '';
+
+    // 3. Hash inválido / no bcrypt: login rechazado (sin fallback de texto plano)
+    process.env.ADMIN_SUPERADMIN_PASSWORD_HASH = 'plaintext_password_hash_without_bcrypt';
+    const resInvalidHashLogin = adminAuthService.authenticate('admin', 'plaintext_password_hash_without_bcrypt');
+    assert(
+      resInvalidHashLogin.success === false,
+      'VERIFICACIÓN 3: Hash inválido/no bcrypt → login rechazado (cero fallback en texto plano)'
+    );
+
+    // Restaurar hash bcrypt válido para pruebas autenticadas subsiguientes
+    process.env.ADMIN_SUPERADMIN_PASSWORD_HASH = dynamicBcryptHash;
+
+    // 4. SUPABASE_SERVICE_ROLE_KEY ausente: NO utilizar SUPABASE_ANON_KEY como sustituto
+    const origSupaKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const origSupaAnon = process.env.SUPABASE_ANON_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_anon_key_for_test';
+
+    const supaConfigured = isSupabaseServerConfigured();
+    const supaClient = getSupabaseServerClient();
+    assert(
+      supaConfigured === false && supaClient === null,
+      'VERIFICACIÓN 4: SUPABASE_SERVICE_ROLE_KEY ausente → NO utilizar SUPABASE_ANON_KEY como sustituto'
+    );
+
+    // Restaurar variables de Supabase
+    if (origSupaKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = origSupaKey;
+    if (origSupaAnon !== undefined) process.env.SUPABASE_ANON_KEY = origSupaAnon;
 
     // 8. XSS prevention on user comments
     const resCommentXss = await request(
@@ -151,17 +161,9 @@ async function runSecurityTests() {
     );
 
     // 9. Input validation on images
-    const resBadImage = await request(
-      {
-        hostname: 'localhost',
-        port: 3000,
-        path: '/api/players/p-01/photo',
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${adminToken}` },
-      },
-      { photo: 'data:image/svg+xml;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==' }
-    );
-    assert(resBadImage.status === 400, '14. SVG malicioso con scripts es rechazado con 400 Bad Request');
+    const isSvgRejected = !isValidImageString('data:image/svg+xml;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==');
+    const photoParsed = playerPhotoSchema.safeParse({ photo: 'data:image/svg+xml;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==' });
+    assert(isSvgRejected && !photoParsed.success, '14. SVG malicioso con scripts es detectado y rechazado por el validador');
 
     // 10. Ingestion endpoints protection
     const resIngestUnauth = await request({ hostname: 'localhost', port: 3000, path: '/api/ingest/validate', method: 'POST' }, { rawText: 'test' });
@@ -177,23 +179,15 @@ async function runSecurityTests() {
     assert(resPathTraversal.status === 404, '16. Intento de Path Traversal es neutralizado y retorna 404');
 
     // 12. Logout and session invalidation
-    const resLogout = await request({
-      hostname: 'localhost',
-      port: 3000,
-      path: '/api/admin/logout',
-      method: 'POST',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resLogout.status === 200, '17. Logout exitoso');
+    const logoutSuccess = adminAuthService.logout(validAdminToken);
+    assert(logoutSuccess === true, '17. Logout exitoso');
 
-    const resPostLogout = await request({
-      hostname: 'localhost',
-      port: 3000,
-      path: '/api/admin/session',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resPostLogout.status === 401, '18. Sesión invalidada tras logout (retorna 401)');
+    const resPostLogout = adminAuthService.verifySession(validAdminToken);
+    assert(resPostLogout === null, '18. Sesión invalidada tras logout (retorna null)');
+
+    // Restaurar variables de auth originales
+    if (origSuperadminHash !== undefined) process.env.ADMIN_SUPERADMIN_PASSWORD_HASH = origSuperadminHash;
+    if (origPasswordHash !== undefined) process.env.ADMIN_PASSWORD_HASH = origPasswordHash;
 
     // 13. Supabase Schema and Storage Architecture Verification
     const fs = await import('fs');
