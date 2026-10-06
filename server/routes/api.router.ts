@@ -6,17 +6,47 @@ import { adminAuthService } from '../services/admin-auth.service.ts';
 import { fcmServer } from '../services/fcm.service.ts';
 import { requireAuth, AuthRequest } from '../../src/middleware/auth.ts';
 import { getOrCreateUser, getUserByUid } from '../../src/db/users.ts';
+import {
+  adminLoginLimiter,
+  commentsLimiter,
+  fcmRegisterLimiter,
+  sensitiveWriteLimiter,
+} from '../middleware/rate-limiter.ts';
+import {
+  teamLogoSchema,
+  playerPhotoSchema,
+  commentSchema,
+  fcmRegisterSchema,
+  fcmSubscribeGameSchema,
+} from '../utils/validation.ts';
 
 export const apiRouter = Router();
 
-// Middleware to authenticate admin requests
-const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+// Helper to extract session token from Authorization header, x-admin-token header, or HttpOnly cookie
+export const getRequestToken = (req: Request): string | undefined => {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.substring(7)
-    : (req.headers['x-admin-token'] as string);
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  const customHeader = req.headers['x-admin-token'] as string;
+  if (customHeader) {
+    return customHeader.trim();
+  }
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    const match = cookieHeader.match(/baseball_admin_token=([^;]+)/);
+    if (match) return decodeURIComponent(match[1]).trim();
+  }
+  return undefined;
+};
 
-  const admin = adminAuthService.verifySession(token);
+// Middleware to authenticate admin requests
+export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  const token = getRequestToken(req);
+  let admin = adminAuthService.verifySession(token);
+  if (!admin && token && token.includes('.')) {
+    admin = await adminAuthService.verifySupabaseToken(token);
+  }
   if (!admin) {
     return res.status(401).json({
       success: false,
@@ -29,12 +59,34 @@ const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+// Middleware to authorize specific administrative roles
+export const requireRole = (...allowedRoles: ('superadmin' | 'official_scorer' | 'editor')[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const admin = (req as any).adminUser;
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        error: 'Acceso no autorizado. Debe autenticarse previamente.',
+      });
+    }
+
+    if (!adminAuthService.hasRole(admin, allowedRoles)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Permisos insuficientes. Su rol no tiene autorización para ejecutar esta acción.',
+      });
+    }
+
+    next();
+  };
+};
+
 // ==========================================
 // ADMIN AUTHENTICATION & SECURITY ENDPOINTS
 // ==========================================
 
-apiRouter.post('/admin/login', (req: Request, res: Response) => {
-  const { username, password } = req.body;
+apiRouter.post('/admin/login', adminLoginLimiter, (req: Request, res: Response) => {
+  const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({
       success: false,
@@ -47,15 +99,22 @@ apiRouter.post('/admin/login', (req: Request, res: Response) => {
     return res.status(401).json(result);
   }
 
+  // Set secure HttpOnly cookie while preserving JSON token response for complete client compatibility
+  if (result.token) {
+    res.cookie('baseball_admin_token', result.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  }
+
   res.json(result);
 });
 
 apiRouter.get('/admin/session', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.substring(7)
-    : (req.headers['x-admin-token'] as string);
-
+  const token = getRequestToken(req);
   const admin = adminAuthService.verifySession(token);
   if (!admin) {
     return res.status(401).json({ valid: false, error: 'Sesión inválida o expirada' });
@@ -65,11 +124,8 @@ apiRouter.get('/admin/session', (req: Request, res: Response) => {
 });
 
 apiRouter.post('/admin/logout', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.substring(7)
-    : (req.headers['x-admin-token'] as string);
-
+  const token = getRequestToken(req);
+  res.clearCookie('baseball_admin_token', { path: '/' });
   const success = adminAuthService.logout(token);
   res.json({ success });
 });
@@ -79,14 +135,14 @@ apiRouter.get('/admin/overview', requireAdmin, (req: Request, res: Response) => 
   res.json(overview);
 });
 
-apiRouter.get('/admin/audit-logs', requireAdmin, (req: Request, res: Response) => {
+apiRouter.get('/admin/audit-logs', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
   const logs = adminAuthService.getAuditLogs(limit);
   res.json(logs);
 });
 
 // Admin Game Management
-apiRouter.post('/admin/games', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/games', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const newGame = baseballRepo.createGame(req.body);
   adminAuthService.addAuditLog(
@@ -98,7 +154,7 @@ apiRouter.post('/admin/games', requireAdmin, (req: Request, res: Response) => {
   res.status(201).json(newGame);
 });
 
-apiRouter.post('/admin/games/series', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/games/series', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const games = baseballRepo.createGameSeries(req.body);
   if (games.length > 0) {
@@ -112,7 +168,7 @@ apiRouter.post('/admin/games/series', requireAdmin, (req: Request, res: Response
   res.status(201).json(games);
 });
 
-apiRouter.put('/admin/games/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.put('/admin/games/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const gameId = req.params.id;
   const existingGame = baseballRepo.getGameById(gameId);
@@ -166,7 +222,7 @@ apiRouter.put('/admin/games/:id', requireAdmin, (req: Request, res: Response) =>
   res.json(updatedGame);
 });
 
-apiRouter.delete('/admin/games/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.delete('/admin/games/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const success = baseballRepo.deleteGame(req.params.id);
   if (!success) {
@@ -182,7 +238,7 @@ apiRouter.delete('/admin/games/:id', requireAdmin, (req: Request, res: Response)
 });
 
 // Admin Player Management
-apiRouter.post('/admin/players', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/players', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   try {
     const admin = (req as any).adminUser;
     const player = baseballRepo.createPlayer(req.body);
@@ -198,7 +254,7 @@ apiRouter.post('/admin/players', requireAdmin, (req: Request, res: Response) => 
   }
 });
 
-apiRouter.put('/admin/players/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.put('/admin/players/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   try {
     const admin = (req as any).adminUser;
     const player = baseballRepo.updatePlayer(req.params.id, req.body);
@@ -217,7 +273,7 @@ apiRouter.put('/admin/players/:id', requireAdmin, (req: Request, res: Response) 
   }
 });
 
-apiRouter.post('/admin/players/import', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/players/import', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const rawList = Array.isArray(req.body.players) ? req.body.players : Array.isArray(req.body) ? req.body : [];
   if (rawList.length === 0) {
@@ -239,7 +295,7 @@ apiRouter.post('/admin/players/import', requireAdmin, (req: Request, res: Respon
 });
 
 // Import Historical Stats (Batting and Pitching across seasons and players)
-apiRouter.post('/admin/stats/import', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/stats/import', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const rawPayload = req.body;
   if (!rawPayload || (Array.isArray(rawPayload) && rawPayload.length === 0)) {
@@ -261,7 +317,7 @@ apiRouter.post('/admin/stats/import', requireAdmin, (req: Request, res: Response
   });
 });
 
-apiRouter.delete('/admin/players/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.delete('/admin/players/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const success = baseballRepo.deletePlayer(req.params.id);
   if (!success) {
@@ -277,7 +333,7 @@ apiRouter.delete('/admin/players/:id', requireAdmin, (req: Request, res: Respons
 });
 
 // Bulk Player Operations
-apiRouter.post('/admin/players/bulk-delete', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/players/bulk-delete', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const ids: string[] = Array.isArray(req.body.ids) ? req.body.ids : [];
   if (ids.length === 0) {
@@ -299,7 +355,7 @@ apiRouter.post('/admin/players/bulk-delete', requireAdmin, (req: Request, res: R
   });
 });
 
-apiRouter.post('/admin/players/bulk-update', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/players/bulk-update', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const ids: string[] = Array.isArray(req.body.ids) ? req.body.ids : [];
   const updates = req.body.updates;
@@ -323,7 +379,7 @@ apiRouter.post('/admin/players/bulk-update', requireAdmin, (req: Request, res: R
 });
 
 // Admin News Management
-apiRouter.post('/admin/news', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/news', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const article = baseballRepo.createNews(req.body);
   adminAuthService.addAuditLog(
@@ -335,7 +391,7 @@ apiRouter.post('/admin/news', requireAdmin, (req: Request, res: Response) => {
   res.status(201).json(article);
 });
 
-apiRouter.put('/admin/news/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.put('/admin/news/:id', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const updated = baseballRepo.updateNews(req.params.id, req.body);
   if (!updated) {
@@ -350,7 +406,7 @@ apiRouter.put('/admin/news/:id', requireAdmin, (req: Request, res: Response) => 
   res.json(updated);
 });
 
-apiRouter.delete('/admin/news/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.delete('/admin/news/:id', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const success = baseballRepo.deleteNews(req.params.id);
   if (!success) {
@@ -366,7 +422,7 @@ apiRouter.delete('/admin/news/:id', requireAdmin, (req: Request, res: Response) 
 });
 
 // System Reset or Clear Data
-apiRouter.post('/admin/system/reset-demo', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/system/reset-demo', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   baseballRepo.clearAllData();
   adminAuthService.addAuditLog(
@@ -378,7 +434,7 @@ apiRouter.post('/admin/system/reset-demo', requireAdmin, (req: Request, res: Res
   res.json({ success: true, message: 'Todos los datos de prueba han sido eliminados.' });
 });
 
-apiRouter.post('/admin/system/clear-all', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/system/clear-all', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   baseballRepo.clearAllData();
   adminAuthService.addAuditLog(
@@ -391,7 +447,7 @@ apiRouter.post('/admin/system/clear-all', requireAdmin, (req: Request, res: Resp
 });
 
 // Database Persistence Status and Manual Sync
-apiRouter.get('/admin/system/database-status', requireAdmin, (req: Request, res: Response) => {
+apiRouter.get('/admin/system/database-status', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const info = baseballRepo.getDatabaseInfo();
   res.json({
     success: true,
@@ -400,7 +456,7 @@ apiRouter.get('/admin/system/database-status', requireAdmin, (req: Request, res:
   });
 });
 
-apiRouter.post('/admin/system/persist', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/system/persist', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   baseballRepo.saveToDisk();
   adminAuthService.addAuditLog(
@@ -418,7 +474,7 @@ apiRouter.post('/admin/system/persist', requireAdmin, (req: Request, res: Respon
 });
 
 // Full Database Export Backup
-apiRouter.get('/admin/system/backup', requireAdmin, (req: Request, res: Response) => {
+apiRouter.get('/admin/system/backup', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const db = baseballRepo.getFullDatabase();
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', 'attachment; filename="baseball_hub_backup.json"');
@@ -426,7 +482,7 @@ apiRouter.get('/admin/system/backup', requireAdmin, (req: Request, res: Response
 });
 
 // Full Database Restore from Backup
-apiRouter.post('/admin/system/restore', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/system/restore', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   try {
     const payload = req.body;
@@ -444,7 +500,7 @@ apiRouter.post('/admin/system/restore', requireAdmin, (req: Request, res: Respon
 });
 
 // Client Automatic Sync Backup (Syncs client's offline / local changes to server if needed)
-apiRouter.post('/admin/system/sync-client', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/admin/system/sync-client', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   try {
     const { players, teams } = req.body;
@@ -481,6 +537,17 @@ apiRouter.get('/events/score-changes', (req: Request, res: Response) => {
 
 // Incoming Webhook for Score Updates (from external sports feeds or simulators)
 apiRouter.post('/webhooks/score-update', (req: Request, res: Response) => {
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (webhookSecret) {
+    const providedSecret = req.headers['x-webhook-secret'] || req.headers['authorization'];
+    if (providedSecret !== webhookSecret && providedSecret !== `Bearer ${webhookSecret}`) {
+      const token = getRequestToken(req);
+      const admin = adminAuthService.verifySession(token);
+      if (!admin) {
+        return res.status(401).json({ error: 'Acceso no autorizado al webhook de marcadores.' });
+      }
+    }
+  }
   const result = notificationService.handleIncomingWebhook(req.body);
   if (!result.success) {
     return res.status(400).json(result);
@@ -511,7 +578,7 @@ apiRouter.get('/notifications/history', (req: Request, res: Response) => {
 });
 
 // Test Notification Trigger
-apiRouter.post('/notifications/test', (req: Request, res: Response) => {
+apiRouter.post('/notifications/test', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const testEvent = notificationService.generateTestNotification();
   res.json({
     success: true,
@@ -569,11 +636,12 @@ apiRouter.get('/teams/:id', (req: Request, res: Response) => {
 
 // Update Team Logo directly
 const handleUpdateTeamLogo = (req: Request, res: Response) => {
-  const { logo, primaryColor } = req.body;
-  if (!logo || typeof logo !== 'string') {
-    return res.status(400).json({ error: 'Se requiere el logo en formato base64, emoji o URL.' });
+  const validation = teamLogoSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de logo inválidos.' });
   }
 
+  const { logo, primaryColor } = validation.data;
   const updates: any = { logo };
   if (primaryColor) {
     updates.primaryColor = primaryColor;
@@ -584,12 +652,7 @@ const handleUpdateTeamLogo = (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Equipo no encontrado.' });
   }
 
-  // Audit update
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.substring(7)
-    : (req.headers['x-admin-token'] as string);
-  const admin = adminAuthService.verifySession(token);
+  const admin = (req as any).adminUser;
   adminAuthService.addAuditLog(
     admin ? admin.username : 'Usuario Web / Gestor',
     'Actualización de Logo de Equipo',
@@ -605,77 +668,85 @@ const handleUpdateTeamLogo = (req: Request, res: Response) => {
   });
 };
 
-apiRouter.put('/teams/:id/logo', handleUpdateTeamLogo);
-apiRouter.post('/teams/:id/logo', handleUpdateTeamLogo);
+apiRouter.put('/teams/:id/logo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeamLogo);
+apiRouter.post('/teams/:id/logo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeamLogo);
+apiRouter.put('/admin/teams/:id/logo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeamLogo);
+apiRouter.post('/admin/teams/:id/logo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeamLogo);
 
 // Client-Server Bidirectional User Data Synchronization
-apiRouter.post('/sync-user-data', (req: Request, res: Response) => {
-  try {
-    const { teamLogos, customPlayers, customTeams, deletedPlayerIds } = req.body;
-    let logosCount = 0;
-    let playersCount = 0;
-    let teamsCount = 0;
+apiRouter.post(
+  '/sync-user-data',
+  requireAdmin,
+  requireRole('superadmin', 'official_scorer'),
+  sensitiveWriteLimiter,
+  (req: Request, res: Response) => {
+    try {
+      const { teamLogos, customPlayers, customTeams, deletedPlayerIds } = req.body;
+      let logosCount = 0;
+      let playersCount = 0;
+      let teamsCount = 0;
 
-    // 1. Sync custom team logos
-    if (teamLogos && typeof teamLogos === 'object') {
-      for (const [teamId, logoData] of Object.entries(teamLogos as Record<string, any>)) {
-        if (logoData && logoData.logo) {
-          const updated = baseballRepo.updateTeam(teamId, {
-            logo: logoData.logo,
-            colors: logoData.primaryColor
-              ? { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' }
-              : undefined,
-          });
-          if (updated) logosCount++;
+      // 1. Sync custom team logos
+      if (teamLogos && typeof teamLogos === 'object') {
+        for (const [teamId, logoData] of Object.entries(teamLogos as Record<string, any>)) {
+          if (logoData && logoData.logo) {
+            const updated = baseballRepo.updateTeam(teamId, {
+              logo: logoData.logo,
+              colors: logoData.primaryColor
+                ? { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' }
+                : undefined,
+            });
+            if (updated) logosCount++;
+          }
         }
       }
-    }
 
-    // 2. Sync custom teams
-    if (Array.isArray(customTeams)) {
-      for (const t of customTeams) {
-        if (t && t.id) {
-          const existing = baseballRepo.getTeamById(t.id);
-          if (!existing) {
-            try {
-              baseballRepo.createTeam(t);
-              teamsCount++;
-            } catch {
-              // Already exists or invalid
+      // 2. Sync custom teams
+      if (Array.isArray(customTeams)) {
+        for (const t of customTeams) {
+          if (t && t.id) {
+            const existing = baseballRepo.getTeamById(t.id);
+            if (!existing) {
+              try {
+                baseballRepo.createTeam(t);
+                teamsCount++;
+              } catch {
+                // Already exists or invalid
+              }
             }
           }
         }
       }
-    }
 
-    // 3. Sync custom players
-    if (Array.isArray(customPlayers) && customPlayers.length > 0) {
-      const importRes = baseballRepo.importPlayers(customPlayers);
-      playersCount = importRes.importedCount;
-    }
-
-    // 4. Sync deleted players
-    if (Array.isArray(deletedPlayerIds)) {
-      for (const pid of deletedPlayerIds) {
-        baseballRepo.deletePlayer(pid);
+      // 3. Sync custom players
+      if (Array.isArray(customPlayers) && customPlayers.length > 0) {
+        const importRes = baseballRepo.importPlayers(customPlayers);
+        playersCount = importRes.importedCount;
       }
+
+      // 4. Sync deleted players
+      if (Array.isArray(deletedPlayerIds)) {
+        for (const pid of deletedPlayerIds) {
+          baseballRepo.deletePlayer(pid);
+        }
+      }
+
+      baseballRepo.saveToDisk();
+
+      res.json({
+        success: true,
+        message: 'Datos de usuario sincronizados exitosamente con la base de datos persistente.',
+        synced: {
+          logos: logosCount,
+          players: playersCount,
+          teams: teamsCount,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Error al sincronizar datos de usuario.' });
     }
-
-    baseballRepo.saveToDisk();
-
-    res.json({
-      success: true,
-      message: 'Datos de usuario sincronizados exitosamente con la base de datos persistente.',
-      synced: {
-        logos: logosCount,
-        players: playersCount,
-        teams: teamsCount,
-      },
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Error al sincronizar datos de usuario.' });
   }
-});
+);
 
 const handleUpdateTeam = (req: Request, res: Response) => {
   try {
@@ -684,11 +755,7 @@ const handleUpdateTeam = (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Equipo no encontrado.' });
     }
 
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : (req.headers['x-admin-token'] as string);
-    const admin = adminAuthService.verifySession(token);
+    const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
         admin.username,
@@ -704,18 +771,14 @@ const handleUpdateTeam = (req: Request, res: Response) => {
   }
 };
 
-apiRouter.put('/teams/:id', requireAdmin, handleUpdateTeam);
-apiRouter.put('/admin/teams/:id', requireAdmin, handleUpdateTeam);
+apiRouter.put('/teams/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeam);
+apiRouter.put('/admin/teams/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeam);
 
 // Create Team
 const handleCreateTeam = (req: Request, res: Response) => {
   try {
     const newTeam = baseballRepo.createTeam(req.body);
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : (req.headers['x-admin-token'] as string);
-    const admin = adminAuthService.verifySession(token);
+    const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
         admin.username,
@@ -730,18 +793,14 @@ const handleCreateTeam = (req: Request, res: Response) => {
   }
 };
 
-apiRouter.post('/teams', requireAdmin, handleCreateTeam);
-apiRouter.post('/admin/teams', requireAdmin, handleCreateTeam);
+apiRouter.post('/teams', requireAdmin, requireRole('superadmin', 'official_scorer'), handleCreateTeam);
+apiRouter.post('/admin/teams', requireAdmin, requireRole('superadmin', 'official_scorer'), handleCreateTeam);
 
 // Seed 16 Official Cuban Series Teams
 const handleSeed16Teams = (req: Request, res: Response) => {
   try {
     const teams = baseballRepo.seed16NationalSeriesTeams();
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : (req.headers['x-admin-token'] as string);
-    const admin = adminAuthService.verifySession(token);
+    const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
         admin.username,
@@ -760,18 +819,14 @@ const handleSeed16Teams = (req: Request, res: Response) => {
   }
 };
 
-apiRouter.post('/teams/seed-16', requireAdmin, handleSeed16Teams);
-apiRouter.post('/admin/teams/seed-16', requireAdmin, handleSeed16Teams);
+apiRouter.post('/teams/seed-16', requireAdmin, requireRole('superadmin'), handleSeed16Teams);
+apiRouter.post('/admin/teams/seed-16', requireAdmin, requireRole('superadmin'), handleSeed16Teams);
 
 // Delete Team
 const handleDeleteTeam = (req: Request, res: Response) => {
   try {
     const result = baseballRepo.deleteTeam(req.params.id);
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : (req.headers['x-admin-token'] as string);
-    const admin = adminAuthService.verifySession(token);
+    const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
         admin.username,
@@ -790,8 +845,8 @@ const handleDeleteTeam = (req: Request, res: Response) => {
   }
 };
 
-apiRouter.delete('/teams/:id', requireAdmin, handleDeleteTeam);
-apiRouter.delete('/admin/teams/:id', requireAdmin, handleDeleteTeam);
+apiRouter.delete('/teams/:id', requireAdmin, requireRole('superadmin'), handleDeleteTeam);
+apiRouter.delete('/admin/teams/:id', requireAdmin, requireRole('superadmin'), handleDeleteTeam);
 
 // Players
 apiRouter.get('/players', (req: Request, res: Response) => {
@@ -861,7 +916,7 @@ apiRouter.get('/teams/:teamId/players/:playerId', (req: Request, res: Response) 
 });
 
 // Manage Player Historical Batting Stats
-apiRouter.post('/players/:id/stats/batting', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/players/:id/stats/batting', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
@@ -872,7 +927,7 @@ apiRouter.post('/players/:id/stats/batting', requireAdmin, (req: Request, res: R
 });
 
 // Manage Player Historical Pitching Stats
-apiRouter.post('/players/:id/stats/pitching', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/players/:id/stats/pitching', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
@@ -883,7 +938,7 @@ apiRouter.post('/players/:id/stats/pitching', requireAdmin, (req: Request, res: 
 });
 
 // Delete Player Historical Stat
-apiRouter.delete('/players/:id/stats/:statId', requireAdmin, (req: Request, res: Response) => {
+apiRouter.delete('/players/:id/stats/:statId', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
@@ -895,7 +950,7 @@ apiRouter.delete('/players/:id/stats/:statId', requireAdmin, (req: Request, res:
 });
 
 // Bulk Import Historical Stats specifically for one player
-apiRouter.post('/players/:id/stats/import', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/players/:id/stats/import', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
@@ -921,9 +976,9 @@ apiRouter.post('/players/:id/stats/import', requireAdmin, (req: Request, res: Re
 
 // Update Player Photo directly (from profile modal or admin tools)
 const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
-  const { photo } = req.body;
-  if (!photo || typeof photo !== 'string') {
-    return res.status(400).json({ error: 'Se requiere la imagen en formato base64 o URL válida.' });
+  const validation = playerPhotoSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de fotografía inválidos.' });
   }
 
   const playerId = (req.params.id || '').trim();
@@ -931,17 +986,14 @@ const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Identificador único (ID) del jugador es requerido para la actualización.' });
   }
 
+  const { photo } = validation.data;
   const updatedPlayer = baseballRepo.updatePlayer(playerId, { photo });
   if (!updatedPlayer) {
     return res.status(404).json({ error: `Jugador no encontrado para el ID: ${playerId}` });
   }
 
   // Audit if admin session is present
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.substring(7)
-    : (req.headers['x-admin-token'] as string);
-  const admin = adminAuthService.verifySession(token);
+  const admin = (req as any).adminUser;
   if (admin) {
     adminAuthService.addAuditLog(
       admin.username,
@@ -959,10 +1011,10 @@ const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
   });
 };
 
-apiRouter.put('/players/:id/photo', handleUpdatePlayerPhoto);
-apiRouter.post('/players/:id/photo', handleUpdatePlayerPhoto);
-apiRouter.put('/admin/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
-apiRouter.post('/admin/players/:id/photo', requireAdmin, handleUpdatePlayerPhoto);
+apiRouter.put('/players/:id/photo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdatePlayerPhoto);
+apiRouter.post('/players/:id/photo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdatePlayerPhoto);
+apiRouter.put('/admin/players/:id/photo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdatePlayerPhoto);
+apiRouter.post('/admin/players/:id/photo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdatePlayerPhoto);
 
 // Games
 apiRouter.get('/games', (req: Request, res: Response) => {
@@ -1002,7 +1054,7 @@ apiRouter.get('/matchup/:id', (req: Request, res: Response) => {
   res.json(matchup);
 });
 
-apiRouter.post('/games/simulate-run', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/games/simulate-run', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const { gameId, side, runs } = req.body || {};
   const result = baseballRepo.simulateLiveScoreChange(gameId, side, runs);
@@ -1095,15 +1147,13 @@ apiRouter.get('/news/:slug/comments', (req: Request, res: Response) => {
   res.json(comments);
 });
 
-apiRouter.post('/news/:slug/comments', (req: Request, res: Response) => {
-  const { authorName, favoriteTeam, content } = req.body || {};
-  if (!content || typeof content !== 'string' || content.trim().length < 3) {
-    return res.status(400).json({ error: 'El comentario debe contener al menos 3 caracteres.' });
-  }
-  if (content.length > 800) {
-    return res.status(400).json({ error: 'El comentario no puede exceder los 800 caracteres.' });
+apiRouter.post('/news/:slug/comments', commentsLimiter, (req: Request, res: Response) => {
+  const validation = commentSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de comentario inválidos.' });
   }
 
+  const { authorName, favoriteTeam, content } = validation.data;
   const comment = baseballRepo.addComment(req.params.slug, {
     authorName,
     favoriteTeam,
@@ -1114,7 +1164,7 @@ apiRouter.post('/news/:slug/comments', (req: Request, res: Response) => {
 });
 
 // Delete comment (Administrative moderation only)
-apiRouter.delete('/news/comments/:id', requireAdmin, (req: Request, res: Response) => {
+apiRouter.delete('/news/comments/:id', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const success = baseballRepo.deleteComment(req.params.id);
   if (!success) {
@@ -1132,7 +1182,7 @@ apiRouter.delete('/news/comments/:id', requireAdmin, (req: Request, res: Respons
 });
 
 // Like / Upvote a comment
-apiRouter.post('/news/comments/:id/like', (req: Request, res: Response) => {
+apiRouter.post('/news/comments/:id/like', sensitiveWriteLimiter, (req: Request, res: Response) => {
   const result = baseballRepo.likeComment(req.params.id);
   if (!result.success) {
     return res.status(404).json({ error: 'Comentario no encontrado.' });
@@ -1154,7 +1204,7 @@ apiRouter.get('/search', (req: Request, res: Response) => {
 });
 
 // Data Ingestion & Audit Tool (Administrative access only)
-apiRouter.post('/ingest/validate', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/ingest/validate', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const { rawText, format } = req.body;
   if (!rawText) {
     return res.status(400).json({ error: 'rawText es requerido' });
@@ -1163,7 +1213,7 @@ apiRouter.post('/ingest/validate', requireAdmin, (req: Request, res: Response) =
   res.json(summary);
 });
 
-apiRouter.post('/ingest/commit', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/ingest/commit', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const { records, username } = req.body;
   if (!Array.isArray(records) || records.length === 0) {
@@ -1211,17 +1261,18 @@ apiRouter.get('/users/me', requireAuth, async (req: AuthRequest, res: Response) 
 // ==========================================
 
 // Register or update device token with favorite teams and subscribed games
-apiRouter.post('/notifications/fcm/register', (req: Request, res: Response) => {
+apiRouter.post('/notifications/fcm/register', fcmRegisterLimiter, (req: Request, res: Response) => {
   try {
-    const { token, favoriteTeamIds = [], subscribedGameIds = [], userAgent } = req.body;
-    if (!token || typeof token !== 'string') {
-      return res.status(400).json({ error: 'Token FCM requerido' });
+    const validation = fcmRegisterSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de registro FCM inválidos' });
     }
+    const { token, favoriteTeamIds, subscribedGameIds, userAgent } = validation.data;
 
     const subscriber = fcmServer.registerDevice(
       token,
-      Array.isArray(favoriteTeamIds) ? favoriteTeamIds : [],
-      Array.isArray(subscribedGameIds) ? subscribedGameIds : [],
+      favoriteTeamIds,
+      subscribedGameIds,
       undefined,
       userAgent || req.headers['user-agent']
     );
@@ -1240,12 +1291,13 @@ apiRouter.post('/notifications/fcm/register', (req: Request, res: Response) => {
 });
 
 // Update specific game subscription
-apiRouter.post('/notifications/fcm/subscribe-game', (req: Request, res: Response) => {
+apiRouter.post('/notifications/fcm/subscribe-game', sensitiveWriteLimiter, (req: Request, res: Response) => {
   try {
-    const { token, gameId, subscribed } = req.body;
-    if (!token || !gameId) {
-      return res.status(400).json({ error: 'Token y gameId requeridos' });
+    const validation = fcmSubscribeGameSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de suscripción requeridos' });
     }
+    const { token, gameId, subscribed } = validation.data;
     const subscriber = fcmServer.updateGameSubscription(token, String(gameId), Boolean(subscribed));
     res.json({
       success: true,
@@ -1257,11 +1309,11 @@ apiRouter.post('/notifications/fcm/subscribe-game', (req: Request, res: Response
 });
 
 // Unregister device token
-apiRouter.post('/notifications/fcm/unregister', (req: Request, res: Response) => {
+apiRouter.post('/notifications/fcm/unregister', sensitiveWriteLimiter, (req: Request, res: Response) => {
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: 'Token FCM requerido' });
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    if (!token || token.length < 10 || token.length > 600) {
+      return res.status(400).json({ error: 'Token FCM requerido y válido' });
     }
     const success = fcmServer.unregisterDevice(token);
     res.json({ success, totalDevices: fcmServer.getSubscribersCount() });
@@ -1271,12 +1323,13 @@ apiRouter.post('/notifications/fcm/unregister', (req: Request, res: Response) =>
 });
 
 // Send a test push notification to a device
-apiRouter.post('/notifications/fcm/test', async (req: Request, res: Response) => {
+apiRouter.post('/notifications/fcm/test', sensitiveWriteLimiter, async (req: Request, res: Response) => {
   try {
-    const { token, teamId } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: 'Token FCM requerido' });
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    if (!token || token.length < 10 || token.length > 600) {
+      return res.status(400).json({ error: 'Token FCM requerido y válido' });
     }
+    const teamId = typeof req.body?.teamId === 'string' ? req.body.teamId.trim() : undefined;
 
     let teamName = 'Cocodrilos de Matanzas';
     if (teamId) {

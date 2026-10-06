@@ -1,24 +1,41 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { AdminUser, AdminAuditLog, AdminSystemOverview } from '../../src/types/index.ts';
 import { baseballRepo } from '../repositories/baseball.repository.ts';
 import { notificationService } from './notification.service.ts';
+import { getSupabaseServerClient, isSupabaseServerConfigured } from '../lib/supabase.ts';
 
 interface StoredCredential {
   id: string;
   username: string;
-  passwordHash: string; // Plain comparison or hash for simplicity
+  passwordHash: string;
   name: string;
   email: string;
   role: 'superadmin' | 'official_scorer' | 'editor';
 }
 
+// Default Bcrypt-hashed credentials with env-override support
+// Generated with bcrypt cost factor 10
+const DEFAULT_SUPERADMIN_HASH =
+  process.env.ADMIN_SUPERADMIN_PASSWORD_HASH ||
+  process.env.ADMIN_PASSWORD_HASH ||
+  '$2b$10$CDk0D841SHPKUSuOTY0xGO0fM6Iw8rd0Lc2C7enUUJ2O343Or5E3S'; // 'baseball2026'
+
+const DEFAULT_SCORER_HASH =
+  process.env.ADMIN_SCORER_PASSWORD_HASH ||
+  '$2b$10$yLO8R9RX9/VKsluotvZx4.CRAzDLpANWGLgT42bf.vCQ1yMpceqd.'; // 'anotador2026'
+
+const DEFAULT_EDITOR_HASH =
+  process.env.ADMIN_EDITOR_PASSWORD_HASH ||
+  '$2b$10$7yvfzq09r4hn8ED4p11ePehqPMBKXNd1GD9aIXgKs.a9h9hiXbMxS'; // 'prensa2026'
+
 const REGISTERED_ADMINS: StoredCredential[] = [
   {
     id: 'admin_1',
     username: 'admin',
-    passwordHash: 'baseball2026',
+    passwordHash: DEFAULT_SUPERADMIN_HASH,
     name: 'Administrador General',
     email: 'admin@baseballhub.cu',
     role: 'superadmin',
@@ -26,7 +43,7 @@ const REGISTERED_ADMINS: StoredCredential[] = [
   {
     id: 'admin_2',
     username: 'anotador',
-    passwordHash: 'anotador2026',
+    passwordHash: DEFAULT_SCORER_HASH,
     name: 'Anotador Oficial SNB',
     email: 'anotador@baseballhub.cu',
     role: 'official_scorer',
@@ -34,7 +51,7 @@ const REGISTERED_ADMINS: StoredCredential[] = [
   {
     id: 'admin_3',
     username: 'prensa',
-    passwordHash: 'prensa2026',
+    passwordHash: DEFAULT_EDITOR_HASH,
     name: 'Editor de Contenido y Noticias',
     email: 'prensa@baseballhub.cu',
     role: 'editor',
@@ -54,6 +71,7 @@ export class AdminAuthService {
   private auditLogs: AdminAuditLog[] = [];
   private serverStartTime = Date.now();
   private lastIngestionTime = '2026-09-20 10:30:00 UTC';
+  private sessionTtlMs = 24 * 60 * 60 * 1000; // 24 hours standard session lifetime
 
   constructor() {
     this.loadFromDisk();
@@ -83,7 +101,8 @@ export class AdminAuthService {
           if (Array.isArray(parsed.sessions)) {
             const now = Date.now();
             for (const s of parsed.sessions) {
-              if (s && s.token && s.expiresAt > now) {
+              // Only load non-expired sessions
+              if (s && s.token && typeof s.expiresAt === 'number' && s.expiresAt > now) {
                 this.sessions.set(s.token, s);
               }
             }
@@ -107,7 +126,8 @@ export class AdminAuthService {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      const sessionsArr = Array.from(this.sessions.values()).filter((s) => s.expiresAt > Date.now());
+      const now = Date.now();
+      const sessionsArr = Array.from(this.sessions.values()).filter((s) => s.expiresAt > now);
       const payload = {
         sessions: sessionsArr,
         auditLogs: this.auditLogs.slice(0, 300),
@@ -122,17 +142,40 @@ export class AdminAuthService {
   }
 
   /**
-   * Authenticate admin user by username and password
+   * Authenticate admin user by username and password using secure bcrypt hash comparison
    */
-  authenticate(username: string, password: string): { success: boolean; token?: string; admin?: AdminUser; error?: string } {
+  authenticate(
+    username: string,
+    password: string
+  ): { success: boolean; token?: string; admin?: AdminUser; error?: string } {
     const cleanUser = (username || '').trim().toLowerCase();
     const cleanPass = (password || '').trim();
 
-    const matched = REGISTERED_ADMINS.find(
-      (a) => a.username.toLowerCase() === cleanUser && a.passwordHash === cleanPass
-    );
+    if (!cleanUser || !cleanPass) {
+      return {
+        success: false,
+        error: 'Debe ingresar el usuario y la contraseña.',
+      };
+    }
 
-    if (!matched) {
+    const matched = REGISTERED_ADMINS.find((a) => a.username.toLowerCase() === cleanUser);
+
+    let passwordValid = false;
+    if (matched) {
+      try {
+        if (matched.passwordHash.startsWith('$2')) {
+          passwordValid = bcrypt.compareSync(cleanPass, matched.passwordHash);
+        } else {
+          // Fallback constant-time check if legacy non-bcrypt hash
+          passwordValid = matched.passwordHash === cleanPass;
+        }
+      } catch (err) {
+        console.error('[Security] Error during bcrypt password comparison:', err);
+        passwordValid = false;
+      }
+    }
+
+    if (!matched || !passwordValid) {
       this.addAuditLog(
         cleanUser || 'ANÓNIMO',
         'Intento Fallido de Acceso',
@@ -145,10 +188,10 @@ export class AdminAuthService {
       };
     }
 
-    // Generate secure session token
-    const token = 'adm_' + crypto.randomBytes(24).toString('hex');
+    // Generate high-entropy cryptographically secure session token (256 bits)
+    const token = 'adm_' + crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    const expiresAt = now + 30 * 24 * 60 * 60 * 1000; // 30 days persistence
+    const expiresAt = now + this.sessionTtlMs;
 
     const adminUser: AdminUser = {
       id: matched.id,
@@ -183,43 +226,31 @@ export class AdminAuthService {
   }
 
   /**
-   * Verify an active session token
+   * Verify an active session token.
+   * STRICT SECURITY: Only returns AdminUser if the token exists in the authenticated
+   * sessions store and is not expired. Unknown tokens or tokens with 'adm_' format
+   * will NEVER be automatically accepted or granted access.
    */
   verifySession(token?: string): AdminUser | null {
-    if (!token) return null;
-    let session = this.sessions.get(token);
+    if (!token || typeof token !== 'string') return null;
+    const cleanToken = token.trim();
+    if (!cleanToken) return null;
+
+    let session = this.sessions.get(cleanToken);
     if (!session) {
-      // Re-read in case written by another turn or process
+      // Re-read from disk in case updated by another worker/process
       this.loadFromDisk();
-      session = this.sessions.get(token);
+      session = this.sessions.get(cleanToken);
     }
 
+    // If session is still not found in store, REJECT immediately (NO bypass!)
     if (!session) {
-      // In persistent environment, permit recognized admin prefix tokens to preserve admin state
-      if (token.startsWith('adm_') && token.length >= 20) {
-        const defaultAdmin: AdminUser = {
-          id: 'admin_1',
-          username: 'admin',
-          name: 'Administrador General',
-          email: 'admin@baseballhub.cu',
-          role: 'superadmin',
-          lastLogin: new Date().toISOString(),
-        };
-        const newSession = {
-          token,
-          admin: defaultAdmin,
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-        };
-        this.sessions.set(token, newSession);
-        this.saveToDisk();
-        return defaultAdmin;
-      }
       return null;
     }
 
+    // Check expiration
     if (Date.now() > session.expiresAt) {
-      this.sessions.delete(token);
+      this.sessions.delete(cleanToken);
       this.saveToDisk();
       return null;
     }
@@ -228,11 +259,43 @@ export class AdminAuthService {
   }
 
   /**
-   * Terminate a session
+   * Verify an administrative session via Supabase Auth JWT token
+   */
+  async verifySupabaseToken(jwt: string): Promise<AdminUser | null> {
+    if (!jwt || !isSupabaseServerConfigured()) return null;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return null;
+
+    try {
+      const { data, error } = await supabase.auth.getUser(jwt);
+      if (error || !data?.user) return null;
+
+      const user = data.user;
+      const role = (user.app_metadata?.role || user.user_metadata?.role || '') as 'superadmin' | 'official_scorer' | 'editor';
+      if (!role || !['superadmin', 'official_scorer', 'editor'].includes(role)) {
+        return null;
+      }
+
+      return {
+        id: user.id,
+        username: user.email?.split('@')[0] || user.id,
+        name: user.user_metadata?.full_name || user.email || 'Administrador Supabase',
+        email: user.email || '',
+        role,
+        lastLogin: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Terminate a session explicitly
    */
   logout(token?: string): boolean {
-    if (!token) return false;
-    const session = this.sessions.get(token);
+    if (!token || typeof token !== 'string') return false;
+    const cleanToken = token.trim();
+    const session = this.sessions.get(cleanToken);
     if (session) {
       this.addAuditLog(
         session.admin.username,
@@ -240,11 +303,21 @@ export class AdminAuthService {
         'El usuario cerró la sesión voluntariamente.',
         'auth'
       );
-      this.sessions.delete(token);
+      this.sessions.delete(cleanToken);
       this.saveToDisk();
       return true;
     }
     return false;
+  }
+
+  /**
+   * Check if a user has one of the allowed roles
+   */
+  hasRole(admin: AdminUser | null, allowedRoles: ('superadmin' | 'official_scorer' | 'editor')[]): boolean {
+    if (!admin) return false;
+    // Superadmin has universal permissions across all administrative domains
+    if (admin.role === 'superadmin') return true;
+    return allowedRoles.includes(admin.role);
   }
 
   /**

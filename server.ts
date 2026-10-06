@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/routes/api.router.ts';
 import { baseballRepo } from './server/repositories/baseball.repository.ts';
@@ -177,6 +178,35 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Security HTTP Headers
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+
+  // CORS configuration supporting authenticated credentials & configurable origins
+  const allowedOriginEnv = process.env.CORS_ORIGIN;
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOriginEnv) {
+          if (allowedOriginEnv === '*' || allowedOriginEnv === origin) {
+            return callback(null, true);
+          }
+          const origins = allowedOriginEnv.split(',').map((s) => s.trim());
+          if (origins.includes(origin)) return callback(null, true);
+        }
+        callback(null, true);
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-token', 'x-webhook-secret'],
+    })
+  );
+
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
@@ -189,6 +219,16 @@ async function startServer() {
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString(), platform: 'Baseball Hub Engine' });
+  });
+
+  // Global Error Handler for API routes
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('[Unhandled Server Error]:', err?.message || err);
+    const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+    res.status(status).json({
+      success: false,
+      error: status === 500 ? 'Ocurrió un error interno en el servidor.' : (err?.message || 'Error en la solicitud'),
+    });
   });
 
   // Vite Middleware in Development

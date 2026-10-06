@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "initialized": true,
-  "lastUpdated": "2026-10-02T18:16:50.808Z",
+  "lastUpdated": "2026-10-06T15:54:57.537Z",
   "competitions": [
     {
       "id": "snb",
@@ -95,5 +95,14 @@
   "standings": [],
   "news": [],
   "videos": [],
-  "comments": []
+  "comments": [
+    {
+      "id": "comm_1791302097537_dc5c",
+      "articleSlug": "snb-noticia",
+      "authorName": "&lt;script&gt;alert(&quot;hack&quot;)&lt;&#x2F;script&gt;Fan",
+      "content": "Buen partido &lt;img src=x onerror=alert(1)&gt;",
+      "createdAt": "2026-10-06T15:54:57.537Z",
+      "likes": 0
+    }
+  ]
 }

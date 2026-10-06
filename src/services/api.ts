@@ -249,8 +249,9 @@ export class ApiClient {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const res = await fetch(`${API_BASE}${endpoint}`, {
-          headers,
+          credentials: 'include',
           ...options,
+          headers,
         });
 
         const durationMs = Math.round(performance.now() - startTime);
@@ -830,8 +831,8 @@ export class ApiClient {
 
   static async checkAdminSession(): Promise<{ valid: boolean; admin?: AdminUser }> {
     try {
-      if (!this.adminToken) return { valid: false };
-      return await this.request<{ valid: boolean; admin?: AdminUser }>('/admin/session');
+      const res = await this.request<{ valid: boolean; admin?: AdminUser }>('/admin/session');
+      return res;
     } catch {
       this.setAdminToken(null);
       return { valid: false };

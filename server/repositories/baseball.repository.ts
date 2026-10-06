@@ -23,6 +23,7 @@ import {
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
 import { cloudSqlSync } from '../../src/db/cloudsql-sync.ts';
+import { getSupabaseServerClient, isSupabaseServerConfigured } from '../lib/supabase.ts';
 
 const KNOWN_SLUG_MAP: Record<string, string> = {
   mtz: 'mtz', matanzas: 'mtz', cocodrilos: 'mtz',
@@ -87,6 +88,59 @@ export class BaseballRepository {
     this.initCloudSql().catch((err) => {
       console.warn('[BaseballRepository] Cloud SQL background init warning:', err);
     });
+    this.initSupabase().catch((err) => {
+      console.warn('[BaseballRepository] Supabase background init warning:', err);
+    });
+  }
+
+  public async initSupabase(): Promise<void> {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    try {
+      const { data: supaTeams, error } = await supabase.from('teams').select('*').limit(50);
+      if (!error && supaTeams && supaTeams.length > 0) {
+        for (const st of supaTeams) {
+          const idx = this.teams.findIndex((t) => t.id === st.id);
+          const mappedTeam: Team = {
+            id: st.id,
+            name: st.name,
+            nickname: st.nickname,
+            shortName: st.short_name,
+            city: st.city,
+            stadium: st.stadium,
+            capacity: st.capacity,
+            stadiumCapacity: st.capacity,
+            manager: st.manager,
+            foundedYear: st.founded_year,
+            championships: st.championships,
+            colors: {
+              primary: st.primary_color,
+              secondary: st.secondary_color,
+              text: st.text_color,
+            },
+            primaryColor: st.primary_color,
+            logo: st.logo,
+            competitionId: st.competition_id || 'snb',
+            seasonId: st.season_id || 'snb-65',
+            record: {
+              wins: st.wins || 0,
+              losses: st.losses || 0,
+              pct: parseFloat(st.pct) || 0,
+              streak: st.streak || '-',
+              lastTen: st.last_ten || '0-0',
+              position: st.position || 1,
+            },
+          };
+          if (idx !== -1) this.teams[idx] = mappedTeam;
+          else this.teams.push(mappedTeam);
+        }
+        console.log(`[BaseballRepository] Supabase active. Sincronizados ${supaTeams.length} equipos.`);
+      }
+    } catch (err: any) {
+      console.warn('[BaseballRepository] Supabase connection status: running with primary resilient repository layer.');
+    }
   }
 
   public async initCloudSql(): Promise<void> {
