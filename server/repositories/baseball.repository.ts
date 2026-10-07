@@ -44,6 +44,28 @@ const KNOWN_SLUG_MAP: Record<string, string> = {
   gtm: 'gtm', guantanamo: 'gtm', 'guantánamo': 'gtm', indios: 'gtm',
 };
 
+function formatAvg(val: any): string {
+  if (typeof val === 'number') {
+    if (isNaN(val)) return '.000';
+    return val.toFixed(3).replace(/^0\./, '.');
+  }
+  if (typeof val === 'string' && val.trim()) {
+    return val.trim();
+  }
+  return '.000';
+}
+
+function formatEra(val: any): string {
+  if (typeof val === 'number') {
+    if (isNaN(val)) return '0.00';
+    return val.toFixed(2);
+  }
+  if (typeof val === 'string' && val.trim()) {
+    return val.trim();
+  }
+  return '0.00';
+}
+
 export class BaseballRepository {
   private readonly dbFilePath = path.resolve(process.cwd(), 'server/data/database.json');
   private readonly backupFilePath = path.resolve(process.cwd(), 'server/data/database.backup.json');
@@ -85,28 +107,73 @@ export class BaseballRepository {
   constructor() {
     this.loadFromDisk();
     this.deduplicatePlayers();
-    this.initCloudSql().catch((err) => {
-      console.warn('[BaseballRepository] Cloud SQL background init warning:', err);
-    });
-    this.initSupabase().catch((err) => {
-      console.warn('[BaseballRepository] Supabase background init warning:', err);
-    });
+    if (isSupabaseServerConfigured()) {
+      this.initSupabase().catch((err) => {
+        console.warn('[BaseballRepository] Supabase background init warning:', err);
+      });
+    } else {
+      this.initCloudSql().catch((err) => {
+        console.warn('[BaseballRepository] Cloud SQL background init warning:', err);
+      });
+    }
   }
 
+  /**
+   * Primary data loader: initializes repository directly from Supabase PostgreSQL.
+   */
   public async initSupabase(): Promise<void> {
     if (!isSupabaseServerConfigured()) return;
     const supabase = getSupabaseServerClient();
     if (!supabase) return;
 
     try {
-      const { data: supaTeams, error } = await supabase.from('teams').select('*').limit(50);
-      if (!error && supaTeams && supaTeams.length > 0) {
-        for (const st of supaTeams) {
-          const idx = this.teams.findIndex((t) => t.id === st.id);
-          const mappedTeam: Team = {
+      // 1. Competitions
+      const { data: supaComps } = await supabase.from('competitions').select('*');
+      if (supaComps && supaComps.length > 0) {
+        this.competitions = supaComps.map((sc: any) => ({
+          id: sc.id,
+          name: sc.name,
+          slug: sc.slug || sc.id,
+          shortName: sc.short_name || sc.name,
+          country: sc.country || 'Cuba',
+          type: sc.type || 'league',
+          logo: sc.logo,
+          status: sc.status || 'active',
+          currentSeasonId: sc.current_season_id || 'snb-65',
+          description: sc.description,
+        }));
+      }
+
+      // 2. Seasons
+      const { data: supaSeasons } = await supabase.from('seasons').select('*');
+      if (supaSeasons && supaSeasons.length > 0) {
+        this.seasons = supaSeasons.map((ss: any) => ({
+          id: ss.id,
+          competitionId: ss.competition_id || 'snb',
+          year: ss.year || 2026,
+          name: ss.display_name || ss.name,
+          displayName: ss.display_name || ss.name,
+          slug: ss.slug || ss.id,
+          startDate: ss.start_date,
+          endDate: ss.end_date,
+          isCurrent: Boolean(ss.is_current),
+          status: ss.status || 'in_progress',
+        }));
+      }
+
+      // 3. Teams & Team Logos
+      const { data: supaTeams } = await supabase.from('teams').select('*');
+      const { data: supaLogos } = await supabase.from('team_logos').select('*');
+      const logoMap = new Map((supaLogos || []).map((l: any) => [l.team_id, l]));
+
+      if (supaTeams && supaTeams.length > 0) {
+        this.teams = supaTeams.map((st: any) => {
+          const customLogo = logoMap.get(st.id);
+          const primaryColor = customLogo?.primary_color || st.primary_color || '#10B981';
+          return {
             id: st.id,
             name: st.name,
-            nickname: st.nickname,
+            nickname: st.nickname || st.name,
             shortName: st.short_name,
             city: st.city,
             stadium: st.stadium,
@@ -116,12 +183,12 @@ export class BaseballRepository {
             foundedYear: st.founded_year,
             championships: st.championships,
             colors: {
-              primary: st.primary_color,
-              secondary: st.secondary_color,
-              text: st.text_color,
+              primary: primaryColor,
+              secondary: st.secondary_color || '#1E293B',
+              text: st.text_color || '#FFFFFF',
             },
-            primaryColor: st.primary_color,
-            logo: st.logo,
+            primaryColor,
+            logo: customLogo?.logo || st.logo || '⚾',
             competitionId: st.competition_id || 'snb',
             seasonId: st.season_id || 'snb-65',
             record: {
@@ -133,17 +200,674 @@ export class BaseballRepository {
               position: st.position || 1,
             },
           };
-          if (idx !== -1) this.teams[idx] = mappedTeam;
-          else this.teams.push(mappedTeam);
-        }
-        console.log(`[BaseballRepository] Supabase active. Sincronizados ${supaTeams.length} equipos.`);
+        });
       }
+
+      // 4. Players
+      const { data: supaPlayers } = await supabase.from('players').select('*');
+      if (supaPlayers && supaPlayers.length > 0) {
+        this.players = supaPlayers.map((sp: any) => ({
+          id: sp.id,
+          slug: sp.slug || sp.id,
+          fullName: sp.full_name,
+          firstName: sp.full_name?.split(' ')[0] || '',
+          lastName: sp.full_name?.split(' ').slice(1).join(' ') || '',
+          shortName: sp.short_name || sp.full_name,
+          jerseyNumber: sp.jersey_number || 0,
+          number: sp.jersey_number || 0,
+          position: (sp.position || 'OF') as PlayerPosition,
+          teamId: sp.team_id,
+          teamShort: sp.team_short,
+          teamName: this.teams.find((t) => t.id === sp.team_id)?.name || sp.team_short,
+          bats: (sp.bats || 'R') as 'R' | 'L' | 'S',
+          throws: (sp.throws || 'R') as 'R' | 'L',
+          age: sp.age || 25,
+          birthDate: sp.birth_date || '1999-01-01',
+          birthPlace: sp.birth_place || 'Cuba',
+          birthCountry: sp.birth_country || 'Cuba',
+          height: sp.height || '1.85 m',
+          weight: sp.weight || '88 kg',
+          photo: sp.photo || '',
+          bio: sp.bio || '',
+          isFavorite: Boolean(sp.is_favorite),
+          isHallOfFame: Boolean(sp.is_hall_of_fame),
+          isAllStar: Boolean(sp.is_all_star),
+          war: parseFloat(sp.war) || 0,
+          status: 'active',
+        }));
+      }
+
+      // 5. Batting Stats
+      const { data: supaBatting } = await supabase.from('player_season_batting').select('*');
+      if (supaBatting && supaBatting.length > 0) {
+        this.battingStats = supaBatting.map((sb: any) => ({
+          id: sb.id,
+          playerId: sb.player_id,
+          playerName: this.players.find((p) => p.id === sb.player_id)?.fullName || '',
+          seasonId: sb.season_id,
+          seasonYear: sb.season_year || 2026,
+          teamId: sb.team_id || '',
+          teamShort: sb.team_short || 'TEAM',
+          position: (this.players.find((p) => p.id === sb.player_id)?.position || 'OF') as PlayerPosition,
+          stage: sb.stage || 'regular',
+          games: sb.games || 0,
+          pa: sb.plate_appearances || 0,
+          ab: sb.at_bats || 0,
+          r: sb.runs || 0,
+          h: sb.hits || 0,
+          doubles: sb.doubles || 0,
+          triples: sb.triples || 0,
+          hr: sb.home_runs || 0,
+          rbi: sb.rbi || 0,
+          bb: sb.walks || 0,
+          so: sb.strikeouts || 0,
+          sb: sb.stolen_bases || 0,
+          cs: sb.caught_stealing || 0,
+          avg: parseFloat(sb.avg) || 0,
+          obp: parseFloat(sb.obp) || 0,
+          slg: parseFloat(sb.slg) || 0,
+          ops: parseFloat(sb.ops) || 0,
+          war: Number(this.players.find((p) => p.id === sb.player_id)?.war || 0),
+        }));
+      }
+
+      // 6. Pitching Stats
+      const { data: supaPitching } = await supabase.from('player_season_pitching').select('*');
+      if (supaPitching && supaPitching.length > 0) {
+        this.pitchingStats = supaPitching.map((sp: any) => ({
+          id: sp.id,
+          playerId: sp.player_id,
+          playerName: this.players.find((p) => p.id === sp.player_id)?.fullName || '',
+          seasonId: sp.season_id,
+          seasonYear: sp.season_year || 2026,
+          teamId: sp.team_id || '',
+          teamShort: sp.team_short || 'TEAM',
+          position: ((this.players.find((p) => p.id === sp.player_id)?.position || 'SP') === 'RP' ? 'RP' : 'SP') as 'SP' | 'RP',
+          stage: sp.stage || 'regular',
+          games: sp.games || 0,
+          gs: sp.games_started || 0,
+          cg: sp.cg || 0,
+          sho: sp.sho || 0,
+          hr: sp.hr || 0,
+          ip: parseFloat(sp.innings_pitched) || 0,
+          w: sp.wins || 0,
+          l: sp.losses || 0,
+          sv: sp.saves || 0,
+          h: sp.hits || 0,
+          r: sp.runs || 0,
+          er: sp.earned_runs || 0,
+          bb: sp.walks || 0,
+          so: sp.strikeouts || 0,
+          era: parseFloat(sp.era) || 0,
+          whip: parseFloat(sp.whip) || 0,
+          war: Number(this.players.find((p) => p.id === sp.player_id)?.war || 0),
+        }));
+      }
+
+      // 7. Games
+      const { data: supaGames } = await supabase.from('games').select('*');
+      if (supaGames && supaGames.length > 0) {
+        this.games = supaGames.map((sg: any) => {
+          const homeTeam = this.teams.find((t) => t.id === sg.home_team_id) || ({
+            id: sg.home_team_id,
+            name: sg.home_team_id,
+            shortName: sg.home_team_id.toUpperCase(),
+            logo: '⚾',
+          } as Team);
+          const awayTeam = this.teams.find((t) => t.id === sg.away_team_id) || ({
+            id: sg.away_team_id,
+            name: sg.away_team_id,
+            shortName: sg.away_team_id.toUpperCase(),
+            logo: '⚾',
+          } as Team);
+
+          return {
+            id: sg.id,
+            competitionId: sg.competition_id || 'snb',
+            seasonId: sg.season_id || 'snb-65',
+            date: sg.date,
+            time: sg.time || '14:00',
+            stadium: sg.stadium || 'Estadio Principal',
+            status: sg.status || 'SCHEDULED',
+            homeTeam,
+            awayTeam,
+            homeScore: sg.home_score || 0,
+            awayScore: sg.away_score || 0,
+            homeHits: sg.home_hits || 0,
+            awayHits: sg.away_hits || 0,
+            homeErrors: sg.home_errors || 0,
+            awayErrors: sg.away_errors || 0,
+            currentInning: sg.current_inning || 1,
+            isTopInning: sg.is_top_inning ?? true,
+            outs: sg.outs || 0,
+            balls: sg.balls || 0,
+            strikes: sg.strikes || 0,
+            bases: sg.bases || { first: false, second: false, third: false },
+            lineScore: sg.line_score || [],
+            lineups: sg.lineups || {},
+            battingBoxScore: sg.lineups?.boxScore?.batting || (sg.lineups?.home ? { home: sg.lineups.home, away: sg.lineups.away } : undefined),
+            pitchingBoxScore: sg.lineups?.boxScore?.pitching || (sg.lineups?.pitchers ? sg.lineups.pitchers : undefined),
+            winningPitcher: sg.winning_pitcher,
+            losingPitcher: sg.losing_pitcher,
+            savePitcher: sg.save_pitcher,
+            umpires: sg.umpires || [],
+            plays: sg.plays || [],
+          };
+        });
+      }
+
+      // 8. Standings
+      const { data: supaStandings } = await supabase.from('standings').select('*');
+      if (supaStandings && supaStandings.length > 0) {
+        this.standings = supaStandings.map((st: any) => {
+          const team = this.teams.find((t) => t.id === st.team_id);
+          return {
+            position: st.position || 1,
+            teamId: st.team_id,
+            teamName: team?.name || st.team_id,
+            teamShort: team?.shortName || st.team_id,
+            teamLogo: team?.logo || '⚾',
+            logo: team?.logo || '⚾',
+            gamesPlayed: st.games || 0,
+            games: st.games || 0,
+            wins: st.wins || 0,
+            losses: st.losses || 0,
+            pct: parseFloat(st.pct) || 0,
+            runsScored: st.runs_scored || 0,
+            runsAllowed: st.runs_allowed || 0,
+            runDifferential: st.run_differential || 0,
+            streak: st.streak || '-',
+            homeRecord: st.home_record || '0-0',
+            awayRecord: st.away_record || '0-0',
+            lastTen: st.last_ten || '0-0',
+            gamesBehind: parseFloat(st.games_behind) || 0,
+            division: st.division || 'General',
+            competitionId: st.competition_id || 'snb',
+            seasonId: st.season_id || 'snb-65',
+          } as any;
+        });
+      }
+
+      // 9. News
+      const { data: supaNews } = await supabase.from('news').select('*').order('published_at', { ascending: false });
+      if (supaNews && supaNews.length > 0) {
+        this.news = supaNews.map((sn: any) => ({
+          id: sn.id,
+          title: sn.title,
+          slug: sn.slug,
+          subtitle: sn.subtitle,
+          excerpt: sn.excerpt,
+          content: sn.content,
+          image: sn.image,
+          author: sn.author,
+          publishedAt: sn.published_at,
+          category: sn.category || 'Crónica',
+          tags: sn.tags || ['Béisbol'],
+          readingTimeMinutes: sn.reading_time_minutes || 4,
+          isFeatured: Boolean(sn.is_featured),
+          imageHeight: sn.image_height || 'tall',
+        }));
+      }
+
+      // 10. Comments
+      const { data: supaComments } = await supabase.from('news_comments').select('*');
+      if (supaComments && supaComments.length > 0) {
+        this.comments = supaComments.map((sc: any) => ({
+          id: sc.id,
+          articleSlug: sc.article_slug,
+          authorName: sc.author_name || 'Aficionado',
+          favoriteTeam: sc.favorite_team,
+          content: sc.content,
+          likes: sc.likes || 0,
+          createdAt: sc.created_at,
+        }));
+      }
+
+      console.log('⚡ [BaseballRepository] Supabase PostgreSQL activo como fuente principal de datos.');
     } catch (err: any) {
-      console.warn('[BaseballRepository] Supabase connection status: running with primary resilient repository layer.');
+      console.warn('[BaseballRepository] Supabase connection status: running with resilient memory repository layer.');
     }
   }
 
+  /**
+   * Persists repository state. If Supabase is active, disk write is skipped to prevent multi-source writes.
+   */
+  private persistState(): void {
+    if (isSupabaseServerConfigured()) {
+      // Supabase is the primary store; bypass local disk write to prevent dual writes
+      return;
+    }
+    this.saveToDisk();
+  }
+
+  private safePostgrest(builder: any, label: string): void {
+    Promise.resolve(builder).catch((err: any) => {
+      console.warn(`[SupabaseSync] ${label} warning:`, err?.message || err);
+    });
+  }
+
+  private syncTeamToSupabase(team: Team): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    this.safePostgrest(
+      supabase
+        .from('teams')
+        .upsert({
+          id: team.id,
+          name: team.name,
+          nickname: team.nickname || team.name,
+          short_name: team.shortName,
+          slug: team.id,
+          city: team.city || 'Cuba',
+          stadium: team.stadium || 'Estadio',
+          capacity: team.capacity || 15000,
+          manager: team.manager || 'Director',
+          founded_year: team.foundedYear || 1977,
+          championships: team.championships || 0,
+          primary_color: team.primaryColor || team.colors?.primary || '#10B981',
+          secondary_color: team.colors?.secondary || '#1E293B',
+          text_color: team.colors?.text || '#FFFFFF',
+          logo: team.logo || '⚾',
+          competition_id: team.competitionId || 'snb',
+          season_id: team.seasonId || 'snb-65',
+          wins: team.record?.wins || 0,
+          losses: team.record?.losses || 0,
+          pct: String(team.record?.pct ?? '0.000'),
+          streak: team.record?.streak || '-',
+          last_ten: team.record?.lastTen || '0-0',
+          position: team.record?.position || 1,
+        }),
+      'Team save'
+    );
+
+    if (team.logo) {
+      this.safePostgrest(
+        supabase
+          .from('team_logos')
+          .upsert({
+            team_id: team.id,
+            logo: team.logo,
+            primary_color: team.primaryColor || team.colors?.primary || null,
+          }),
+        'Team logo save'
+      );
+    }
+  }
+
+  private deleteTeamFromSupabase(teamId: string): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('teams')
+        .delete()
+        .eq('id', teamId),
+      'Team delete'
+    );
+  }
+
+  private syncPlayerToSupabase(player: Player): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    this.safePostgrest(
+      supabase
+        .from('players')
+        .upsert({
+          id: player.id,
+          slug: player.slug || player.id,
+          full_name: player.fullName,
+          short_name: player.shortName || player.fullName,
+          jersey_number: player.jerseyNumber || player.number || 0,
+          position: player.position || 'OF',
+          team_id: player.teamId,
+          team_short: player.teamShort || 'TEAM',
+          bats: player.bats || 'R',
+          throws: player.throws || 'R',
+          age: player.age || 25,
+          birth_date: player.birthDate || '1999-01-01',
+          photo: player.photo || '',
+          bio: player.bio || null,
+          is_favorite: Boolean(player.isFavorite),
+          is_hall_of_fame: Boolean(player.isHallOfFame),
+          is_all_star: Boolean(player.isAllStar),
+          war: String(player.war || '0.0'),
+        }),
+      'Player save'
+    );
+  }
+
+  private deletePlayerFromSupabase(playerId: string): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('players')
+        .delete()
+        .eq('id', playerId),
+      'Player delete'
+    );
+  }
+
+  private bulkDeletePlayersFromSupabase(playerIds: string[]): void {
+    if (!isSupabaseServerConfigured() || playerIds.length === 0) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('players')
+        .delete()
+        .in('id', playerIds),
+      'Player bulk delete'
+    );
+  }
+
+  private syncGameToSupabase(game: Game): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    const homeTeamId = game.homeTeam?.id || (game as any).homeTeamId;
+    const awayTeamId = game.awayTeam?.id || (game as any).awayTeamId;
+
+    this.safePostgrest(
+      supabase
+        .from('games')
+        .upsert({
+          id: game.id,
+          competition_id: game.competitionId || 'snb',
+          season_id: game.seasonId || 'snb-65',
+          date: game.date,
+          time: game.time || '14:00',
+          stadium: game.stadium || 'Estadio Principal',
+          status: game.status || 'SCHEDULED',
+          home_team_id: homeTeamId,
+          away_team_id: awayTeamId,
+          home_score: game.homeScore || 0,
+          away_score: game.awayScore || 0,
+          home_hits: game.homeHits || 0,
+          away_hits: game.awayHits || 0,
+          home_errors: game.homeErrors || 0,
+          away_errors: game.awayErrors || 0,
+          current_inning: game.currentInning || 1,
+          is_top_inning: game.isTopInning ?? true,
+          outs: game.outs || 0,
+          balls: game.balls || 0,
+          strikes: game.strikes || 0,
+          bases: game.bases || { first: false, second: false, third: false },
+          line_score: game.lineScore || [],
+          lineups: {
+            home: game.battingBoxScore?.home || game.lineups?.home || [],
+            away: game.battingBoxScore?.away || game.lineups?.away || [],
+            pitchers: {
+              home: game.pitchingBoxScore?.home || game.lineups?.pitchers?.home || [],
+              away: game.pitchingBoxScore?.away || game.lineups?.pitchers?.away || [],
+            },
+            boxScore: (game as any).boxScore || {
+              batting: game.battingBoxScore || null,
+              pitching: game.pitchingBoxScore || null,
+            },
+          },
+          winning_pitcher: game.winningPitcher || null,
+          losing_pitcher: game.losingPitcher || null,
+          save_pitcher: game.savePitcher || null,
+          umpires: game.umpires || [],
+          plays: game.plays || [],
+        }),
+      'Game save'
+    );
+  }
+
+  private deleteGameFromSupabase(gameId: string): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('games')
+        .delete()
+        .eq('id', gameId),
+      'Game delete'
+    );
+  }
+
+  private syncBattingStatToSupabase(b: BattingStats): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    const recordId = b.id || `bat-${b.playerId}-${b.seasonId || b.seasonYear || 2026}`;
+    this.safePostgrest(
+      supabase
+        .from('player_season_batting')
+        .upsert({
+          id: recordId,
+          player_id: b.playerId,
+          season_id: b.seasonId || `snb-${b.seasonYear || 2026}`,
+          season_year: b.seasonYear || 2026,
+          team_id: b.teamId || null,
+          team_short: b.teamShort || 'TEAM',
+          stage: b.stage || 'regular',
+          games: b.games || 0,
+          plate_appearances: b.pa || (b as any).plateAppearances || 0,
+          at_bats: b.ab || (b as any).atBats || 0,
+          runs: b.r || (b as any).runs || 0,
+          hits: b.h || (b as any).hits || 0,
+          doubles: b.doubles || 0,
+          triples: b.triples || 0,
+          home_runs: b.hr || (b as any).homeRuns || 0,
+          rbi: b.rbi || 0,
+          walks: b.bb || (b as any).walks || 0,
+          strikeouts: b.so || (b as any).strikeouts || 0,
+          stolen_bases: b.sb || (b as any).stolenBases || 0,
+          caught_stealing: b.cs || (b as any).caughtStealing || 0,
+          avg: formatAvg(b.avg),
+          obp: formatAvg(b.obp),
+          slg: formatAvg(b.slg),
+          ops: typeof b.ops === 'number' ? b.ops.toFixed(3) : String(b.ops || '.000'),
+        }),
+      'Batting save'
+    );
+  }
+
+  private syncPitchingStatToSupabase(p: PitchingStats): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    const recordId = p.id || `pit-${p.playerId}-${p.seasonId || p.seasonYear || 2026}`;
+    this.safePostgrest(
+      supabase
+        .from('player_season_pitching')
+        .upsert({
+          id: recordId,
+          player_id: p.playerId,
+          season_id: p.seasonId || `snb-${p.seasonYear || 2026}`,
+          season_year: p.seasonYear || 2026,
+          team_id: p.teamId || null,
+          team_short: p.teamShort || 'TEAM',
+          stage: p.stage || 'regular',
+          games: p.games || 0,
+          games_started: p.gs || (p as any).gamesStarted || 0,
+          innings_pitched: String(p.ip ?? (p as any).inningsPitched ?? '0.0'),
+          wins: p.w || (p as any).wins || 0,
+          losses: p.l || (p as any).losses || 0,
+          saves: p.sv || (p as any).saves || 0,
+          hits: p.h || (p as any).hits || 0,
+          runs: p.r || (p as any).runs || 0,
+          earned_runs: p.er || (p as any).earnedRuns || 0,
+          walks: p.bb || (p as any).walks || 0,
+          strikeouts: p.so || (p as any).strikeouts || 0,
+          era: formatEra(p.era),
+          whip: formatEra(p.whip),
+        }),
+      'Pitching save'
+    );
+  }
+
+  private deleteStatFromSupabase(statId: string, type: 'batting' | 'pitching'): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    const table = type === 'batting' ? 'player_season_batting' : 'player_season_pitching';
+    this.safePostgrest(
+      supabase
+        .from(table)
+        .delete()
+        .eq('id', statId),
+      'Stat delete'
+    );
+  }
+
+  private syncNewsToSupabase(n: NewsArticle): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    this.safePostgrest(
+      supabase
+        .from('news')
+        .upsert({
+          id: n.id,
+          title: n.title,
+          slug: n.slug,
+          subtitle: n.subtitle || null,
+          excerpt: n.excerpt || '',
+          content: n.content || '',
+          image: n.image || '',
+          author: n.author || 'Prensa Oficial Béisbol Hub',
+          published_at: n.publishedAt || new Date().toISOString(),
+          category: n.category || 'Crónica',
+          tags: n.tags || ['Béisbol'],
+          reading_time_minutes: n.readingTimeMinutes || 4,
+          is_featured: Boolean(n.isFeatured),
+          image_height: n.imageHeight || 'tall',
+        }),
+      'News save'
+    );
+  }
+
+  private deleteNewsFromSupabase(newsId: string): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('news')
+        .delete()
+        .eq('id', newsId),
+      'News delete'
+    );
+  }
+
+  private syncCommentToSupabase(c: ArticleComment): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    this.safePostgrest(
+      supabase
+        .from('news_comments')
+        .upsert({
+          id: c.id,
+          article_slug: c.articleSlug,
+          author_name: c.authorName || 'Aficionado',
+          favorite_team: c.favoriteTeam || null,
+          content: c.content || '',
+          likes: c.likes || 0,
+          created_at: c.createdAt || new Date().toISOString(),
+        }),
+      'Comment save'
+    );
+  }
+
+  private deleteCommentFromSupabase(commentId: string): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('news_comments')
+        .delete()
+        .eq('id', commentId),
+      'Comment delete'
+    );
+  }
+
+  private syncCommentLikesToSupabase(commentId: string, likes: number): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('news_comments')
+        .update({ likes })
+        .eq('id', commentId),
+      'Comment likes update'
+    );
+  }
+
+  private syncStandingToSupabase(s: Standing): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+
+    const standingId = (s as any).id || `std-${s.teamId}-${s.seasonId || 'snb-65'}`;
+    this.safePostgrest(
+      supabase
+        .from('standings')
+        .upsert({
+          id: standingId,
+          team_id: s.teamId,
+          competition_id: s.competitionId || 'snb',
+          season_id: s.seasonId || 'snb-65',
+          position: s.position || (s as any).rank || 1,
+          games: s.gamesPlayed || (s as any).games || 0,
+          wins: s.wins || 0,
+          losses: s.losses || 0,
+          pct: typeof s.pct === 'number' ? s.pct.toFixed(3) : String(s.pct || '0.000'),
+          games_behind: typeof s.gamesBehind === 'number' ? s.gamesBehind.toFixed(1) : String(s.gamesBehind || '0.0'),
+          streak: s.streak || '-',
+          last_ten: s.lastTen || '0-0',
+          home_record: s.homeRecord || '0-0',
+          away_record: s.awayRecord || '0-0',
+          runs_scored: s.runsScored || 0,
+          runs_allowed: s.runsAllowed || 0,
+          run_differential: s.runDifferential || 0,
+          division: s.division || 'General',
+        }),
+      'Standing save'
+    );
+  }
+
+  private deleteStandingFromSupabase(teamId: string, seasonId: string = 'snb-65'): void {
+    if (!isSupabaseServerConfigured()) return;
+    const supabase = getSupabaseServerClient();
+    if (!supabase) return;
+    this.safePostgrest(
+      supabase
+        .from('standings')
+        .delete()
+        .eq('team_id', teamId)
+        .eq('season_id', seasonId),
+      'Standing delete'
+    );
+  }
+
+  public isSupabaseActive(): boolean {
+    return isSupabaseServerConfigured();
+  }
+
   public async initCloudSql(): Promise<void> {
+    if (isSupabaseServerConfigured()) {
+      // Supabase is the primary store; Cloud SQL is retired from primary sync
+      return;
+    }
     try {
       const cloudData = await cloudSqlSync.loadFromCloudSql();
       if (cloudData && cloudData.teams.length > 0) {
@@ -192,7 +916,7 @@ export class BaseballRepository {
         this.applyUserOverrides();
         this.saveToDisk();
       } else {
-        console.log('[BaseballRepository] Cloud SQL connected and active.');
+        console.log('[BaseballRepository] Cloud SQL connected.');
       }
     } catch (err) {
       console.warn('[BaseballRepository] Cloud SQL initialization error (running on local persistence):', err);
@@ -444,7 +1168,7 @@ export class BaseballRepository {
     }
 
     // Persist finalized database
-    this.saveToDisk();
+    this.persistState();
   }
 
   /**
@@ -633,19 +1357,9 @@ export class BaseballRepository {
     };
     this.saveUserOverridesToDisk();
 
-    // Persist immediately to Cloud SQL PostgreSQL
-    if (updates.logo) {
-      cloudSqlSync
-        .saveTeamLogo(
-          current.id,
-          updates.logo,
-          updates.colors?.primary || (updates as any).primaryColor
-        )
-        .catch(() => {});
-    }
-    cloudSqlSync.saveTeam(updated).catch(() => {});
-
-    this.saveToDisk();
+    // Persist to Supabase PostgreSQL (primary store)
+    this.syncTeamToSupabase(updated);
+    this.persistState();
     return updated;
   }
 
@@ -703,7 +1417,7 @@ export class BaseballRepository {
     // Also add to standings if not present
     const existingStanding = this.standings.find((s) => s.teamId === newTeam.id || s.teamShort === newTeam.shortName);
     if (!existingStanding) {
-      this.standings.push({
+      const newStanding: any = {
         position: this.standings.length + 1,
         teamId: newTeam.id,
         teamName: newTeam.name,
@@ -722,7 +1436,9 @@ export class BaseballRepository {
         runsScored: 0,
         runsAllowed: 0,
         runDifferential: 0,
-      } as any);
+      };
+      this.standings.push(newStanding);
+      this.syncStandingToSupabase(newStanding);
     }
 
     // Persist in user overrides
@@ -730,10 +1446,9 @@ export class BaseballRepository {
     this.userOverrides.customTeams.push(newTeam);
     this.saveUserOverridesToDisk();
 
-    // Persist immediately to Cloud SQL PostgreSQL
-    cloudSqlSync.saveTeam(newTeam).catch(() => {});
-
-    this.saveToDisk();
+    // Persist to Supabase PostgreSQL (primary store)
+    this.syncTeamToSupabase(newTeam);
+    this.persistState();
     return newTeam;
   }
 
@@ -765,10 +1480,10 @@ export class BaseballRepository {
     this.userOverrides.customTeams = this.userOverrides.customTeams.filter((t) => t.id !== team.id);
     this.saveUserOverridesToDisk();
 
-    // Delete immediately from Cloud SQL PostgreSQL
-    cloudSqlSync.deleteTeam(team.id).catch(() => {});
-
-    this.saveToDisk();
+    // Delete from Supabase PostgreSQL (primary store)
+    this.deleteTeamFromSupabase(team.id);
+    this.deleteStandingFromSupabase(team.id);
+    this.persistState();
     return { success: true, deletedTeam: team };
   }
 
@@ -1020,7 +1735,10 @@ export class BaseballRepository {
       }
     }
 
-    this.saveToDisk();
+    for (const t of this.teams) {
+      this.syncTeamToSupabase(t);
+    }
+    this.persistState();
     return this.teams;
   }
 
@@ -1641,7 +2359,8 @@ export class BaseballRepository {
       this.battingStats.push(statRecord);
     }
 
-    this.saveToDisk();
+    this.syncBattingStatToSupabase(statRecord);
+    this.persistState();
     return statRecord;
   }
 
@@ -1709,7 +2428,8 @@ export class BaseballRepository {
       this.pitchingStats.push(statRecord);
     }
 
-    this.saveToDisk();
+    this.syncPitchingStatToSupabase(statRecord);
+    this.persistState();
     return statRecord;
   }
 
@@ -1718,14 +2438,16 @@ export class BaseballRepository {
       const prevLength = this.battingStats.length;
       this.battingStats = this.battingStats.filter((b) => !(b.id === statId && b.playerId === playerId));
       if (this.battingStats.length !== prevLength) {
-        this.saveToDisk();
+        this.deleteStatFromSupabase(statId, type);
+        this.persistState();
         return true;
       }
     } else {
       const prevLength = this.pitchingStats.length;
       this.pitchingStats = this.pitchingStats.filter((p) => !(p.id === statId && p.playerId === playerId));
       if (this.pitchingStats.length !== prevLength) {
-        this.saveToDisk();
+        this.deleteStatFromSupabase(statId, type);
+        this.persistState();
         return true;
       }
     }
@@ -2058,7 +2780,7 @@ export class BaseballRepository {
       });
     }
 
-    this.saveToDisk();
+    this.persistState();
 
     return {
       importedCount: battingCount + pitchingCount,
@@ -2323,7 +3045,8 @@ export class BaseballRepository {
       isScoringPlay: true,
     });
 
-    this.saveToDisk();
+    this.syncGameToSupabase(target);
+    this.persistState();
     return {
       game: { ...target },
       runsScored: runs,
@@ -2610,8 +3333,10 @@ export class BaseballRepository {
       const existingStatIdx = this.battingStats.findIndex((b) => b.playerId === player!.id);
       if (existingStatIdx >= 0) {
         this.battingStats[existingStatIdx] = { ...stat, id: this.battingStats[existingStatIdx].id };
+        this.syncBattingStatToSupabase(this.battingStats[existingStatIdx]);
       } else {
         this.battingStats.push(stat);
+        this.syncBattingStatToSupabase(stat);
       }
 
       // Si es lanzador o trae estadísticas de pitcheo, agregar o actualizar estadísticas de pitcheo
@@ -2656,12 +3381,14 @@ export class BaseballRepository {
 
         if (existingPitchIdx >= 0) {
           this.pitchingStats[existingPitchIdx] = pitchData;
+          this.syncPitchingStatToSupabase(pitchData);
         } else {
           this.pitchingStats.push(pitchData);
+          this.syncPitchingStatToSupabase(pitchData);
         }
       }
     }
-    this.saveToDisk();
+    this.persistState();
     return newStats.length;
   }
 
@@ -2682,7 +3409,7 @@ export class BaseballRepository {
       count++;
     }
     this.deduplicatePlayers();
-    this.saveToDisk();
+    this.persistState();
     return count;
   }
 
@@ -3070,8 +3797,11 @@ export class BaseballRepository {
       const fullB = `${b.date || '1970-01-01'}T${b.time || '00:00'}:00`;
       return fullA.localeCompare(fullB);
     });
-    this.saveToDisk();
-    cloudSqlSync.saveGame(newGame).catch(() => {});
+    this.syncGameToSupabase(newGame);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.saveGame(newGame).catch(() => {});
+    }
     return newGame;
   }
 
@@ -3092,8 +3822,11 @@ export class BaseballRepository {
     };
 
     this.games[index] = updated;
-    this.saveToDisk();
-    cloudSqlSync.saveGame(updated).catch(() => {});
+    this.syncGameToSupabase(updated);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.saveGame(updated).catch(() => {});
+    }
     return updated;
   }
 
@@ -3140,8 +3873,11 @@ export class BaseballRepository {
       this.userOverrides.deletedGameIds.push(id);
       this.saveUserOverridesToDisk();
     }
-    this.saveToDisk();
-    cloudSqlSync.deleteGame(id).catch(() => {});
+    this.deleteGameFromSupabase(id);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.deleteGame(id).catch(() => {});
+    }
     return this.games.length < initialLen;
   }
 
@@ -3222,10 +3958,13 @@ export class BaseballRepository {
     this.userOverrides.customPlayers.unshift(newPlayer);
     this.saveUserOverridesToDisk();
 
-    // Persist immediately to Cloud SQL PostgreSQL
-    cloudSqlSync.savePlayer(newPlayer).catch(() => {});
+    // Persist to Supabase PostgreSQL (primary store)
+    this.syncPlayerToSupabase(newPlayer);
+    this.persistState();
 
-    this.saveToDisk();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.savePlayer(newPlayer).catch(() => {});
+    }
     return newPlayer;
   }
 
@@ -3288,6 +4027,7 @@ export class BaseballRepository {
         b.playerName = updated.fullName;
         b.teamId = updated.teamId;
         b.teamShort = updated.teamShort;
+        this.syncBattingStatToSupabase(b);
       }
     }
     for (const pit of this.pitchingStats) {
@@ -3295,6 +4035,7 @@ export class BaseballRepository {
         pit.playerName = updated.fullName;
         pit.teamId = updated.teamId;
         pit.teamShort = updated.teamShort;
+        this.syncPitchingStatToSupabase(pit);
       }
     }
 
@@ -3307,10 +4048,13 @@ export class BaseballRepository {
 
     this.deduplicatePlayers();
 
-    // Persist immediately to Cloud SQL PostgreSQL
-    cloudSqlSync.savePlayer(updated).catch(() => {});
+    // Persist to Supabase PostgreSQL (primary store)
+    this.syncPlayerToSupabase(updated);
+    this.persistState();
 
-    this.saveToDisk();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.savePlayer(updated).catch(() => {});
+    }
 
     return updated;
   }
@@ -3424,7 +4168,7 @@ export class BaseballRepository {
     this.saveUserOverridesToDisk();
 
     this.deduplicatePlayers();
-    this.saveToDisk();
+    this.persistState();
 
     return {
       importedCount: resultPlayers.length,
@@ -3444,10 +4188,14 @@ export class BaseballRepository {
     this.userOverrides.customPlayers = this.userOverrides.customPlayers.filter((p) => p.id !== id);
     this.saveUserOverridesToDisk();
 
-    // Delete immediately from Cloud SQL PostgreSQL
-    cloudSqlSync.deletePlayer(id).catch(() => {});
+    // Delete from Supabase PostgreSQL (primary store)
+    this.deletePlayerFromSupabase(id);
+    this.persistState();
 
-    this.saveToDisk();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.deletePlayer(id).catch(() => {});
+    }
+
     return this.players.length < initialLen;
   }
 
@@ -3475,13 +4223,15 @@ export class BaseballRepository {
     }
     this.saveUserOverridesToDisk();
 
-    // Bulk delete immediately from Cloud SQL PostgreSQL
-    cloudSqlSync.bulkDeletePlayers(deletedIds).catch(() => {});
+    // Bulk delete from Supabase PostgreSQL (primary store)
+    this.bulkDeletePlayersFromSupabase(deletedIds);
+    this.persistState();
+
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.bulkDeletePlayers(deletedIds).catch(() => {});
+    }
 
     const deletedCount = initialLen - this.players.length;
-    if (deletedCount > 0) {
-      this.saveToDisk();
-    }
     return { deletedCount, deletedIds };
   }
 
@@ -3510,12 +4260,13 @@ export class BaseballRepository {
         if (updates.bats !== undefined) player.bats = updates.bats;
         if (updates.throws !== undefined) player.throws = updates.throws;
         if (updates.jerseyNumber !== undefined) player.jerseyNumber = updates.jerseyNumber;
+        this.syncPlayerToSupabase(player);
         updatedPlayers.push(player);
       }
     }
 
     if (updatedPlayers.length > 0) {
-      this.saveToDisk();
+      this.persistState();
     }
     return { updatedCount: updatedPlayers.length, updatedPlayers };
   }
@@ -3546,8 +4297,11 @@ export class BaseballRepository {
     };
 
     this.news.unshift(newArticle);
-    this.saveToDisk();
-    cloudSqlSync.saveNews(newArticle).catch(() => {});
+    this.syncNewsToSupabase(newArticle);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.saveNews(newArticle).catch(() => {});
+    }
     return newArticle;
   }
 
@@ -3564,16 +4318,22 @@ export class BaseballRepository {
     };
 
     this.news[index] = updated;
-    this.saveToDisk();
-    cloudSqlSync.saveNews(updated).catch(() => {});
+    this.syncNewsToSupabase(updated);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.saveNews(updated).catch(() => {});
+    }
     return updated;
   }
 
   deleteNews(id: string): boolean {
     const initialLen = this.news.length;
     this.news = this.news.filter((n) => n.id !== id);
-    this.saveToDisk();
-    cloudSqlSync.deleteNews(id).catch(() => {});
+    this.deleteNewsFromSupabase(id);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.deleteNews(id).catch(() => {});
+    }
     return this.news.length < initialLen;
   }
 
@@ -3601,16 +4361,22 @@ export class BaseballRepository {
     };
 
     this.comments.unshift(newComment);
-    this.saveToDisk();
-    cloudSqlSync.saveComment(newComment).catch(() => {});
+    this.syncCommentToSupabase(newComment);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.saveComment(newComment).catch(() => {});
+    }
     return newComment;
   }
 
   deleteComment(id: string): boolean {
     const initialLen = this.comments.length;
     this.comments = this.comments.filter((c) => c.id !== id);
-    this.saveToDisk();
-    cloudSqlSync.deleteComment(id).catch(() => {});
+    this.deleteCommentFromSupabase(id);
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.deleteComment(id).catch(() => {});
+    }
     return this.comments.length < initialLen;
   }
 
@@ -3618,7 +4384,8 @@ export class BaseballRepository {
     const comment = this.comments.find((c) => c.id === id);
     if (!comment) return { success: false, likes: 0 };
     comment.likes = (comment.likes || 0) + 1;
-    this.saveToDisk();
+    this.syncCommentLikesToSupabase(id, comment.likes);
+    this.persistState();
     return { success: true, likes: comment.likes };
   }
 
@@ -3654,7 +4421,7 @@ export class BaseballRepository {
     } else {
       this.deduplicatePlayers();
     }
-    this.saveToDisk();
+    this.persistState();
   }
 
   clearAllData(): void {
@@ -3669,10 +4436,12 @@ export class BaseballRepository {
     this.news = [];
     this.videos = [];
     this.comments = [];
-    this.saveToDisk();
-    cloudSqlSync.clearAllTestData().catch((err: unknown) => {
-      console.error('[BaseballRepository] Failed to clear Cloud SQL test data:', err);
-    });
+    this.persistState();
+    if (!isSupabaseServerConfigured()) {
+      cloudSqlSync.clearAllTestData().catch((err: unknown) => {
+        console.error('[BaseballRepository] Failed to clear Cloud SQL test data:', err);
+      });
+    }
   }
 
   getFullDatabase(): any {
@@ -3719,7 +4488,7 @@ export class BaseballRepository {
       this.pitchingStats = payload.pitchingStats;
     }
     this.deduplicatePlayers();
-    this.saveToDisk();
+    this.persistState();
 
     return {
       success: true,
@@ -3733,7 +4502,7 @@ export class BaseballRepository {
     };
   }
 
-  getDatabaseInfo(): { filePath: string; exists: boolean; sizeBytes: number; lastModified?: string; counts: Record<string, number> } {
+  getDatabaseInfo(): { filePath: string; exists: boolean; sizeBytes: number; lastModified?: string; primarySource: string; counts: Record<string, number> } {
     const exists = fs.existsSync(this.dbFilePath);
     let sizeBytes = 0;
     let lastModified: string | undefined = undefined;
@@ -3751,6 +4520,7 @@ export class BaseballRepository {
       exists,
       sizeBytes,
       lastModified,
+      primarySource: isSupabaseServerConfigured() ? 'supabase' : 'database.json',
       counts: {
         teams: this.teams.length,
         players: this.players.length,

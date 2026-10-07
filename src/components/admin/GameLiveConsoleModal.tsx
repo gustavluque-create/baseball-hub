@@ -1204,7 +1204,7 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
                       onChange={(e) => setCurrentBatterIndex(Number(e.target.value))}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
                     >
-                      {currentBattingLineup.battingOrder.map((b, idx) => (
+                      {currentBattingLineup.battingOrder.map((b: any, idx: number) => (
                         <option key={idx} value={idx}>
                           #{b.order} {b.name} ({b.position}) • AVG {b.avg || '.300'}
                         </option>
@@ -1711,7 +1711,7 @@ export const GameLiveConsoleModal: React.FC<GameLiveConsoleModalProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 font-sans">
-                      {lineups[activeLineupTeamSide].battingOrder.map((batter, idx) => (
+                      {lineups[activeLineupTeamSide].battingOrder.map((batter: any, idx: number) => (
                         <tr key={idx} className="hover:bg-slate-900/60 transition-colors">
                           <td className="py-2 px-2 text-center font-bold text-emerald-400 font-mono">
                             {batter.order}º

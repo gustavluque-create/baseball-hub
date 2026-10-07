@@ -71,6 +71,8 @@ export interface Player {
   teamShort: string;
   position: PlayerPosition;
   jerseyNumber: number;
+  number?: number;
+  shortName?: string;
   birthDate: string;
   age: number;
   birthPlace: string;
@@ -82,6 +84,10 @@ export interface Player {
   photo: string;
   bio: string;
   status: 'active' | 'injured' | 'minors';
+  isFavorite?: boolean;
+  isHallOfFame?: boolean;
+  isAllStar?: boolean;
+  war?: number;
 }
 
 export interface CareerBattingTotals {
@@ -269,8 +275,10 @@ export interface TeamLineup {
 }
 
 export interface GameLineups {
-  away: TeamLineup;
-  home: TeamLineup;
+  away: TeamLineup | any;
+  home: TeamLineup | any;
+  pitchers?: any;
+  boxScore?: any;
 }
 
 export interface PlayEvent {
@@ -428,8 +436,10 @@ export interface Standing {
   logo: string;
   teamLogo?: string;
   rank?: number;
+  position?: number;
   division: string;
   gamesPlayed: number;
+  games?: number;
   wins: number;
   losses: number;
   pct: number;
@@ -439,6 +449,7 @@ export interface Standing {
   runsAllowed: number;
   runsAgainst?: number;
   runDiff: number;
+  runDifferential?: number;
   homeRecord: string;
   awayRecord: string;
   lastTen: string;

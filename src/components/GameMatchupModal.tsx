@@ -926,7 +926,7 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
 
                       {/* Batting Order */}
                       <div className="space-y-1.5">
-                        {(data.game.lineups?.away?.battingOrder || []).map((b) => (
+                        {(data.game.lineups?.away?.battingOrder || []).map((b: any) => (
                           <div
                             key={b.order}
                             className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 transition-colors text-xs"
@@ -1006,7 +1006,7 @@ export const GameMatchupModal: React.FC<GameMatchupModalProps> = ({
 
                       {/* Batting Order */}
                       <div className="space-y-1.5">
-                        {(data.game.lineups?.home?.battingOrder || []).map((b) => (
+                        {(data.game.lineups?.home?.battingOrder || []).map((b: any) => (
                           <div
                             key={b.order}
                             className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 transition-colors text-xs"
