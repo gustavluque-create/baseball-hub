@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '../server/lib/supabase.ts';
-import * as seedData from '../server/data/seed-data.ts';
 
 export interface EntitySummary {
   source: number;
@@ -74,7 +73,8 @@ function ensureBackupExists(): boolean {
 }
 
 /**
- * Loads and harmonizes source data from database.json, user_changes.json, and seed-data.ts.
+ * Loads and harmonizes source data STRICTLY from database.json and user_changes.json.
+ * Production migration NEVER imports or introduces fictitious DEMO data from seed-data.ts.
  * Guarantees zero invented records and zero dropped records.
  */
 function loadSourceData(): {
@@ -99,33 +99,66 @@ function loadSourceData(): {
 
   const conflicts: ConflictLog[] = [];
 
-  // 1. Competitions
+  // 1. Competitions (Strictly from database.json + userChanges)
   const compMap = new Map<string, any>();
-  for (const c of seedData.DEMO_COMPETITIONS || []) {
+  for (const c of rawDb.competitions || []) {
     if (c?.id) compMap.set(c.id, { ...c });
   }
-  for (const c of rawDb.competitions || []) {
-    if (c?.id) compMap.set(c.id, { ...(compMap.get(c.id) || {}), ...c });
+  if (Array.isArray(userChanges.competitions)) {
+    for (const c of userChanges.competitions) {
+      if (c?.id) compMap.set(c.id, { ...(compMap.get(c.id) || {}), ...c });
+    }
   }
   const competitions = Array.from(compMap.values());
 
-  // 2. Seasons
+  // 2. Seasons (Strictly from database.json + userChanges, preserving seasonId format e.g. snb-61, snb-65)
   const seasonMap = new Map<string, any>();
-  for (const s of seedData.DEMO_SEASONS || []) {
+  for (const s of rawDb.seasons || []) {
     if (s?.id) seasonMap.set(s.id, { ...s });
   }
-  for (const s of rawDb.seasons || []) {
-    if (s?.id) seasonMap.set(s.id, { ...(seasonMap.get(s.id) || {}), ...s });
+  if (Array.isArray(userChanges.seasons)) {
+    for (const s of userChanges.seasons) {
+      if (s?.id) seasonMap.set(s.id, { ...(seasonMap.get(s.id) || {}), ...s });
+    }
   }
   const seasons = Array.from(seasonMap.values());
 
-  // 3. Teams & Logos
+  // 3. Teams & Team Logos (Strictly from database.json + userChanges overrides)
   const teamMap = new Map<string, any>();
-  for (const t of seedData.DEMO_TEAMS || []) {
+  for (const t of rawDb.teams || []) {
     if (t?.id) teamMap.set(t.id, { ...t });
   }
-  for (const t of rawDb.teams || []) {
-    if (t?.id) teamMap.set(t.id, { ...(teamMap.get(t.id) || {}), ...t });
+
+  // Filter out user-deleted teams
+  if (Array.isArray(userChanges.deletedTeamIds) && userChanges.deletedTeamIds.length > 0) {
+    const deletedTeamSet = new Set(userChanges.deletedTeamIds);
+    for (const delId of deletedTeamSet) {
+      if (typeof delId === 'string') teamMap.delete(delId);
+    }
+  }
+
+  // Add/merge custom teams
+  if (Array.isArray(userChanges.customTeams)) {
+    for (const ct of userChanges.customTeams) {
+      if (ct?.id) teamMap.set(ct.id, { ...(teamMap.get(ct.id) || {}), ...ct });
+    }
+  }
+
+  // Apply user updates on teams
+  if (userChanges.teams && typeof userChanges.teams === 'object') {
+    if (Array.isArray(userChanges.teams)) {
+      for (const t of userChanges.teams) {
+        if (t?.id && teamMap.has(t.id)) {
+          teamMap.set(t.id, { ...teamMap.get(t.id), ...t });
+        }
+      }
+    } else {
+      for (const [tId, tVal] of Object.entries(userChanges.teams)) {
+        if (tVal && typeof tVal === 'object' && teamMap.has(tId)) {
+          teamMap.set(tId, { ...teamMap.get(tId), ...tVal });
+        }
+      }
+    }
   }
 
   // Apply user-modified team logos and colors
@@ -141,81 +174,116 @@ function loadSourceData(): {
       }
     }
   }
-  const teams = Array.from(teamMap.values());
-
-  // 4. Players
-  const playerMap = new Map<string, any>();
-  const playerNamesSeen = new Map<string, string>(); // fullName -> id
-
-  for (const p of seedData.DEMO_PLAYERS || []) {
-    if (p?.id) {
-      playerMap.set(p.id, { ...p });
-      const lowerName = (p.fullName || '').trim().toLowerCase();
-      if (lowerName) playerNamesSeen.set(lowerName, p.id);
+  // Also populate teamLogos from teams that have a logo defined if not already in teamLogos
+  for (const t of teamMap.values()) {
+    if (t?.id && t.logo && !teamLogos[t.id]) {
+      teamLogos[t.id] = {
+        logo: t.logo,
+        primaryColor: t.primaryColor || t.colors?.primary || null,
+      };
     }
   }
+  const teams = Array.from(teamMap.values());
+
+  // 4. Players (Strictly from database.json + userChanges, with homonym and duplicate detection)
+  const playerMap = new Map<string, any>();
+  const playerNamesSeen = new Map<string, string>(); // fullName -> id
 
   for (const p of rawDb.players || []) {
     if (p?.id) {
       const lowerName = (p.fullName || '').trim().toLowerCase();
-      const existingId = playerNamesSeen.get(lowerName);
-      if (existingId && existingId !== p.id) {
-        // Detect ambiguity: DO NOT automatically merge ambiguous players.
-        conflicts.push({
-          entity: 'players',
-          id: p.id,
-          reason: 'Jugador ambiguo / homónimo detectado con distinto ID',
-          details: `Jugador "${p.fullName}" (ID: ${p.id}) coincide en nombre con ID: ${existingId}. Conservados como registros independientes.`,
-        });
+      if (lowerName) {
+        const existingId = playerNamesSeen.get(lowerName);
+        if (existingId && existingId !== p.id) {
+          // Detect ambiguity: DO NOT automatically merge ambiguous players.
+          conflicts.push({
+            entity: 'players',
+            id: p.id,
+            reason: 'Jugador ambiguo / homónimo detectado con distinto ID',
+            details: `Jugador "${p.fullName}" (ID: ${p.id}) coincide en nombre con ID: ${existingId}. Conservados como registros independientes.`,
+          });
+        } else {
+          playerNamesSeen.set(lowerName, p.id);
+        }
       }
       playerMap.set(p.id, { ...(playerMap.get(p.id) || {}), ...p });
     }
   }
 
-  // Apply player overrides from user_changes (e.g. custom photo updates)
-  if (Array.isArray(userChanges.players)) {
-    for (const up of userChanges.players) {
-      if (up?.id) {
-        const lowerName = (up.fullName || '').trim().toLowerCase();
-        const existingId = lowerName ? playerNamesSeen.get(lowerName) : null;
-        if (existingId && existingId !== up.id) {
-          conflicts.push({
-            entity: 'players',
-            id: up.id,
-            reason: 'Jugador ambiguo / homónimo detectado con distinto ID en userChanges',
-            details: `Jugador "${up.fullName}" (ID: ${up.id}) coincide en nombre con ID: ${existingId}. Conservados como registros independientes.`,
-          });
+  // Filter out user-deleted players
+  if (Array.isArray(userChanges.deletedPlayerIds) && userChanges.deletedPlayerIds.length > 0) {
+    const deletedPlayerSet = new Set(userChanges.deletedPlayerIds);
+    for (const delId of deletedPlayerSet) {
+      if (typeof delId === 'string') playerMap.delete(delId);
+    }
+  }
+
+  // Add custom players
+  if (Array.isArray(userChanges.customPlayers)) {
+    for (const cp of userChanges.customPlayers) {
+      if (cp?.id) {
+        const lowerName = (cp.fullName || '').trim().toLowerCase();
+        if (lowerName) {
+          const existingId = playerNamesSeen.get(lowerName);
+          if (existingId && existingId !== cp.id) {
+            conflicts.push({
+              entity: 'players',
+              id: cp.id,
+              reason: 'Jugador ambiguo / homónimo detectado con distinto ID en customPlayers',
+              details: `Jugador "${cp.fullName}" (ID: ${cp.id}) coincide en nombre con ID: ${existingId}. Conservados como registros independientes.`,
+            });
+          } else {
+            playerNamesSeen.set(lowerName, cp.id);
+          }
         }
-        playerMap.set(up.id, { ...(playerMap.get(up.id) || {}), ...up });
+        playerMap.set(cp.id, { ...(playerMap.get(cp.id) || {}), ...cp });
+      }
+    }
+  }
+
+  // Apply player updates from user_changes (array or object format)
+  if (userChanges.players) {
+    if (Array.isArray(userChanges.players)) {
+      for (const up of userChanges.players) {
+        if (up?.id) {
+          const lowerName = (up.fullName || '').trim().toLowerCase();
+          const existingId = lowerName ? playerNamesSeen.get(lowerName) : null;
+          if (existingId && existingId !== up.id) {
+            conflicts.push({
+              entity: 'players',
+              id: up.id,
+              reason: 'Jugador ambiguo / homónimo detectado con distinto ID en userChanges',
+              details: `Jugador "${up.fullName}" (ID: ${up.id}) coincide en nombre con ID: ${existingId}. Conservados como registros independientes.`,
+            });
+          }
+          if (playerMap.has(up.id)) {
+            playerMap.set(up.id, { ...playerMap.get(up.id), ...up });
+          } else {
+            playerMap.set(up.id, { ...up });
+          }
+        }
+      }
+    } else if (typeof userChanges.players === 'object') {
+      for (const [upId, upVal] of Object.entries(userChanges.players)) {
+        if (upVal && typeof upVal === 'object') {
+          if (playerMap.has(upId)) {
+            playerMap.set(upId, { ...playerMap.get(upId), ...(upVal as any) });
+          }
+        }
       }
     }
   }
   const players = Array.from(playerMap.values());
 
-  // 5. Batting Stats (Preserves type, playerName, seasonYear, seasonId, teamShort)
+  // 5. Batting Stats (Strictly from database.json + userChanges; preserves type, playerName, seasonYear, seasonId, teamShort)
   const battingMap = new Map<string, any>();
-  for (const b of seedData.DEMO_BATTING_STATS || []) {
-    if (b?.id) {
-      const p = playerMap.get(b.playerId);
-      const sYear = b.seasonYear || 2026;
-      battingMap.set(b.id, {
-        ...b,
-        type: 'batting',
-        playerName: b.playerName || p?.fullName || '',
-        seasonYear: sYear,
-        seasonId: b.seasonId || `snb-${sYear}`,
-        teamShort: b.teamShort || p?.teamShort || 'TEAM',
-      });
-    }
-  }
   for (const b of rawDb.battingStats || []) {
     if (b?.id) {
       const p = playerMap.get(b.playerId);
       const sYear = b.seasonYear || 2026;
       battingMap.set(b.id, {
-        ...(battingMap.get(b.id) || {}),
         ...b,
-        type: 'batting',
+        type: b.type || 'batting',
         playerName: b.playerName || p?.fullName || '',
         seasonYear: sYear,
         seasonId: b.seasonId || `snb-${sYear}`,
@@ -223,32 +291,34 @@ function loadSourceData(): {
       });
     }
   }
-  const battingStats = Array.from(battingMap.values());
-
-  // 6. Pitching Stats (Preserves type, playerName, seasonYear, seasonId, teamShort)
-  const pitchingMap = new Map<string, any>();
-  for (const p of seedData.DEMO_PITCHING_STATS || []) {
-    if (p?.id) {
-      const pl = playerMap.get(p.playerId);
-      const sYear = p.seasonYear || 2026;
-      pitchingMap.set(p.id, {
-        ...p,
-        type: 'pitching',
-        playerName: p.playerName || pl?.fullName || '',
-        seasonYear: sYear,
-        seasonId: p.seasonId || `snb-${sYear}`,
-        teamShort: p.teamShort || pl?.teamShort || 'TEAM',
-      });
+  if (Array.isArray(userChanges.battingStats)) {
+    for (const b of userChanges.battingStats) {
+      if (b?.id) {
+        const p = playerMap.get(b.playerId);
+        const sYear = b.seasonYear || 2026;
+        battingMap.set(b.id, {
+          ...(battingMap.get(b.id) || {}),
+          ...b,
+          type: b.type || 'batting',
+          playerName: b.playerName || p?.fullName || '',
+          seasonYear: sYear,
+          seasonId: b.seasonId || `snb-${sYear}`,
+          teamShort: b.teamShort || p?.teamShort || 'TEAM',
+        });
+      }
     }
   }
+  const battingStats = Array.from(battingMap.values());
+
+  // 6. Pitching Stats (Strictly from database.json + userChanges; preserves type, playerName, seasonYear, seasonId, teamShort)
+  const pitchingMap = new Map<string, any>();
   for (const p of rawDb.pitchingStats || []) {
     if (p?.id) {
       const pl = playerMap.get(p.playerId);
       const sYear = p.seasonYear || 2026;
       pitchingMap.set(p.id, {
-        ...(pitchingMap.get(p.id) || {}),
         ...p,
-        type: 'pitching',
+        type: p.type || 'pitching',
         playerName: p.playerName || pl?.fullName || '',
         seasonYear: sYear,
         seasonId: p.seasonId || `snb-${sYear}`,
@@ -256,41 +326,71 @@ function loadSourceData(): {
       });
     }
   }
+  if (Array.isArray(userChanges.pitchingStats)) {
+    for (const p of userChanges.pitchingStats) {
+      if (p?.id) {
+        const pl = playerMap.get(p.playerId);
+        const sYear = p.seasonYear || 2026;
+        pitchingMap.set(p.id, {
+          ...(pitchingMap.get(p.id) || {}),
+          ...p,
+          type: p.type || 'pitching',
+          playerName: p.playerName || pl?.fullName || '',
+          seasonYear: sYear,
+          seasonId: p.seasonId || `snb-${sYear}`,
+          teamShort: p.teamShort || pl?.teamShort || 'TEAM',
+        });
+      }
+    }
+  }
   const pitchingStats = Array.from(pitchingMap.values());
 
-  // 7. Games
+  // 7. Games (Strictly from database.json + userChanges; filters deleted games)
+  const deletedGameSet = new Set(
+    Array.isArray(userChanges.deletedGameIds) ? userChanges.deletedGameIds : []
+  );
   const gameMap = new Map<string, any>();
-  for (const g of seedData.DEMO_GAMES || []) {
-    if (g?.id) gameMap.set(g.id, { ...g });
-  }
   for (const g of rawDb.games || []) {
-    if (g?.id) gameMap.set(g.id, { ...(gameMap.get(g.id) || {}), ...g });
+    if (g?.id && !deletedGameSet.has(g.id)) {
+      gameMap.set(g.id, { ...g });
+    }
+  }
+  if (Array.isArray(userChanges.games)) {
+    for (const g of userChanges.games) {
+      if (g?.id && !deletedGameSet.has(g.id)) {
+        gameMap.set(g.id, { ...(gameMap.get(g.id) || {}), ...g });
+      }
+    }
   }
   const games = Array.from(gameMap.values());
 
-  // 8. Standings
+  // 8. Standings (Strictly from database.json + userChanges)
   const standingMap = new Map<string, any>();
-  for (const st of seedData.DEMO_STANDINGS || []) {
-    const key = `${st.seasonId || 'snb-65'}_${st.teamId}`;
+  for (const st of rawDb.standings || []) {
+    const key = st.id || `${st.seasonId || 'snb-65'}_${st.teamId}`;
     standingMap.set(key, { ...st });
   }
-  for (const st of rawDb.standings || []) {
-    const key = `${st.seasonId || 'snb-65'}_${st.teamId}`;
-    standingMap.set(key, { ...(standingMap.get(key) || {}), ...st });
+  if (Array.isArray(userChanges.standings)) {
+    for (const st of userChanges.standings) {
+      const key = st.id || `${st.seasonId || 'snb-65'}_${st.teamId}`;
+      standingMap.set(key, { ...(standingMap.get(key) || {}), ...st });
+    }
   }
   const standings = Array.from(standingMap.values());
 
-  // 9. News
+  // 9. News (Strictly from database.json + userChanges)
   const newsMap = new Map<string, any>();
-  for (const n of seedData.DEMO_NEWS || []) {
+  for (const n of rawDb.news || []) {
     if (n?.id) newsMap.set(n.id, { ...n });
   }
-  for (const n of rawDb.news || []) {
-    if (n?.id) newsMap.set(n.id, { ...(newsMap.get(n.id) || {}), ...n });
+  if (Array.isArray(userChanges.news)) {
+    for (const n of userChanges.news) {
+      if (n?.id) newsMap.set(n.id, { ...(newsMap.get(n.id) || {}), ...n });
+    }
   }
   const news = Array.from(newsMap.values());
 
-  // 10. Comments
+  // 10. Comments (Strictly from database.json + userChanges)
   const commentMap = new Map<string, any>();
   for (const c of rawDb.comments || []) {
     if (c?.id) commentMap.set(c.id, { ...c });
