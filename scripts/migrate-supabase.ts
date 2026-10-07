@@ -43,7 +43,7 @@ export interface MigrationResult {
  * Ensures a pre-migration backup exists before any migration steps are initiated.
  * Never deletes or alters the source database.
  */
-function ensureBackupExists(): boolean {
+export function ensureBackupExists(): boolean {
   const backupPath = path.resolve(process.cwd(), 'server/data/pre_supabase_backup.json');
   const dbPath = path.resolve(process.cwd(), 'server/data/database.json');
   const userChangesPath = path.resolve(process.cwd(), 'server/data/user_changes.json');

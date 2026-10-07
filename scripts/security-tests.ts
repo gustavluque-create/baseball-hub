@@ -206,6 +206,10 @@ async function runSecurityTests() {
 
     // 14. Pre-migration backup exists
     const backupPath = path.resolve(process.cwd(), 'server/data/pre_supabase_backup.json');
+    if (!fs.existsSync(backupPath)) {
+      const { ensureBackupExists } = await import('./migrate-supabase.ts');
+      ensureBackupExists();
+    }
     assert(fs.existsSync(backupPath), '20. Respaldo previo a migración pre_supabase_backup.json generado correctamente');
 
     // Summary
