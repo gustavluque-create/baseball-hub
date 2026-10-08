@@ -130,7 +130,7 @@ class NotificationService extends EventEmitter {
   /**
    * Handle incoming Webhook from external sports data providers or internal triggers
    */
-  public handleIncomingWebhook(body: any): { success: boolean; event?: ScoreNotificationEvent; message: string } {
+  public async handleIncomingWebhook(body: any): Promise<{ success: boolean; event?: ScoreNotificationEvent; message: string }> {
     const {
       gameId,
       scoringTeamSide = 'home',
@@ -148,7 +148,7 @@ class NotificationService extends EventEmitter {
     const side: 'home' | 'away' = scoringTeamSide === 'away' ? 'away' : 'home';
 
     // Update in repository
-    const simResult = baseballRepo.simulateLiveScoreChange(gameId, side, runsCount);
+    const simResult = await baseballRepo.simulateLiveScoreChange(gameId, side, runsCount);
     if (!simResult) {
       return { success: false, message: `No se encontró el partido activo con ID: ${gameId}` };
     }
@@ -180,7 +180,7 @@ class NotificationService extends EventEmitter {
   /**
    * Generate a realistic test score change notification for preview and sound/permission testing
    */
-  public generateTestNotification(): ScoreNotificationEvent {
+  public async generateTestNotification(): Promise<ScoreNotificationEvent> {
     const games = baseballRepo.getGames();
     const liveGames = games.filter((g) => g.status === 'LIVE');
     const targetGame = liveGames.length > 0 ? liveGames[0] : games[0];
@@ -189,7 +189,7 @@ class NotificationService extends EventEmitter {
     const side: 'home' | 'away' = Math.random() > 0.5 ? 'home' : 'away';
 
     if (targetGame) {
-      const sim = baseballRepo.simulateLiveScoreChange(targetGame.id, side, runs);
+      const sim = await baseballRepo.simulateLiveScoreChange(targetGame.id, side, runs);
       if (sim) {
         return this.broadcastScoreChange({
           gameId: sim.game.id,

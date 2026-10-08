@@ -3134,7 +3134,7 @@ export class BaseballRepository {
     return this.ensureGameDetails(found);
   }
 
-  simulateLiveScoreChange(gameId?: string, forcedSide?: 'home' | 'away', forcedRuns?: number): {
+  async simulateLiveScoreChange(gameId?: string, forcedSide?: 'home' | 'away', forcedRuns?: number): Promise<{
     game: Game;
     runsScored: number;
     scoringTeam: Team;
@@ -3142,7 +3142,7 @@ export class BaseballRepository {
     title: string;
     playDescription: string;
     playType: 'homerun' | 'hit' | 'sacrifice' | 'walk' | 'standard';
-  } | null {
+  } | null> {
     const liveGames = this.games.filter((g) => g.status === 'LIVE');
     if (liveGames.length === 0) return null;
 
@@ -3197,9 +3197,7 @@ export class BaseballRepository {
     });
 
     if (this.isSupabaseActive()) {
-      this.syncGameToSupabase(target).catch((err) => {
-        console.error('❌ [BaseballRepository] Falló sincronización de juego simulado en Supabase:', err);
-      });
+      await this.syncGameToSupabase(target);
     }
     this.persistState();
     return {

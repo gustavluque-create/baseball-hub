@@ -676,7 +676,7 @@ apiRouter.get('/events/score-changes', (req: Request, res: Response) => {
 });
 
 // Incoming Webhook for Score Updates (from external sports feeds or simulators)
-apiRouter.post('/webhooks/score-update', (req: Request, res: Response) => {
+apiRouter.post('/webhooks/score-update', async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
   if (webhookSecret) {
     const providedSecret = req.headers['x-webhook-secret'] || req.headers['authorization'];
@@ -688,7 +688,7 @@ apiRouter.post('/webhooks/score-update', (req: Request, res: Response) => {
       }
     }
   }
-  const result = notificationService.handleIncomingWebhook(req.body);
+  const result = await notificationService.handleIncomingWebhook(req.body);
   if (!result.success) {
     return res.status(400).json(result);
   }
@@ -718,8 +718,8 @@ apiRouter.get('/notifications/history', (req: Request, res: Response) => {
 });
 
 // Test Notification Trigger
-apiRouter.post('/notifications/test', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
-  const testEvent = notificationService.generateTestNotification();
+apiRouter.post('/notifications/test', requireAdmin, requireRole('superadmin'), async (req: Request, res: Response) => {
+  const testEvent = await notificationService.generateTestNotification();
   res.json({
     success: true,
     message: 'Notificación de prueba generada y emitida a todos los clientes conectados',
@@ -1214,40 +1214,45 @@ apiRouter.get('/matchup/:id', (req: Request, res: Response) => {
   res.json(matchup);
 });
 
-apiRouter.post('/games/simulate-run', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/games/simulate-run', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const { gameId, side, runs } = req.body || {};
-  const result = baseballRepo.simulateLiveScoreChange(gameId, side, runs);
-  if (!result) {
-    return res.status(404).json({ error: 'No se encontraron partidos en vivo para simular carreras.' });
+  try {
+    const result = await baseballRepo.simulateLiveScoreChange(gameId, side, runs);
+    if (!result) {
+      return res.status(404).json({ error: 'No se encontraron partidos en vivo para simular carreras.' });
+    }
+
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Simulación de Carrera en Vivo',
+      `Carrera manual anotada en partido ${result.game.awayTeam.shortName} vs ${result.game.homeTeam.shortName}`,
+      'games'
+    );
+
+    // Broadcast to all real-time SSE stream clients and notification subscribers
+    notificationService.broadcastScoreChange({
+      gameId: result.game.id,
+      homeTeam: result.game.homeTeam,
+      awayTeam: result.game.awayTeam,
+      scoringTeam: result.scoringTeam,
+      scoringTeamSide: result.scoringSide,
+      runsScored: result.runsScored,
+      homeScore: result.game.homeScore,
+      awayScore: result.game.awayScore,
+      inning: result.game.currentInning || 8,
+      isTopInning: result.scoringSide === 'away',
+      outs: result.game.outs ?? 1,
+      title: result.title,
+      description: result.playDescription,
+      playType: result.playType as any,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('Error al simular carrera en vivo:', err);
+    res.status(500).json({ error: 'Error al simular carrera en vivo', details: err?.message || String(err) });
   }
-
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Simulación de Carrera en Vivo',
-    `Carrera manual anotada en partido ${result.game.awayTeam.shortName} vs ${result.game.homeTeam.shortName}`,
-    'games'
-  );
-
-  // Broadcast to all real-time SSE stream clients and notification subscribers
-  notificationService.broadcastScoreChange({
-    gameId: result.game.id,
-    homeTeam: result.game.homeTeam,
-    awayTeam: result.game.awayTeam,
-    scoringTeam: result.scoringTeam,
-    scoringTeamSide: result.scoringSide,
-    runsScored: result.runsScored,
-    homeScore: result.game.homeScore,
-    awayScore: result.game.awayScore,
-    inning: result.game.currentInning || 8,
-    isTopInning: result.scoringSide === 'away',
-    outs: result.game.outs ?? 1,
-    title: result.title,
-    description: result.playDescription,
-    playType: result.playType as any,
-  });
-
-  res.json(result);
 });
 
 // Standings
