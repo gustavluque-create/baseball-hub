@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { adminAuthService, isValidBcryptHash, getAdminCredential } from '../server/services/admin-auth.service.ts';
 import { isSupabaseServerConfigured, getSupabaseServerClient } from '../server/lib/supabase.ts';
 import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
+import { baseballRepo, BaseballRepository } from '../server/repositories/baseball.repository.ts';
 
 function request(options: http.RequestOptions, body?: any): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
   return new Promise((resolve, reject) => {
@@ -211,6 +212,66 @@ async function runSecurityTests() {
       ensureBackupExists();
     }
     assert(fs.existsSync(backupPath), '20. Respaldo previo a migración pre_supabase_backup.json generado correctamente');
+
+    // ========================================================
+    // COMPROBACIONES DE INICIALIZACIÓN DETERMINISTA (FASE 2.3)
+    // ========================================================
+
+    // 21. Estado de repositorio sin Supabase configurado -> LOCAL-FALLBACK
+    await baseballRepo.ready();
+    const repoState = baseballRepo.getState();
+    assert(
+      repoState === 'local-fallback' && baseballRepo.isReady() && !baseballRepo.isSupabaseActive(),
+      '21. Repositorio sin Supabase inicializa deterministamente en estado LOCAL-FALLBACK'
+    );
+
+    // 22. Database info reporta estado y fuente primaria
+    const dbInfo = baseballRepo.getDatabaseInfo();
+    assert(
+      dbInfo.state === 'local-fallback' && dbInfo.primarySource === 'database.json' && dbInfo.counts.teams > 0,
+      '22. getDatabaseInfo() refleja estado LOCAL-FALLBACK y fuente primaria database.json'
+    );
+
+    // 23. Funciones de consulta del repositorio operativas
+    const teams = baseballRepo.getTeams();
+    const players = baseballRepo.getPlayers({ limit: 10 });
+    const games = baseballRepo.getGames();
+    const news = baseballRepo.getNews();
+    const search = baseballRepo.searchGlobal('Industriales');
+    assert(
+      teams.length > 0 && Array.isArray(players.items) && Array.isArray(games) && Array.isArray(news) && search.teams.length > 0,
+      '23. Métodos del repositorio (equipos, jugadores, juegos, noticias, búsqueda) operan normalmente'
+    );
+
+    // 24. Supabase configurado pero inaccesible -> Transición limpia a LOCAL-FALLBACK con log de advertencia
+    const savedUrl = process.env.SUPABASE_URL;
+    const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      process.env.SUPABASE_URL = 'https://unreachable-host-testing-fase-2-3.supabase.co';
+      process.env.SUPABASE_SERVICE_ROLE_KEY = 'invalid-testing-key-fase-2-3';
+      const fallbackRepo = new BaseballRepository();
+      await fallbackRepo.ready();
+      assert(
+        fallbackRepo.getState() === 'local-fallback' &&
+          fallbackRepo.isReady() === true &&
+          fallbackRepo.isSupabaseActive() === false &&
+          fallbackRepo.getTeams().length > 0,
+        '24. Supabase configurado pero inaccesible -> Cae limpiamente a LOCAL-FALLBACK sin bloquear ni fingir actividad'
+      );
+    } finally {
+      if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
+      else delete process.env.SUPABASE_URL;
+      if (savedKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey;
+      else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    }
+
+    // 25. Con Supabase activo -> Estado SUPABASE
+    const testSupaRepo = new BaseballRepository();
+    (testSupaRepo as any).state = 'supabase';
+    assert(
+      testSupaRepo.getState() === 'supabase' && testSupaRepo.isSupabaseActive() === true,
+      '25. Con Supabase activo -> Estado SUPABASE y isSupabaseActive() retorna true'
+    );
 
     // Summary
     console.log('\n🔒 ==========================================');

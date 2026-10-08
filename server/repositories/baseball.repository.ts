@@ -66,6 +66,8 @@ function formatEra(val: any): string {
   return '0.00';
 }
 
+export type RepositoryState = 'initializing' | 'supabase' | 'local-fallback';
+
 export class BaseballRepository {
   private readonly dbFilePath = path.resolve(process.cwd(), 'server/data/database.json');
   private readonly backupFilePath = path.resolve(process.cwd(), 'server/data/database.backup.json');
@@ -91,6 +93,8 @@ export class BaseballRepository {
     deletedGameIds: [],
   };
 
+  private state: RepositoryState = 'initializing';
+  private initPromise: Promise<void>;
   private isInitialized = false;
   private competitions: Competition[] = [];
   private seasons: Season[] = [];
@@ -105,13 +109,41 @@ export class BaseballRepository {
   private comments: ArticleComment[] = [];
 
   constructor() {
-    this.loadFromDisk();
-    this.deduplicatePlayers();
+    this.initPromise = this.initialize();
+  }
+
+  public getState(): RepositoryState {
+    return this.state;
+  }
+
+  public isReady(): boolean {
+    return this.state !== 'initializing';
+  }
+
+  public async ready(): Promise<void> {
+    await this.initPromise;
+  }
+
+  private async initialize(): Promise<void> {
+    this.state = 'initializing';
+
     if (isSupabaseServerConfigured()) {
-      this.initSupabase().catch((err) => {
-        console.warn('[BaseballRepository] Supabase background init warning:', err);
-      });
+      try {
+        console.log('[BaseballRepository] Supabase configurado. Iniciando carga desde Supabase PostgreSQL...');
+        await this.initSupabase();
+      } catch (err: any) {
+        console.error('❌ [BaseballRepository] Falló la inicialización desde Supabase:', err?.message || err);
+        console.warn('⚠️ [BaseballRepository] MODO FALLBACK ACTIVO: Utilizando database.json como respaldo temporal. Supabase NO está activo.');
+        this.loadFromDisk();
+        this.deduplicatePlayers();
+        this.state = 'local-fallback';
+      }
     } else {
+      console.log('[BaseballRepository] Supabase no configurado. Cargando datos locales desde database.json...');
+      this.loadFromDisk();
+      this.deduplicatePlayers();
+      this.state = 'local-fallback';
+      console.log('[BaseballRepository] Repositorio inicializado en modo local (database.json).');
       this.initCloudSql().catch((err) => {
         console.warn('[BaseballRepository] Cloud SQL background init warning:', err);
       });
@@ -122,13 +154,19 @@ export class BaseballRepository {
    * Primary data loader: initializes repository directly from Supabase PostgreSQL.
    */
   public async initSupabase(): Promise<void> {
-    if (!isSupabaseServerConfigured()) return;
+    if (!isSupabaseServerConfigured()) {
+      console.warn('[BaseballRepository] initSupabase llamado pero Supabase no está configurado.');
+      return;
+    }
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) {
+      throw new Error('Cliente Supabase no disponible a pesar de configuración.');
+    }
 
     try {
       // 1. Competitions
-      const { data: supaComps } = await supabase.from('competitions').select('*');
+      const { data: supaComps, error: errComps } = await supabase.from('competitions').select('*');
+      if (errComps) throw new Error(`Error en tabla competitions: ${errComps.message}`);
       if (supaComps && supaComps.length > 0) {
         this.competitions = supaComps.map((sc: any) => ({
           id: sc.id,
@@ -145,7 +183,8 @@ export class BaseballRepository {
       }
 
       // 2. Seasons
-      const { data: supaSeasons } = await supabase.from('seasons').select('*');
+      const { data: supaSeasons, error: errSeasons } = await supabase.from('seasons').select('*');
+      if (errSeasons) throw new Error(`Error en tabla seasons: ${errSeasons.message}`);
       if (supaSeasons && supaSeasons.length > 0) {
         this.seasons = supaSeasons.map((ss: any) => ({
           id: ss.id,
@@ -162,8 +201,10 @@ export class BaseballRepository {
       }
 
       // 3. Teams & Team Logos
-      const { data: supaTeams } = await supabase.from('teams').select('*');
-      const { data: supaLogos } = await supabase.from('team_logos').select('*');
+      const { data: supaTeams, error: errTeams } = await supabase.from('teams').select('*');
+      if (errTeams) throw new Error(`Error en tabla teams: ${errTeams.message}`);
+      const { data: supaLogos, error: errLogos } = await supabase.from('team_logos').select('*');
+      if (errLogos) throw new Error(`Error en tabla team_logos: ${errLogos.message}`);
       const logoMap = new Map((supaLogos || []).map((l: any) => [l.team_id, l]));
 
       if (supaTeams && supaTeams.length > 0) {
@@ -204,7 +245,8 @@ export class BaseballRepository {
       }
 
       // 4. Players
-      const { data: supaPlayers } = await supabase.from('players').select('*');
+      const { data: supaPlayers, error: errPlayers } = await supabase.from('players').select('*');
+      if (errPlayers) throw new Error(`Error en tabla players: ${errPlayers.message}`);
       if (supaPlayers && supaPlayers.length > 0) {
         this.players = supaPlayers.map((sp: any) => ({
           id: sp.id,
@@ -238,7 +280,8 @@ export class BaseballRepository {
       }
 
       // 5. Batting Stats
-      const { data: supaBatting } = await supabase.from('player_season_batting').select('*');
+      const { data: supaBatting, error: errBatting } = await supabase.from('player_season_batting').select('*');
+      if (errBatting) throw new Error(`Error en tabla player_season_batting: ${errBatting.message}`);
       if (supaBatting && supaBatting.length > 0) {
         this.battingStats = supaBatting.map((sb: any) => ({
           id: sb.id,
@@ -272,7 +315,8 @@ export class BaseballRepository {
       }
 
       // 6. Pitching Stats
-      const { data: supaPitching } = await supabase.from('player_season_pitching').select('*');
+      const { data: supaPitching, error: errPitching } = await supabase.from('player_season_pitching').select('*');
+      if (errPitching) throw new Error(`Error en tabla player_season_pitching: ${errPitching.message}`);
       if (supaPitching && supaPitching.length > 0) {
         this.pitchingStats = supaPitching.map((sp: any) => ({
           id: sp.id,
@@ -305,7 +349,8 @@ export class BaseballRepository {
       }
 
       // 7. Games
-      const { data: supaGames } = await supabase.from('games').select('*');
+      const { data: supaGames, error: errGames } = await supabase.from('games').select('*');
+      if (errGames) throw new Error(`Error en tabla games: ${errGames.message}`);
       if (supaGames && supaGames.length > 0) {
         this.games = supaGames.map((sg: any) => {
           const homeTeam = this.teams.find((t) => t.id === sg.home_team_id) || ({
@@ -357,7 +402,8 @@ export class BaseballRepository {
       }
 
       // 8. Standings
-      const { data: supaStandings } = await supabase.from('standings').select('*');
+      const { data: supaStandings, error: errStandings } = await supabase.from('standings').select('*');
+      if (errStandings) throw new Error(`Error en tabla standings: ${errStandings.message}`);
       if (supaStandings && supaStandings.length > 0) {
         this.standings = supaStandings.map((st: any) => {
           const team = this.teams.find((t) => t.id === st.team_id);
@@ -389,7 +435,8 @@ export class BaseballRepository {
       }
 
       // 9. News
-      const { data: supaNews } = await supabase.from('news').select('*').order('published_at', { ascending: false });
+      const { data: supaNews, error: errNews } = await supabase.from('news').select('*').order('published_at', { ascending: false });
+      if (errNews) throw new Error(`Error en tabla news: ${errNews.message}`);
       if (supaNews && supaNews.length > 0) {
         this.news = supaNews.map((sn: any) => ({
           id: sn.id,
@@ -410,7 +457,8 @@ export class BaseballRepository {
       }
 
       // 10. Comments
-      const { data: supaComments } = await supabase.from('news_comments').select('*');
+      const { data: supaComments, error: errComments } = await supabase.from('news_comments').select('*');
+      if (errComments) throw new Error(`Error en tabla news_comments: ${errComments.message}`);
       if (supaComments && supaComments.length > 0) {
         this.comments = supaComments.map((sc: any) => ({
           id: sc.id,
@@ -423,9 +471,12 @@ export class BaseballRepository {
         }));
       }
 
+      this.deduplicatePlayers();
+      this.isInitialized = true;
+      this.state = 'supabase';
       console.log('⚡ [BaseballRepository] Supabase PostgreSQL activo como fuente principal de datos.');
     } catch (err: any) {
-      console.warn('[BaseballRepository] Supabase connection status: running with resilient memory repository layer.');
+      throw err;
     }
   }
 
@@ -433,7 +484,7 @@ export class BaseballRepository {
    * Persists repository state. If Supabase is active, disk write is skipped to prevent multi-source writes.
    */
   private persistState(): void {
-    if (isSupabaseServerConfigured()) {
+    if (this.isSupabaseActive()) {
       // Supabase is the primary store; bypass local disk write to prevent dual writes
       return;
     }
@@ -860,11 +911,11 @@ export class BaseballRepository {
   }
 
   public isSupabaseActive(): boolean {
-    return isSupabaseServerConfigured();
+    return this.state === 'supabase';
   }
 
   public async initCloudSql(): Promise<void> {
-    if (isSupabaseServerConfigured()) {
+    if (this.isSupabaseActive()) {
       // Supabase is the primary store; Cloud SQL is retired from primary sync
       return;
     }
@@ -4502,7 +4553,7 @@ export class BaseballRepository {
     };
   }
 
-  getDatabaseInfo(): { filePath: string; exists: boolean; sizeBytes: number; lastModified?: string; primarySource: string; counts: Record<string, number> } {
+  getDatabaseInfo(): { filePath: string; exists: boolean; sizeBytes: number; lastModified?: string; state?: RepositoryState; primarySource: string; counts: Record<string, number> } {
     const exists = fs.existsSync(this.dbFilePath);
     let sizeBytes = 0;
     let lastModified: string | undefined = undefined;
@@ -4520,7 +4571,8 @@ export class BaseballRepository {
       exists,
       sizeBytes,
       lastModified,
-      primarySource: isSupabaseServerConfigured() ? 'supabase' : 'database.json',
+      state: this.state,
+      primarySource: this.state === 'supabase' ? 'supabase' : 'database.json',
       counts: {
         teams: this.teams.length,
         players: this.players.length,

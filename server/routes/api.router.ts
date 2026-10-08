@@ -22,6 +22,16 @@ import {
 
 export const apiRouter = Router();
 
+// Garantizar que BaseballRepository esté inicializado antes de procesar cualquier petición API
+apiRouter.use(async (_req: Request, _res: Response, next: NextFunction) => {
+  try {
+    await baseballRepo.ready();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Helper to extract session token from Authorization header, x-admin-token header, or HttpOnly cookie
 export const getRequestToken = (req: Request): string | undefined => {
   const authHeader = req.headers.authorization;

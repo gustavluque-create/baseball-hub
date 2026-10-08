@@ -213,6 +213,16 @@ async function startServer() {
   // Serve static assets from public folder
   app.use(express.static(path.join(process.cwd(), 'public')));
 
+  // Ensure BaseballRepository is ready before handling requests
+  app.use(async (_req, _res, next) => {
+    try {
+      await baseballRepo.ready();
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // API Routes First
   app.use('/api', apiRouter);
 
@@ -296,6 +306,9 @@ async function startServer() {
       res.sendFile(indexHtmlPath);
     });
   }
+
+  // Wait for repository initialization before starting server listener
+  await baseballRepo.ready();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`⚾ BASEBALL HUB server running on http://0.0.0.0:${PORT}`);
