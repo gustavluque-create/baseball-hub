@@ -238,33 +238,41 @@ apiRouter.get('/admin/audit-logs', requireAdmin, requireRole('superadmin'), (req
 });
 
 // Admin Game Management
-apiRouter.post('/admin/games', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/games', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const newGame = baseballRepo.createGame(req.body);
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Creación de Partido',
-    `Partido creado: ${newGame.awayTeam.shortName} vs ${newGame.homeTeam.shortName} (${newGame.date})`,
-    'games'
-  );
-  res.status(201).json(newGame);
-});
-
-apiRouter.post('/admin/games/series', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
-  const admin = (req as any).adminUser;
-  const games = baseballRepo.createGameSeries(req.body);
-  if (games.length > 0) {
+  try {
+    const newGame = await baseballRepo.createGame(req.body);
     adminAuthService.addAuditLog(
       admin.username,
-      'Programación de Subserie',
-      `Subserie creada: ${games[0].awayTeam.shortName} vs ${games[0].homeTeam.shortName} (${games.length} juegos programados)`,
+      'Creación de Partido',
+      `Partido creado: ${newGame.awayTeam.shortName} vs ${newGame.homeTeam.shortName} (${newGame.date})`,
       'games'
     );
+    res.status(201).json(newGame);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al crear partido.' });
   }
-  res.status(201).json(games);
 });
 
-apiRouter.put('/admin/games/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/games/series', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
+  const admin = (req as any).adminUser;
+  try {
+    const games = await baseballRepo.createGameSeries(req.body);
+    if (games.length > 0) {
+      adminAuthService.addAuditLog(
+        admin.username,
+        'Programación de Subserie',
+        `Subserie creada: ${games[0].awayTeam.shortName} vs ${games[0].homeTeam.shortName} (${games.length} juegos programados)`,
+        'games'
+      );
+    }
+    res.status(201).json(games);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al programar subserie.' });
+  }
+});
+
+apiRouter.put('/admin/games/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const gameId = req.params.id;
   const existingGame = baseballRepo.getGameById(gameId);
@@ -273,71 +281,79 @@ apiRouter.put('/admin/games/:id', requireAdmin, requireRole('superadmin', 'offic
     return res.status(404).json({ error: 'Partido no encontrado' });
   }
 
-  const updatedGame = baseballRepo.updateGame(gameId, req.body);
-  if (!updatedGame) {
-    return res.status(404).json({ error: 'Error al actualizar partido' });
+  try {
+    const updatedGame = await baseballRepo.updateGame(gameId, req.body);
+    if (!updatedGame) {
+      return res.status(404).json({ error: 'Error al actualizar partido' });
+    }
+
+    // Check if score changed to broadcast real-time alert!
+    const prevHome = existingGame.homeScore;
+    const prevAway = existingGame.awayScore;
+    const newHome = updatedGame.homeScore;
+    const newAway = updatedGame.awayScore;
+
+    if (newHome > prevHome || newAway > prevAway) {
+      const isHome = newHome > prevHome;
+      const diff = isHome ? newHome - prevHome : newAway - prevAway;
+      const scoringTeam = isHome ? updatedGame.homeTeam : updatedGame.awayTeam;
+      const latestPlay = updatedGame.plays && updatedGame.plays.length > 0 ? updatedGame.plays[0] : null;
+
+      notificationService.broadcastScoreChange({
+        gameId: updatedGame.id,
+        homeTeam: updatedGame.homeTeam,
+        awayTeam: updatedGame.awayTeam,
+        scoringTeam,
+        scoringTeamSide: isHome ? 'home' : 'away',
+        runsScored: diff,
+        homeScore: updatedGame.homeScore,
+        awayScore: updatedGame.awayScore,
+        inning: updatedGame.currentInning || 1,
+        isTopInning: updatedGame.isTopInning !== undefined ? updatedGame.isTopInning : true,
+        outs: updatedGame.outs || 0,
+        title: latestPlay?.isScoringPlay ? `¡Carrera(s) de ${scoringTeam.name}!` : `¡Anotación de ${scoringTeam.name}!`,
+        description: latestPlay ? latestPlay.description : `Actualizado por administración: ${updatedGame.awayTeam.shortName} ${updatedGame.awayScore} - ${updatedGame.homeScore} ${updatedGame.homeTeam.shortName}`,
+        playType: (latestPlay?.playType as any) || (diff > 1 ? 'homerun' : 'hit'),
+      });
+    }
+
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Actualización de Partido',
+      `Partido ${updatedGame.awayTeam.shortName} vs ${updatedGame.homeTeam.shortName} actualizado (${updatedGame.status}, Marcador: ${updatedGame.awayScore}-${updatedGame.homeScore})`,
+      'games'
+    );
+
+    res.json(updatedGame);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar partido.' });
   }
-
-  // Check if score changed to broadcast real-time alert!
-  const prevHome = existingGame.homeScore;
-  const prevAway = existingGame.awayScore;
-  const newHome = updatedGame.homeScore;
-  const newAway = updatedGame.awayScore;
-
-  if (newHome > prevHome || newAway > prevAway) {
-    const isHome = newHome > prevHome;
-    const diff = isHome ? newHome - prevHome : newAway - prevAway;
-    const scoringTeam = isHome ? updatedGame.homeTeam : updatedGame.awayTeam;
-    const latestPlay = updatedGame.plays && updatedGame.plays.length > 0 ? updatedGame.plays[0] : null;
-
-    notificationService.broadcastScoreChange({
-      gameId: updatedGame.id,
-      homeTeam: updatedGame.homeTeam,
-      awayTeam: updatedGame.awayTeam,
-      scoringTeam,
-      scoringTeamSide: isHome ? 'home' : 'away',
-      runsScored: diff,
-      homeScore: updatedGame.homeScore,
-      awayScore: updatedGame.awayScore,
-      inning: updatedGame.currentInning || 1,
-      isTopInning: updatedGame.isTopInning !== undefined ? updatedGame.isTopInning : true,
-      outs: updatedGame.outs || 0,
-      title: latestPlay?.isScoringPlay ? `¡Carrera(s) de ${scoringTeam.name}!` : `¡Anotación de ${scoringTeam.name}!`,
-      description: latestPlay ? latestPlay.description : `Actualizado por administración: ${updatedGame.awayTeam.shortName} ${updatedGame.awayScore} - ${updatedGame.homeScore} ${updatedGame.homeTeam.shortName}`,
-      playType: (latestPlay?.playType as any) || (diff > 1 ? 'homerun' : 'hit'),
-    });
-  }
-
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Actualización de Partido',
-    `Partido ${updatedGame.awayTeam.shortName} vs ${updatedGame.homeTeam.shortName} actualizado (${updatedGame.status}, Marcador: ${updatedGame.awayScore}-${updatedGame.homeScore})`,
-    'games'
-  );
-
-  res.json(updatedGame);
 });
 
-apiRouter.delete('/admin/games/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.delete('/admin/games/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const success = baseballRepo.deleteGame(req.params.id);
-  if (!success) {
-    return res.status(404).json({ error: 'Partido no encontrado' });
+  try {
+    const success = await baseballRepo.deleteGame(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Partido no encontrado' });
+    }
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Eliminación de Partido',
+      `Partido con ID ${req.params.id} eliminado del calendario.`,
+      'games'
+    );
+    res.json({ success: true, message: 'Partido eliminado' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar partido.' });
   }
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Eliminación de Partido',
-    `Partido con ID ${req.params.id} eliminado del calendario.`,
-    'games'
-  );
-  res.json({ success: true, message: 'Partido eliminado' });
 });
 
 // Admin Player Management
-apiRouter.post('/admin/players', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/players', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   try {
     const admin = (req as any).adminUser;
-    const player = baseballRepo.createPlayer(req.body);
+    const player = await baseballRepo.createPlayer(req.body);
     adminAuthService.addAuditLog(
       admin.username,
       'Creación de Jugador',
@@ -350,10 +366,10 @@ apiRouter.post('/admin/players', requireAdmin, requireRole('superadmin', 'offici
   }
 });
 
-apiRouter.put('/admin/players/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.put('/admin/players/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   try {
     const admin = (req as any).adminUser;
-    const player = baseballRepo.updatePlayer(req.params.id, req.body);
+    const player = await baseballRepo.updatePlayer(req.params.id, req.body);
     if (!player) {
       return res.status(404).json({ error: 'Jugador no encontrado' });
     }
@@ -369,25 +385,29 @@ apiRouter.put('/admin/players/:id', requireAdmin, requireRole('superadmin', 'off
   }
 });
 
-apiRouter.post('/admin/players/import', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/players/import', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const rawList = Array.isArray(req.body.players) ? req.body.players : Array.isArray(req.body) ? req.body : [];
   if (rawList.length === 0) {
     return res.status(400).json({ error: 'La lista de jugadores a importar está vacía o no tiene formato válido.' });
   }
 
-  const result = baseballRepo.importPlayers(rawList);
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Importación de Jugadores',
-    `Se procesaron e importaron ${result.importedCount} jugadores (${result.createdCount} nuevos, ${result.updatedCount} actualizados en plantilla).`,
-    'players'
-  );
-  res.json({
-    success: true,
-    ...result,
-    message: `Se han importado exitosamente ${result.importedCount} jugadores.`,
-  });
+  try {
+    const result = await baseballRepo.importPlayers(rawList);
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Importación de Jugadores',
+      `Se procesaron e importaron ${result.importedCount} jugadores (${result.createdCount} nuevos, ${result.updatedCount} actualizados en plantilla).`,
+      'players'
+    );
+    res.json({
+      success: true,
+      ...result,
+      message: `Se han importado exitosamente ${result.importedCount} jugadores.`,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al importar jugadores.' });
+  }
 });
 
 // Import Historical Stats (Batting and Pitching across seasons and players)
@@ -413,45 +433,53 @@ apiRouter.post('/admin/stats/import', requireAdmin, requireRole('superadmin', 'o
   });
 });
 
-apiRouter.delete('/admin/players/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.delete('/admin/players/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const success = baseballRepo.deletePlayer(req.params.id);
-  if (!success) {
-    return res.status(404).json({ error: 'Jugador no encontrado' });
+  try {
+    const success = await baseballRepo.deletePlayer(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Jugador no encontrado' });
+    }
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Baja de Jugador',
+      `Jugador con ID ${req.params.id} retirado del roster.`,
+      'players'
+    );
+    res.json({ success: true, message: 'Jugador eliminado' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar jugador.' });
   }
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Baja de Jugador',
-    `Jugador con ID ${req.params.id} retirado del roster.`,
-    'players'
-  );
-  res.json({ success: true, message: 'Jugador eliminado' });
 });
 
 // Bulk Player Operations
-apiRouter.post('/admin/players/bulk-delete', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/players/bulk-delete', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const ids: string[] = Array.isArray(req.body.ids) ? req.body.ids : [];
   if (ids.length === 0) {
     return res.status(400).json({ error: 'Se requiere una lista de IDs de jugadores a eliminar.' });
   }
 
-  const result = baseballRepo.bulkDeletePlayers(ids);
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Baja Masiva de Jugadores',
-    `Se eliminaron ${result.deletedCount} jugadores de forma masiva del sistema.`,
-    'players'
-  );
-  res.json({
-    success: true,
-    deletedCount: result.deletedCount,
-    deletedIds: result.deletedIds,
-    message: `Se eliminaron exitosamente ${result.deletedCount} jugadores.`,
-  });
+  try {
+    const result = await baseballRepo.bulkDeletePlayers(ids);
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Baja Masiva de Jugadores',
+      `Se eliminaron ${result.deletedCount} jugadores de forma masiva del sistema.`,
+      'players'
+    );
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount,
+      deletedIds: result.deletedIds,
+      message: `Se eliminaron exitosamente ${result.deletedCount} jugadores.`,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar jugadores de forma masiva.' });
+  }
 });
 
-apiRouter.post('/admin/players/bulk-update', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/players/bulk-update', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const ids: string[] = Array.isArray(req.body.ids) ? req.body.ids : [];
   const updates = req.body.updates;
@@ -459,62 +487,78 @@ apiRouter.post('/admin/players/bulk-update', requireAdmin, requireRole('superadm
     return res.status(400).json({ error: 'Se requiere una lista de IDs y los campos a actualizar.' });
   }
 
-  const result = baseballRepo.bulkUpdatePlayers(ids, updates);
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Actualización Masiva de Jugadores',
-    `Se actualizaron ${result.updatedCount} jugadores en lote.`,
-    'players'
-  );
-  res.json({
-    success: true,
-    updatedCount: result.updatedCount,
-    updatedPlayers: result.updatedPlayers,
-    message: `Se actualizaron exitosamente ${result.updatedCount} jugadores.`,
-  });
+  try {
+    const result = await baseballRepo.bulkUpdatePlayers(ids, updates);
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Actualización Masiva de Jugadores',
+      `Se actualizaron ${result.updatedCount} jugadores en lote.`,
+      'players'
+    );
+    res.json({
+      success: true,
+      updatedCount: result.updatedCount,
+      updatedPlayers: result.updatedPlayers,
+      message: `Se actualizaron exitosamente ${result.updatedCount} jugadores.`,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar jugadores en lote.' });
+  }
 });
 
 // Admin News Management
-apiRouter.post('/admin/news', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
+apiRouter.post('/admin/news', requireAdmin, requireRole('superadmin', 'editor'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const article = baseballRepo.createNews(req.body);
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Publicación de Noticia',
-    `Noticia publicada: "${article.title}"`,
-    'system'
-  );
-  res.status(201).json(article);
+  try {
+    const article = await baseballRepo.createNews(req.body);
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Publicación de Noticia',
+      `Noticia publicada: "${article.title}"`,
+      'system'
+    );
+    res.status(201).json(article);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al publicar noticia.' });
+  }
 });
 
-apiRouter.put('/admin/news/:id', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
+apiRouter.put('/admin/news/:id', requireAdmin, requireRole('superadmin', 'editor'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const updated = baseballRepo.updateNews(req.params.id, req.body);
-  if (!updated) {
-    return res.status(404).json({ error: 'Noticia no encontrada' });
+  try {
+    const updated = await baseballRepo.updateNews(req.params.id, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: 'Noticia no encontrada' });
+    }
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Edición de Noticia',
+      `Noticia "${updated.title}" modificada.`,
+      'system'
+    );
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al editar noticia.' });
   }
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Edición de Noticia',
-    `Noticia "${updated.title}" modificada.`,
-    'system'
-  );
-  res.json(updated);
 });
 
-apiRouter.delete('/admin/news/:id', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
+apiRouter.delete('/admin/news/:id', requireAdmin, requireRole('superadmin', 'editor'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const success = baseballRepo.deleteNews(req.params.id);
-  if (!success) {
-    return res.status(404).json({ error: 'Noticia no encontrada' });
+  try {
+    const success = await baseballRepo.deleteNews(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Noticia no encontrada' });
+    }
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Eliminación de Noticia',
+      `Noticia con ID ${req.params.id} eliminada.`,
+      'system'
+    );
+    res.json({ success: true, message: 'Noticia eliminada' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar noticia.' });
   }
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Eliminación de Noticia',
-    `Noticia con ID ${req.params.id} eliminada.`,
-    'system'
-  );
-  res.json({ success: true, message: 'Noticia eliminada' });
 });
 
 // System Reset or Clear Data
@@ -596,14 +640,14 @@ apiRouter.post('/admin/system/restore', requireAdmin, requireRole('superadmin'),
 });
 
 // Client Automatic Sync Backup (Syncs client's offline / local changes to server if needed)
-apiRouter.post('/admin/system/sync-client', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
+apiRouter.post('/admin/system/sync-client', requireAdmin, requireRole('superadmin'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   try {
     const { players, teams } = req.body;
     let restoredCount = 0;
     if (Array.isArray(players) && players.length > 0) {
       // Import players into current repo
-      const importRes = baseballRepo.importPlayers(players);
+      const importRes = await baseballRepo.importPlayers(players);
       restoredCount = importRes.importedCount;
     }
     baseballRepo.saveToDisk();
@@ -820,14 +864,14 @@ apiRouter.post(
 
       // 3. Sync custom players
       if (Array.isArray(customPlayers) && customPlayers.length > 0) {
-        const importRes = baseballRepo.importPlayers(customPlayers);
+        const importRes = await baseballRepo.importPlayers(customPlayers);
         playersCount = importRes.importedCount;
       }
 
       // 4. Sync deleted players
       if (Array.isArray(deletedPlayerIds)) {
         for (const pid of deletedPlayerIds) {
-          baseballRepo.deletePlayer(pid);
+          await baseballRepo.deletePlayer(pid);
         }
       }
 
@@ -1016,37 +1060,49 @@ apiRouter.get('/teams/:teamId/players/:playerId', (req: Request, res: Response) 
 });
 
 // Manage Player Historical Batting Stats
-apiRouter.post('/players/:id/stats/batting', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/players/:id/stats/batting', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
   }
-  const stat = baseballRepo.addOrUpdatePlayerSeasonBatting(player.id, req.body || {});
-  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
-  res.json({ success: true, stat, historical });
+  try {
+    const stat = await baseballRepo.addOrUpdatePlayerSeasonBatting(player.id, req.body || {});
+    const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+    res.json({ success: true, stat, historical });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al guardar estadística de bateo.' });
+  }
 });
 
 // Manage Player Historical Pitching Stats
-apiRouter.post('/players/:id/stats/pitching', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/players/:id/stats/pitching', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
   }
-  const stat = baseballRepo.addOrUpdatePlayerSeasonPitching(player.id, req.body || {});
-  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
-  res.json({ success: true, stat, historical });
+  try {
+    const stat = await baseballRepo.addOrUpdatePlayerSeasonPitching(player.id, req.body || {});
+    const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+    res.json({ success: true, stat, historical });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al guardar estadística de pitcheo.' });
+  }
 });
 
 // Delete Player Historical Stat
-apiRouter.delete('/players/:id/stats/:statId', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.delete('/players/:id/stats/:statId', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
   }
   const type = (req.query.type as 'batting' | 'pitching') || 'batting';
-  const deleted = baseballRepo.deletePlayerSeasonStat(player.id, req.params.statId, type);
-  const historical = baseballRepo.getPlayerHistoricalStats(player.id);
-  res.json({ success: deleted, historical });
+  try {
+    const deleted = await baseballRepo.deletePlayerSeasonStat(player.id, req.params.statId, type);
+    const historical = baseballRepo.getPlayerHistoricalStats(player.id);
+    res.json({ success: deleted, historical });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar estadística.' });
+  }
 });
 
 // Bulk Import Historical Stats specifically for one player
@@ -1075,7 +1131,7 @@ apiRouter.post('/players/:id/stats/import', requireAdmin, requireRole('superadmi
 });
 
 // Update Player Photo directly (from profile modal or admin tools)
-const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
+const handleUpdatePlayerPhoto = async (req: Request, res: Response) => {
   const validation = playerPhotoSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de fotografía inválidos.' });
@@ -1087,28 +1143,32 @@ const handleUpdatePlayerPhoto = (req: Request, res: Response) => {
   }
 
   const { photo } = validation.data;
-  const updatedPlayer = baseballRepo.updatePlayer(playerId, { photo });
-  if (!updatedPlayer) {
-    return res.status(404).json({ error: `Jugador no encontrado para el ID: ${playerId}` });
-  }
+  try {
+    const updatedPlayer = await baseballRepo.updatePlayer(playerId, { photo });
+    if (!updatedPlayer) {
+      return res.status(404).json({ error: `Jugador no encontrado para el ID: ${playerId}` });
+    }
 
-  // Audit if admin session is present
-  const admin = (req as any).adminUser;
-  if (admin) {
-    adminAuthService.addAuditLog(
-      admin.username,
-      'Actualización de Foto de Jugador',
-      `Foto actualizada para ${updatedPlayer.fullName} (#${updatedPlayer.jerseyNumber} - ${updatedPlayer.teamShort}) [ID: ${updatedPlayer.id}].`,
-      'players'
-    );
-  }
+    // Audit if admin session is present
+    const admin = (req as any).adminUser;
+    if (admin) {
+      adminAuthService.addAuditLog(
+        admin.username,
+        'Actualización de Foto de Jugador',
+        `Foto actualizada para ${updatedPlayer.fullName} (#${updatedPlayer.jerseyNumber} - ${updatedPlayer.teamShort}) [ID: ${updatedPlayer.id}].`,
+        'players'
+      );
+    }
 
-  res.json({
-    success: true,
-    message: 'Fotografía actualizada correctamente.',
-    player: updatedPlayer,
-    photo: updatedPlayer.photo,
-  });
+    res.json({
+      success: true,
+      message: 'Fotografía actualizada correctamente.',
+      player: updatedPlayer,
+      photo: updatedPlayer.photo,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar fotografía.' });
+  }
 };
 
 apiRouter.put('/players/:id/photo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdatePlayerPhoto);
@@ -1247,47 +1307,58 @@ apiRouter.get('/news/:slug/comments', (req: Request, res: Response) => {
   res.json(comments);
 });
 
-apiRouter.post('/news/:slug/comments', commentsLimiter, (req: Request, res: Response) => {
+apiRouter.post('/news/:slug/comments', commentsLimiter, async (req: Request, res: Response) => {
   const validation = commentSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de comentario inválidos.' });
   }
 
   const { authorName, favoriteTeam, content } = validation.data;
-  const comment = baseballRepo.addComment(req.params.slug, {
-    authorName,
-    favoriteTeam,
-    content,
-  });
-
-  res.status(201).json(comment);
+  try {
+    const comment = await baseballRepo.addComment(req.params.slug, {
+      authorName,
+      favoriteTeam,
+      content,
+    });
+    res.status(201).json(comment);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al publicar comentario.' });
+  }
 });
 
 // Delete comment (Administrative moderation only)
-apiRouter.delete('/news/comments/:id', requireAdmin, requireRole('superadmin', 'editor'), (req: Request, res: Response) => {
+apiRouter.delete('/news/comments/:id', requireAdmin, requireRole('superadmin', 'editor'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
-  const success = baseballRepo.deleteComment(req.params.id);
-  if (!success) {
-    return res.status(404).json({ error: 'Comentario no encontrado.' });
+  try {
+    const success = await baseballRepo.deleteComment(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Comentario no encontrado.' });
+    }
+
+    adminAuthService.addAuditLog(
+      admin.username,
+      'Moderación de Comentarios',
+      `Comentario ${req.params.id} eliminado por el moderador.`,
+      'system'
+    );
+
+    res.json({ success: true, message: 'Comentario eliminado.' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al eliminar comentario.' });
   }
-
-  adminAuthService.addAuditLog(
-    admin.username,
-    'Moderación de Comentarios',
-    `Comentario ${req.params.id} eliminado por el moderador.`,
-    'system'
-  );
-
-  res.json({ success: true, message: 'Comentario eliminado.' });
 });
 
 // Like / Upvote a comment
-apiRouter.post('/news/comments/:id/like', sensitiveWriteLimiter, (req: Request, res: Response) => {
-  const result = baseballRepo.likeComment(req.params.id);
-  if (!result.success) {
-    return res.status(404).json({ error: 'Comentario no encontrado.' });
+apiRouter.post('/news/comments/:id/like', sensitiveWriteLimiter, async (req: Request, res: Response) => {
+  try {
+    const result = await baseballRepo.likeComment(req.params.id);
+    if (!result.success) {
+      return res.status(404).json({ error: 'Comentario no encontrado.' });
+    }
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar me gusta del comentario.' });
   }
-  res.json(result);
 });
 
 // Videos

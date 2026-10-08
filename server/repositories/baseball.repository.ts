@@ -3928,7 +3928,7 @@ export class BaseballRepository {
   }
 
   // Administrative Mutations
-  createGame(data: any): Game {
+  async createGame(data: any): Promise<Game> {
     const awayTeam = this.getTeamById(data.awayTeamId || (data.awayTeam && data.awayTeam.id) || '') || this.teams[0];
     const homeTeam = this.getTeamById(data.homeTeamId || (data.homeTeam && data.homeTeam.id) || '') || this.teams[1];
 
@@ -3954,21 +3954,24 @@ export class BaseballRepository {
       lineScore: data.lineScore || data.inningScores || [],
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncGameToSupabase(newGame);
+    }
+
     this.games.push(newGame);
     this.games.sort((a, b) => {
       const fullA = `${a.date || '1970-01-01'}T${a.time || '00:00'}:00`;
       const fullB = `${b.date || '1970-01-01'}T${b.time || '00:00'}:00`;
       return fullA.localeCompare(fullB);
     });
-    this.syncGameToSupabase(newGame);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.saveGame(newGame).catch(() => {});
     }
     return newGame;
   }
 
-  updateGame(id: string, updates: any): Game | undefined {
+  async updateGame(id: string, updates: any): Promise<Game | undefined> {
     const index = this.games.findIndex((g) => g.id === id);
     if (index === -1) return undefined;
 
@@ -3984,23 +3987,26 @@ export class BaseballRepository {
       strikes: updates.strikes !== undefined ? updates.strikes : current.strikes,
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncGameToSupabase(updated);
+    }
+
     this.games[index] = updated;
-    this.syncGameToSupabase(updated);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.saveGame(updated).catch(() => {});
     }
     return updated;
   }
 
-  createGameSeries(seriesData: {
+  async createGameSeries(seriesData: {
     awayTeamId: string;
     homeTeamId: string;
     startDate: string;
     startTime?: string;
     numberOfGames: number;
     stadium?: string;
-  }): Game[] {
+  }): Promise<Game[]> {
     const createdGames: Game[] = [];
     const rawDate = seriesData.startDate || new Date().toISOString().split('T')[0];
     const parts = rawDate.split('-').map(Number);
@@ -4015,7 +4021,7 @@ export class BaseballRepository {
       const mStr = String(gDate.getMonth() + 1).padStart(2, '0');
       const dStr = String(gDate.getDate()).padStart(2, '0');
       const dateStr = `${yStr}-${mStr}-${dStr}`;
-      const game = this.createGame({
+      const game = await this.createGame({
         id: `game_${Date.now()}_${i + 1}`,
         awayTeamId: seriesData.awayTeamId,
         homeTeamId: seriesData.homeTeamId,
@@ -4029,22 +4035,28 @@ export class BaseballRepository {
     return createdGames;
   }
 
-  deleteGame(id: string): boolean {
+  async deleteGame(id: string): Promise<boolean> {
     const initialLen = this.games.length;
+    const gameExists = this.games.some((g) => g.id === id);
+    if (!gameExists) return false;
+
+    if (this.isSupabaseActive()) {
+      await this.deleteGameFromSupabase(id);
+    }
+
     this.games = this.games.filter((g) => g.id !== id);
     if (!this.userOverrides.deletedGameIds.includes(id)) {
       this.userOverrides.deletedGameIds.push(id);
       this.saveUserOverridesToDisk();
     }
-    this.deleteGameFromSupabase(id);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.deleteGame(id).catch(() => {});
     }
     return this.games.length < initialLen;
   }
 
-  createPlayer(data: any): Player {
+  async createPlayer(data: any): Promise<Player> {
     const team = this.getTeamById(data.teamId || '') || this.teams[0];
     const firstName = data.firstName || (data.fullName ? data.fullName.trim().split(' ')[0] : 'Nuevo');
     const lastName = data.lastName || (data.fullName ? data.fullName.trim().split(' ').slice(1).join(' ') : 'Jugador');
@@ -4056,7 +4068,8 @@ export class BaseballRepository {
       const existingById = this.players.find((p) => p.id === cleanId);
       if (existingById) {
         // Execute atomic update by existing ID without creating duplicate
-        return this.updatePlayer(existingById.id, data)!;
+        const updated = await this.updatePlayer(existingById.id, data);
+        return updated!;
       }
     }
 
@@ -4066,14 +4079,16 @@ export class BaseballRepository {
       (p) => p.teamId === team.id && (p.fullName || '').trim().toLowerCase() === normalizedName
     );
     if (existingByTeamAndName) {
-      return this.updatePlayer(existingByTeamAndName.id, data)!;
+      const updated = await this.updatePlayer(existingByTeamAndName.id, data);
+      return updated!;
     }
 
     const existingByName = this.players.find(
       (p) => (p.fullName || '').trim().toLowerCase() === normalizedName
     );
     if (existingByName && (!data.teamId || data.teamId === existingByName.teamId)) {
-      return this.updatePlayer(existingByName.id, data)!;
+      const updated = await this.updatePlayer(existingByName.id, data);
+      return updated!;
     }
 
     // 3. Enforce Serie Nacional 40-player limit per team for new registrations
@@ -4112,6 +4127,10 @@ export class BaseballRepository {
       status: data.status || 'active',
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncPlayerToSupabase(newPlayer);
+    }
+
     this.players.unshift(newPlayer);
     this.deduplicatePlayers();
 
@@ -4121,17 +4140,15 @@ export class BaseballRepository {
     this.userOverrides.customPlayers.unshift(newPlayer);
     this.saveUserOverridesToDisk();
 
-    // Persist to Supabase PostgreSQL (primary store)
-    this.syncPlayerToSupabase(newPlayer);
     this.persistState();
 
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.savePlayer(newPlayer).catch(() => {});
     }
     return newPlayer;
   }
 
-  updatePlayer(id: string, updates: Partial<Player>): Player | undefined {
+  async updatePlayer(id: string, updates: Partial<Player>): Promise<Player | undefined> {
     const cleanId = (id || '').trim();
     if (!cleanId) return undefined;
 
@@ -4166,6 +4183,10 @@ export class BaseballRepository {
       }
     }
 
+    if (this.isSupabaseActive()) {
+      await this.syncPlayerToSupabase(updated);
+    }
+
     // Atomic update in-place at the exact index to avoid reordering or creating multiple instances
     this.players[index] = updated;
 
@@ -4190,7 +4211,9 @@ export class BaseballRepository {
         b.playerName = updated.fullName;
         b.teamId = updated.teamId;
         b.teamShort = updated.teamShort;
-        this.syncBattingStatToSupabase(b);
+        if (this.isSupabaseActive()) {
+          await this.syncBattingStatToSupabase(b);
+        }
       }
     }
     for (const pit of this.pitchingStats) {
@@ -4198,7 +4221,9 @@ export class BaseballRepository {
         pit.playerName = updated.fullName;
         pit.teamId = updated.teamId;
         pit.teamShort = updated.teamShort;
-        this.syncPitchingStatToSupabase(pit);
+        if (this.isSupabaseActive()) {
+          await this.syncPitchingStatToSupabase(pit);
+        }
       }
     }
 
@@ -4210,19 +4235,16 @@ export class BaseballRepository {
     this.saveUserOverridesToDisk();
 
     this.deduplicatePlayers();
-
-    // Persist to Supabase PostgreSQL (primary store)
-    this.syncPlayerToSupabase(updated);
     this.persistState();
 
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.savePlayer(updated).catch(() => {});
     }
 
     return updated;
   }
 
-  importPlayers(incoming: any[]): { importedCount: number; createdCount: number; updatedCount: number; players: Player[] } {
+  async importPlayers(incoming: any[]): Promise<{ importedCount: number; createdCount: number; updatedCount: number; players: Player[] }> {
     const resultPlayers: Player[] = [];
     let createdCount = 0;
     let updatedCount = 0;
@@ -4285,7 +4307,7 @@ export class BaseballRepository {
       }
 
       if (existing) {
-        const updated = this.updatePlayer(existing.id, {
+        const updated = await this.updatePlayer(existing.id, {
           teamId: matchedTeam.id,
           jerseyNumber,
           position: position as any,
@@ -4302,7 +4324,7 @@ export class BaseballRepository {
         }
       } else {
         try {
-          const created = this.createPlayer({
+          const created = await this.createPlayer({
             id: cleanId || undefined,
             fullName,
             teamId: matchedTeam.id,
@@ -4341,8 +4363,15 @@ export class BaseballRepository {
     };
   }
 
-  deletePlayer(id: string): boolean {
+  async deletePlayer(id: string): Promise<boolean> {
     const initialLen = this.players.length;
+    const playerExists = this.players.some((p) => p.id === id);
+    if (!playerExists) return false;
+
+    if (this.isSupabaseActive()) {
+      await this.deletePlayerFromSupabase(id);
+    }
+
     this.players = this.players.filter((p) => p.id !== id);
 
     // Persist in user overrides
@@ -4351,24 +4380,31 @@ export class BaseballRepository {
     this.userOverrides.customPlayers = this.userOverrides.customPlayers.filter((p) => p.id !== id);
     this.saveUserOverridesToDisk();
 
-    // Delete from Supabase PostgreSQL (primary store)
-    this.deletePlayerFromSupabase(id);
     this.persistState();
 
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.deletePlayer(id).catch(() => {});
     }
 
     return this.players.length < initialLen;
   }
 
-  bulkDeletePlayers(ids: string[]): { deletedCount: number; deletedIds: string[] } {
+  async bulkDeletePlayers(ids: string[]): Promise<{ deletedCount: number; deletedIds: string[] }> {
     if (!Array.isArray(ids) || ids.length === 0) {
       return { deletedCount: 0, deletedIds: [] };
     }
     const idSet = new Set(ids.map((id) => String(id).trim()));
     const initialLen = this.players.length;
     const deletedIds: string[] = [];
+
+    const toDelete = this.players.filter((p) => idSet.has(p.id)).map((p) => p.id);
+    if (toDelete.length === 0) {
+      return { deletedCount: 0, deletedIds: [] };
+    }
+
+    if (this.isSupabaseActive()) {
+      await this.bulkDeletePlayersFromSupabase(toDelete);
+    }
 
     this.players = this.players.filter((p) => {
       if (idSet.has(p.id)) {
@@ -4386,11 +4422,9 @@ export class BaseballRepository {
     }
     this.saveUserOverridesToDisk();
 
-    // Bulk delete from Supabase PostgreSQL (primary store)
-    this.bulkDeletePlayersFromSupabase(deletedIds);
     this.persistState();
 
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.bulkDeletePlayers(deletedIds).catch(() => {});
     }
 
@@ -4398,7 +4432,7 @@ export class BaseballRepository {
     return { deletedCount, deletedIds };
   }
 
-  bulkUpdatePlayers(ids: string[], updates: Partial<Player>): { updatedCount: number; updatedPlayers: Player[] } {
+  async bulkUpdatePlayers(ids: string[], updates: Partial<Player>): Promise<{ updatedCount: number; updatedPlayers: Player[] }> {
     if (!Array.isArray(ids) || ids.length === 0 || !updates) {
       return { updatedCount: 0, updatedPlayers: [] };
     }
@@ -4423,7 +4457,9 @@ export class BaseballRepository {
         if (updates.bats !== undefined) player.bats = updates.bats;
         if (updates.throws !== undefined) player.throws = updates.throws;
         if (updates.jerseyNumber !== undefined) player.jerseyNumber = updates.jerseyNumber;
-        this.syncPlayerToSupabase(player);
+        if (this.isSupabaseActive()) {
+          await this.syncPlayerToSupabase(player);
+        }
         updatedPlayers.push(player);
       }
     }
@@ -4434,7 +4470,7 @@ export class BaseballRepository {
     return { updatedCount: updatedPlayers.length, updatedPlayers };
   }
 
-  createNews(data: Partial<NewsArticle>): NewsArticle {
+  async createNews(data: Partial<NewsArticle>): Promise<NewsArticle> {
     const title = (data.title || 'Boletin Oficial').trim();
     let baseSlug = data.slug ? generateSeoSlug(data.slug) : generateSeoSlug(title);
     
@@ -4459,16 +4495,19 @@ export class BaseballRepository {
       tags: data.tags || ['Béisbol', 'Liga', 'Oficial'],
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncNewsToSupabase(newArticle);
+    }
+
     this.news.unshift(newArticle);
-    this.syncNewsToSupabase(newArticle);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.saveNews(newArticle).catch(() => {});
     }
     return newArticle;
   }
 
-  updateNews(id: string, updates: Partial<NewsArticle>): NewsArticle | undefined {
+  async updateNews(id: string, updates: Partial<NewsArticle>): Promise<NewsArticle | undefined> {
     const index = this.news.findIndex((n) => n.id === id);
     if (index === -1) return undefined;
 
@@ -4480,21 +4519,30 @@ export class BaseballRepository {
       slug: updates.slug ? generateSeoSlug(updates.slug) : current.slug,
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncNewsToSupabase(updated);
+    }
+
     this.news[index] = updated;
-    this.syncNewsToSupabase(updated);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.saveNews(updated).catch(() => {});
     }
     return updated;
   }
 
-  deleteNews(id: string): boolean {
+  async deleteNews(id: string): Promise<boolean> {
     const initialLen = this.news.length;
+    const exists = this.news.some((n) => n.id === id);
+    if (!exists) return false;
+
+    if (this.isSupabaseActive()) {
+      await this.deleteNewsFromSupabase(id);
+    }
+
     this.news = this.news.filter((n) => n.id !== id);
-    this.deleteNewsFromSupabase(id);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.deleteNews(id).catch(() => {});
     }
     return this.news.length < initialLen;
@@ -4508,7 +4556,7 @@ export class BaseballRepository {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  addComment(slug: string, data: { authorName?: string; favoriteTeam?: string; content: string }): ArticleComment {
+  async addComment(slug: string, data: { authorName?: string; favoriteTeam?: string; content: string }): Promise<ArticleComment> {
     const authorName = (data.authorName || '').trim() || 'Aficionado al Béisbol';
     const content = (data.content || '').trim();
     const favoriteTeam = (data.favoriteTeam || '').trim() || undefined;
@@ -4523,31 +4571,45 @@ export class BaseballRepository {
       likes: 0,
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncCommentToSupabase(newComment);
+    }
+
     this.comments.unshift(newComment);
-    this.syncCommentToSupabase(newComment);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.saveComment(newComment).catch(() => {});
     }
     return newComment;
   }
 
-  deleteComment(id: string): boolean {
+  async deleteComment(id: string): Promise<boolean> {
     const initialLen = this.comments.length;
+    const exists = this.comments.some((c) => c.id === id);
+    if (!exists) return false;
+
+    if (this.isSupabaseActive()) {
+      await this.deleteCommentFromSupabase(id);
+    }
+
     this.comments = this.comments.filter((c) => c.id !== id);
-    this.deleteCommentFromSupabase(id);
     this.persistState();
-    if (!isSupabaseServerConfigured()) {
+    if (!this.isSupabaseActive() && !isSupabaseServerConfigured()) {
       cloudSqlSync.deleteComment(id).catch(() => {});
     }
     return this.comments.length < initialLen;
   }
 
-  likeComment(id: string): { success: boolean; likes: number } {
+  async likeComment(id: string): Promise<{ success: boolean; likes: number }> {
     const comment = this.comments.find((c) => c.id === id);
     if (!comment) return { success: false, likes: 0 };
-    comment.likes = (comment.likes || 0) + 1;
-    this.syncCommentLikesToSupabase(id, comment.likes);
+    const nextLikes = (comment.likes || 0) + 1;
+
+    if (this.isSupabaseActive()) {
+      await this.syncCommentLikesToSupabase(id, nextLikes);
+    }
+
+    comment.likes = nextLikes;
     this.persistState();
     return { success: true, likes: comment.likes };
   }

@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "initialized": true,
-  "lastUpdated": "2026-10-08T11:04:31.814Z",
+  "lastUpdated": "2026-10-08T11:21:20.754Z",
   "competitions": [
     {
       "id": "snb",
@@ -84,7 +84,7 @@
         "pct": 0,
         "streak": "-",
         "lastTen": "0-0",
-        "position": 1
+        "position": 2
       }
     }
   ],
