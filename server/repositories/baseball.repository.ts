@@ -491,18 +491,41 @@ export class BaseballRepository {
     this.saveToDisk();
   }
 
-  private safePostgrest(builder: any, label: string): void {
-    Promise.resolve(builder).catch((err: any) => {
-      console.warn(`[SupabaseSync] ${label} warning:`, err?.message || err);
-    });
+  /**
+   * Helper to execute a Supabase write operation, ensuring it is awaited and confirmed.
+   * If an error occurs, it logs context and throws an Error so callers do not hide failure.
+   */
+  private async executeSupabaseWrite<T = any>(
+    builder: any,
+    label: string
+  ): Promise<T | null> {
+    try {
+      const response = await builder;
+      const { data, error } = response || {};
+      if (error) {
+        console.error(`❌ [SupabaseWriteError] ${label} falló:`, error.message || error, {
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw new Error(`[Supabase Error] ${label}: ${error.message || 'Error desconocido de base de datos'}`);
+      }
+      return (data as T) ?? null;
+    } catch (err: any) {
+      if (err.message && err.message.startsWith('[Supabase Error]')) {
+        throw err;
+      }
+      console.error(`❌ [SupabaseWriteError] Excepción no controlada en ${label}:`, err?.message || err);
+      throw new Error(`[Supabase Error] ${label}: ${err?.message || 'Error de red o conexión'}`);
+    }
   }
 
-  private syncTeamToSupabase(team: Team): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncTeamToSupabase(team: Team): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de equipo.');
 
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('teams')
         .upsert({
@@ -530,11 +553,11 @@ export class BaseballRepository {
           last_ten: team.record?.lastTen || '0-0',
           position: team.record?.position || 1,
         }),
-      'Team save'
+      `Guardado de equipo (${team.id})`
     );
 
     if (team.logo) {
-      this.safePostgrest(
+      await this.executeSupabaseWrite(
         supabase
           .from('team_logos')
           .upsert({
@@ -542,30 +565,30 @@ export class BaseballRepository {
             logo: team.logo,
             primary_color: team.primaryColor || team.colors?.primary || null,
           }),
-        'Team logo save'
+        `Guardado de logo de equipo (${team.id})`
       );
     }
   }
 
-  private deleteTeamFromSupabase(teamId: string): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deleteTeamFromSupabase(teamId: string): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de equipo.');
+    await this.executeSupabaseWrite(
       supabase
         .from('teams')
         .delete()
         .eq('id', teamId),
-      'Team delete'
+      `Eliminación de equipo (${teamId})`
     );
   }
 
-  private syncPlayerToSupabase(player: Player): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncPlayerToSupabase(player: Player): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de jugador.');
 
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('players')
         .upsert({
@@ -588,45 +611,45 @@ export class BaseballRepository {
           is_all_star: Boolean(player.isAllStar),
           war: String(player.war || '0.0'),
         }),
-      'Player save'
+      `Guardado de jugador (${player.id})`
     );
   }
 
-  private deletePlayerFromSupabase(playerId: string): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deletePlayerFromSupabase(playerId: string): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de jugador.');
+    await this.executeSupabaseWrite(
       supabase
         .from('players')
         .delete()
         .eq('id', playerId),
-      'Player delete'
+      `Eliminación de jugador (${playerId})`
     );
   }
 
-  private bulkDeletePlayersFromSupabase(playerIds: string[]): void {
-    if (!isSupabaseServerConfigured() || playerIds.length === 0) return;
+  private async bulkDeletePlayersFromSupabase(playerIds: string[]): Promise<void> {
+    if (!this.isSupabaseActive() || playerIds.length === 0) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para borrado masivo de jugadores.');
+    await this.executeSupabaseWrite(
       supabase
         .from('players')
         .delete()
         .in('id', playerIds),
-      'Player bulk delete'
+      `Borrado masivo de ${playerIds.length} jugadores`
     );
   }
 
-  private syncGameToSupabase(game: Game): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncGameToSupabase(game: Game): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de partido.');
 
     const homeTeamId = game.homeTeam?.id || (game as any).homeTeamId;
     const awayTeamId = game.awayTeam?.id || (game as any).awayTeamId;
 
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('games')
         .upsert({
@@ -670,30 +693,30 @@ export class BaseballRepository {
           umpires: game.umpires || [],
           plays: game.plays || [],
         }),
-      'Game save'
+      `Guardado de partido (${game.id})`
     );
   }
 
-  private deleteGameFromSupabase(gameId: string): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deleteGameFromSupabase(gameId: string): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de partido.');
+    await this.executeSupabaseWrite(
       supabase
         .from('games')
         .delete()
         .eq('id', gameId),
-      'Game delete'
+      `Eliminación de partido (${gameId})`
     );
   }
 
-  private syncBattingStatToSupabase(b: BattingStats): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncBattingStatToSupabase(b: BattingStats): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de estadísticas de bateo.');
 
     const recordId = b.id || `bat-${b.playerId}-${b.seasonId || b.seasonYear || 2026}`;
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('player_season_batting')
         .upsert({
@@ -722,17 +745,17 @@ export class BaseballRepository {
           slg: formatAvg(b.slg),
           ops: typeof b.ops === 'number' ? b.ops.toFixed(3) : String(b.ops || '.000'),
         }),
-      'Batting save'
+      `Guardado de estadísticas de bateo (${recordId})`
     );
   }
 
-  private syncPitchingStatToSupabase(p: PitchingStats): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncPitchingStatToSupabase(p: PitchingStats): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de estadísticas de pitcheo.');
 
     const recordId = p.id || `pit-${p.playerId}-${p.seasonId || p.seasonYear || 2026}`;
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('player_season_pitching')
         .upsert({
@@ -757,30 +780,30 @@ export class BaseballRepository {
           era: formatEra(p.era),
           whip: formatEra(p.whip),
         }),
-      'Pitching save'
+      `Guardado de estadísticas de pitcheo (${recordId})`
     );
   }
 
-  private deleteStatFromSupabase(statId: string, type: 'batting' | 'pitching'): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deleteStatFromSupabase(statId: string, type: 'batting' | 'pitching'): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de estadísticas.');
     const table = type === 'batting' ? 'player_season_batting' : 'player_season_pitching';
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from(table)
         .delete()
         .eq('id', statId),
-      'Stat delete'
+      `Eliminación de estadística (${type} - ${statId})`
     );
   }
 
-  private syncNewsToSupabase(n: NewsArticle): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncNewsToSupabase(n: NewsArticle): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de noticias.');
 
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('news')
         .upsert({
@@ -799,29 +822,29 @@ export class BaseballRepository {
           is_featured: Boolean(n.isFeatured),
           image_height: n.imageHeight || 'tall',
         }),
-      'News save'
+      `Guardado de noticia (${n.id})`
     );
   }
 
-  private deleteNewsFromSupabase(newsId: string): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deleteNewsFromSupabase(newsId: string): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de noticias.');
+    await this.executeSupabaseWrite(
       supabase
         .from('news')
         .delete()
         .eq('id', newsId),
-      'News delete'
+      `Eliminación de noticia (${newsId})`
     );
   }
 
-  private syncCommentToSupabase(c: ArticleComment): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncCommentToSupabase(c: ArticleComment): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de comentario.');
 
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('news_comments')
         .upsert({
@@ -833,43 +856,43 @@ export class BaseballRepository {
           likes: c.likes || 0,
           created_at: c.createdAt || new Date().toISOString(),
         }),
-      'Comment save'
+      `Guardado de comentario (${c.id})`
     );
   }
 
-  private deleteCommentFromSupabase(commentId: string): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deleteCommentFromSupabase(commentId: string): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de comentario.');
+    await this.executeSupabaseWrite(
       supabase
         .from('news_comments')
         .delete()
         .eq('id', commentId),
-      'Comment delete'
+      `Eliminación de comentario (${commentId})`
     );
   }
 
-  private syncCommentLikesToSupabase(commentId: string, likes: number): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncCommentLikesToSupabase(commentId: string, likes: number): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para actualización de likes.');
+    await this.executeSupabaseWrite(
       supabase
         .from('news_comments')
         .update({ likes })
         .eq('id', commentId),
-      'Comment likes update'
+      `Actualización de likes de comentario (${commentId})`
     );
   }
 
-  private syncStandingToSupabase(s: Standing): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async syncStandingToSupabase(s: Standing): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para sincronización de standings.');
 
     const standingId = (s as any).id || `std-${s.teamId}-${s.seasonId || 'snb-65'}`;
-    this.safePostgrest(
+    await this.executeSupabaseWrite(
       supabase
         .from('standings')
         .upsert({
@@ -892,21 +915,21 @@ export class BaseballRepository {
           run_differential: s.runDifferential || 0,
           division: s.division || 'General',
         }),
-      'Standing save'
+      `Guardado de standing (${standingId})`
     );
   }
 
-  private deleteStandingFromSupabase(teamId: string, seasonId: string = 'snb-65'): void {
-    if (!isSupabaseServerConfigured()) return;
+  private async deleteStandingFromSupabase(teamId: string, seasonId: string = 'snb-65'): Promise<void> {
+    if (!this.isSupabaseActive()) return;
     const supabase = getSupabaseServerClient();
-    if (!supabase) return;
-    this.safePostgrest(
+    if (!supabase) throw new Error('[Supabase Error] Cliente Supabase no disponible para eliminación de standing.');
+    await this.executeSupabaseWrite(
       supabase
         .from('standings')
         .delete()
         .eq('team_id', teamId)
         .eq('season_id', seasonId),
-      'Standing delete'
+      `Eliminación de standing (${teamId})`
     );
   }
 
@@ -1345,7 +1368,7 @@ export class BaseballRepository {
     });
   }
 
-  updateTeam(id: string, updates: Partial<Team>): Team | undefined {
+  async updateTeam(id: string, updates: Partial<Team>): Promise<Team | undefined> {
     const index = this.teams.findIndex((t) => t.id === id || t.shortName.toLowerCase() === id.toLowerCase());
     if (index === -1) return undefined;
 
@@ -1354,6 +1377,11 @@ export class BaseballRepository {
       ...current,
       ...updates,
     };
+
+    if (this.isSupabaseActive()) {
+      await this.syncTeamToSupabase(updated);
+    }
+
     this.teams[index] = updated;
 
     // Propagate logo and colors across active games, standings and players
@@ -1408,13 +1436,11 @@ export class BaseballRepository {
     };
     this.saveUserOverridesToDisk();
 
-    // Persist to Supabase PostgreSQL (primary store)
-    this.syncTeamToSupabase(updated);
     this.persistState();
     return updated;
   }
 
-  createTeam(data: Partial<Team>): Team {
+  async createTeam(data: Partial<Team>): Promise<Team> {
     if (!data.name || !data.shortName) {
       throw new Error('El nombre y la abreviatura del equipo son obligatorios.');
     }
@@ -1463,12 +1489,11 @@ export class BaseballRepository {
       },
     };
 
-    this.teams.push(newTeam);
-
     // Also add to standings if not present
     const existingStanding = this.standings.find((s) => s.teamId === newTeam.id || s.teamShort === newTeam.shortName);
+    let newStanding: any = null;
     if (!existingStanding) {
-      const newStanding: any = {
+      newStanding = {
         position: this.standings.length + 1,
         teamId: newTeam.id,
         teamName: newTeam.name,
@@ -1488,8 +1513,18 @@ export class BaseballRepository {
         runsAllowed: 0,
         runDifferential: 0,
       };
+    }
+
+    if (this.isSupabaseActive()) {
+      await this.syncTeamToSupabase(newTeam);
+      if (newStanding) {
+        await this.syncStandingToSupabase(newStanding);
+      }
+    }
+
+    this.teams.push(newTeam);
+    if (newStanding) {
       this.standings.push(newStanding);
-      this.syncStandingToSupabase(newStanding);
     }
 
     // Persist in user overrides
@@ -1497,19 +1532,22 @@ export class BaseballRepository {
     this.userOverrides.customTeams.push(newTeam);
     this.saveUserOverridesToDisk();
 
-    // Persist to Supabase PostgreSQL (primary store)
-    this.syncTeamToSupabase(newTeam);
     this.persistState();
     return newTeam;
   }
 
-  deleteTeam(id: string): { success: boolean; deletedTeam: Team } {
+  async deleteTeam(id: string): Promise<{ success: boolean; deletedTeam: Team }> {
     const index = this.teams.findIndex((t) => t.id === id || t.shortName.toLowerCase() === id.toLowerCase());
     if (index === -1) {
       throw new Error(`Equipo con identificador "${id}" no encontrado.`);
     }
 
     const team = this.teams[index];
+
+    if (this.isSupabaseActive()) {
+      await this.deleteTeamFromSupabase(team.id);
+      await this.deleteStandingFromSupabase(team.id);
+    }
 
     // Remove from teams list
     this.teams.splice(index, 1);
@@ -1531,14 +1569,11 @@ export class BaseballRepository {
     this.userOverrides.customTeams = this.userOverrides.customTeams.filter((t) => t.id !== team.id);
     this.saveUserOverridesToDisk();
 
-    // Delete from Supabase PostgreSQL (primary store)
-    this.deleteTeamFromSupabase(team.id);
-    this.deleteStandingFromSupabase(team.id);
     this.persistState();
     return { success: true, deletedTeam: team };
   }
 
-  seed16NationalSeriesTeams(): Team[] {
+  async seed16NationalSeriesTeams(): Promise<Team[]> {
     const OFFICIAL_16: Array<Omit<Team, 'seasonId' | 'competitionId' | 'record'>> = [
       {
         id: 'mtz',
@@ -1773,7 +1808,7 @@ export class BaseballRepository {
           t.id.toLowerCase() === official.id.toLowerCase()
       );
       if (!existing) {
-        this.createTeam(official as any);
+        await this.createTeam(official as any);
       } else {
         // Ensure default official attributes are complete
         if (!existing.stadium) existing.stadium = official.stadium;
@@ -1786,8 +1821,10 @@ export class BaseballRepository {
       }
     }
 
-    for (const t of this.teams) {
-      this.syncTeamToSupabase(t);
+    if (this.isSupabaseActive()) {
+      for (const t of this.teams) {
+        await this.syncTeamToSupabase(t);
+      }
     }
     this.persistState();
     return this.teams;
@@ -2342,7 +2379,7 @@ export class BaseballRepository {
     return generated;
   }
 
-  addOrUpdatePlayerSeasonBatting(playerId: string, statData: Partial<BattingStats>): BattingStats {
+  async addOrUpdatePlayerSeasonBatting(playerId: string, statData: Partial<BattingStats>): Promise<BattingStats> {
     const player = this.getPlayerById(playerId);
     const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
     const stage =
@@ -2404,18 +2441,21 @@ export class BaseballRepository {
       war: Number(statData.war) || 0,
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncBattingStatToSupabase(statRecord);
+    }
+
     if (existingIndex !== -1) {
       this.battingStats[existingIndex] = statRecord;
     } else {
       this.battingStats.push(statRecord);
     }
 
-    this.syncBattingStatToSupabase(statRecord);
     this.persistState();
     return statRecord;
   }
 
-  addOrUpdatePlayerSeasonPitching(playerId: string, statData: Partial<PitchingStats>): PitchingStats {
+  async addOrUpdatePlayerSeasonPitching(playerId: string, statData: Partial<PitchingStats>): Promise<PitchingStats> {
     const player = this.getPlayerById(playerId);
     const seasonYear = Number(statData.seasonYear) || new Date().getFullYear();
     const stage =
@@ -2473,46 +2513,106 @@ export class BaseballRepository {
       war: Number(statData.war) || 0,
     };
 
+    if (this.isSupabaseActive()) {
+      await this.syncPitchingStatToSupabase(statRecord);
+    }
+
     if (existingIndex !== -1) {
       this.pitchingStats[existingIndex] = statRecord;
     } else {
       this.pitchingStats.push(statRecord);
     }
 
-    this.syncPitchingStatToSupabase(statRecord);
     this.persistState();
     return statRecord;
   }
 
-  deletePlayerSeasonStat(playerId: string, statId: string, type: 'batting' | 'pitching'): boolean {
-    if (type === 'batting') {
-      const prevLength = this.battingStats.length;
-      this.battingStats = this.battingStats.filter((b) => !(b.id === statId && b.playerId === playerId));
-      if (this.battingStats.length !== prevLength) {
-        this.deleteStatFromSupabase(statId, type);
-        this.persistState();
-        return true;
-      }
-    } else {
-      const prevLength = this.pitchingStats.length;
-      this.pitchingStats = this.pitchingStats.filter((p) => !(p.id === statId && p.playerId === playerId));
-      if (this.pitchingStats.length !== prevLength) {
-        this.deleteStatFromSupabase(statId, type);
-        this.persistState();
-        return true;
-      }
+  async savePlayerBattingStat(statRecord: BattingStats): Promise<BattingStats> {
+    if (this.isSupabaseActive()) {
+      await this.syncBattingStatToSupabase(statRecord);
     }
-    return false;
+    const idx = this.battingStats.findIndex((b) => b.id === statRecord.id);
+    if (idx !== -1) {
+      this.battingStats[idx] = statRecord;
+    } else {
+      this.battingStats.push(statRecord);
+    }
+    this.persistState();
+    return statRecord;
+  }
+
+  async savePlayerPitchingStat(statRecord: PitchingStats): Promise<PitchingStats> {
+    if (this.isSupabaseActive()) {
+      await this.syncPitchingStatToSupabase(statRecord);
+    }
+    const idx = this.pitchingStats.findIndex((p) => p.id === statRecord.id);
+    if (idx !== -1) {
+      this.pitchingStats[idx] = statRecord;
+    } else {
+      this.pitchingStats.push(statRecord);
+    }
+    this.persistState();
+    return statRecord;
+  }
+
+  async saveStanding(s: Standing): Promise<Standing> {
+    if (this.isSupabaseActive()) {
+      await this.syncStandingToSupabase(s);
+    }
+    const idx = this.standings.findIndex(
+      (st) => st.teamId === s.teamId && (st.seasonId || 'snb-65') === (s.seasonId || 'snb-65')
+    );
+    if (idx !== -1) {
+      this.standings[idx] = s;
+    } else {
+      this.standings.push(s);
+    }
+    this.persistState();
+    return s;
+  }
+
+  async deleteStanding(teamId: string, seasonId: string = 'snb-65'): Promise<boolean> {
+    if (this.isSupabaseActive()) {
+      await this.deleteStandingFromSupabase(teamId, seasonId);
+    }
+    const initialLen = this.standings.length;
+    this.standings = this.standings.filter(
+      (st) => !(st.teamId === teamId && (st.seasonId || 'snb-65') === seasonId)
+    );
+    this.persistState();
+    return this.standings.length < initialLen;
+  }
+
+  async deletePlayerSeasonStat(playerId: string, statId: string, type: 'batting' | 'pitching'): Promise<boolean> {
+    if (type === 'batting') {
+      const target = this.battingStats.find((b) => b.id === statId && b.playerId === playerId);
+      if (!target) return false;
+      if (this.isSupabaseActive()) {
+        await this.deleteStatFromSupabase(statId, type);
+      }
+      this.battingStats = this.battingStats.filter((b) => !(b.id === statId && b.playerId === playerId));
+      this.persistState();
+      return true;
+    } else {
+      const target = this.pitchingStats.find((p) => p.id === statId && p.playerId === playerId);
+      if (!target) return false;
+      if (this.isSupabaseActive()) {
+        await this.deleteStatFromSupabase(statId, type);
+      }
+      this.pitchingStats = this.pitchingStats.filter((p) => !(p.id === statId && p.playerId === playerId));
+      this.persistState();
+      return true;
+    }
   }
 
   /**
    * Import historical stats for players from an array of JSON objects.
    * Supports both batting and pitching records from previous seasons (e.g. SNB 60, 61, 62, 63, 64).
    */
-  importHistoricalStats(
+  async importHistoricalStats(
     incoming: any[] | { batting?: any[]; pitching?: any[]; stats?: any[]; temporadas?: any[] },
     defaultPlayerId?: string
-  ): {
+  ): Promise<{
     importedCount: number;
     battingCount: number;
     pitchingCount: number;
@@ -2528,7 +2628,7 @@ export class BaseballRepository {
       seasonId: string;
       teamShort: string;
     }[];
-  } {
+  }> {
     let rawList: any[] = [];
     if (Array.isArray(incoming)) {
       rawList = incoming;
@@ -2753,7 +2853,7 @@ export class BaseballRepository {
         const cs = Number(raw.cs ?? raw.cr ?? 0);
         const war = Number(raw.war ?? raw.WAR ?? 0);
 
-        this.addOrUpdatePlayerSeasonBatting(matchedPlayer.id, {
+        await this.addOrUpdatePlayerSeasonBatting(matchedPlayer.id, {
           seasonYear,
           seasonId,
           stage,
@@ -2794,7 +2894,7 @@ export class BaseballRepository {
         const hr = Number(raw.hr ?? raw.jonrones ?? 0);
         const war = Number(raw.war ?? raw.WAR ?? 0);
 
-        this.addOrUpdatePlayerSeasonPitching(matchedPlayer.id, {
+        await this.addOrUpdatePlayerSeasonPitching(matchedPlayer.id, {
           seasonYear,
           seasonId,
           stage,
@@ -3096,7 +3196,11 @@ export class BaseballRepository {
       isScoringPlay: true,
     });
 
-    this.syncGameToSupabase(target);
+    if (this.isSupabaseActive()) {
+      this.syncGameToSupabase(target).catch((err) => {
+        console.error('❌ [BaseballRepository] Falló sincronización de juego simulado en Supabase:', err);
+      });
+    }
     this.persistState();
     return {
       game: { ...target },
@@ -3323,7 +3427,7 @@ export class BaseballRepository {
   }
 
   // Ingestion persistence
-  insertBattingStatsBatch(newStats: BattingStats[]): number {
+  async insertBattingStatsBatch(newStats: BattingStats[]): Promise<number> {
     for (const stat of newStats) {
       if (!stat || !stat.playerName) continue;
 
@@ -3355,7 +3459,7 @@ export class BaseballRepository {
       const age = Number(rawMeta.age || rawMeta.edad || 26);
 
       if (!player) {
-        player = this.createPlayer({
+        player = await this.createPlayer({
           fullName: stat.playerName.trim(),
           teamId: matchedTeam.id,
           jerseyNumber,
@@ -3368,7 +3472,7 @@ export class BaseballRepository {
         });
       } else {
         // Actualizar datos si viene equipo o posición
-        this.updatePlayer(player.id, {
+        await this.updatePlayer(player.id, {
           teamId: matchedTeam.id,
           position: pos as any,
           jerseyNumber: rawMeta.jerseyNumber ? jerseyNumber : player.jerseyNumber,
@@ -3384,10 +3488,14 @@ export class BaseballRepository {
       const existingStatIdx = this.battingStats.findIndex((b) => b.playerId === player!.id);
       if (existingStatIdx >= 0) {
         this.battingStats[existingStatIdx] = { ...stat, id: this.battingStats[existingStatIdx].id };
-        this.syncBattingStatToSupabase(this.battingStats[existingStatIdx]);
+        if (this.isSupabaseActive()) {
+          await this.syncBattingStatToSupabase(this.battingStats[existingStatIdx]);
+        }
       } else {
         this.battingStats.push(stat);
-        this.syncBattingStatToSupabase(stat);
+        if (this.isSupabaseActive()) {
+          await this.syncBattingStatToSupabase(stat);
+        }
       }
 
       // Si es lanzador o trae estadísticas de pitcheo, agregar o actualizar estadísticas de pitcheo
@@ -3432,10 +3540,14 @@ export class BaseballRepository {
 
         if (existingPitchIdx >= 0) {
           this.pitchingStats[existingPitchIdx] = pitchData;
-          this.syncPitchingStatToSupabase(pitchData);
+          if (this.isSupabaseActive()) {
+            await this.syncPitchingStatToSupabase(pitchData);
+          }
         } else {
           this.pitchingStats.push(pitchData);
-          this.syncPitchingStatToSupabase(pitchData);
+          if (this.isSupabaseActive()) {
+            await this.syncPitchingStatToSupabase(pitchData);
+          }
         }
       }
     }
@@ -3443,7 +3555,7 @@ export class BaseballRepository {
     return newStats.length;
   }
 
-  insertPlayersBatch(newPlayers: Player[]): number {
+  async insertPlayersBatch(newPlayers: Player[]): Promise<number> {
     let count = 0;
     for (const np of newPlayers) {
       if (!np) continue;
@@ -3451,12 +3563,12 @@ export class BaseballRepository {
       if (cleanId) {
         const existing = this.players.find((p) => p.id === cleanId);
         if (existing) {
-          this.updatePlayer(existing.id, np);
+          await this.updatePlayer(existing.id, np);
           count++;
           continue;
         }
       }
-      this.createPlayer(np);
+      await this.createPlayer(np);
       count++;
     }
     this.deduplicatePlayers();

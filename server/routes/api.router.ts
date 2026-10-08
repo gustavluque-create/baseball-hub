@@ -391,14 +391,14 @@ apiRouter.post('/admin/players/import', requireAdmin, requireRole('superadmin', 
 });
 
 // Import Historical Stats (Batting and Pitching across seasons and players)
-apiRouter.post('/admin/stats/import', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/admin/stats/import', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const rawPayload = req.body;
   if (!rawPayload || (Array.isArray(rawPayload) && rawPayload.length === 0)) {
     return res.status(400).json({ error: 'Los datos de estadísticas a importar están vacíos o no tienen un formato válido.' });
   }
 
-  const result = baseballRepo.importHistoricalStats(rawPayload);
+  const result = await baseballRepo.importHistoricalStats(rawPayload);
   adminAuthService.addAuditLog(
     admin.username,
     'Importación de Estadísticas Históricas',
@@ -731,7 +731,7 @@ apiRouter.get('/teams/:id', (req: Request, res: Response) => {
 });
 
 // Update Team Logo directly
-const handleUpdateTeamLogo = (req: Request, res: Response) => {
+const handleUpdateTeamLogo = async (req: Request, res: Response) => {
   const validation = teamLogoSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({ error: validation.error.issues[0]?.message || 'Datos de logo inválidos.' });
@@ -743,25 +743,29 @@ const handleUpdateTeamLogo = (req: Request, res: Response) => {
     updates.primaryColor = primaryColor;
   }
 
-  const updatedTeam = baseballRepo.updateTeam(req.params.id, updates);
-  if (!updatedTeam) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
+  try {
+    const updatedTeam = await baseballRepo.updateTeam(req.params.id, updates);
+    if (!updatedTeam) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+
+    const admin = (req as any).adminUser;
+    adminAuthService.addAuditLog(
+      admin ? admin.username : 'Usuario Web / Gestor',
+      'Actualización de Logo de Equipo',
+      `Logo oficial persistido para ${updatedTeam.name} (${updatedTeam.shortName}).`,
+      'teams'
+    );
+
+    res.json({
+      success: true,
+      message: 'Logo del equipo actualizado y guardado permanentemente en la base de datos.',
+      team: updatedTeam,
+      logo: updatedTeam.logo,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al actualizar logo de equipo.' });
   }
-
-  const admin = (req as any).adminUser;
-  adminAuthService.addAuditLog(
-    admin ? admin.username : 'Usuario Web / Gestor',
-    'Actualización de Logo de Equipo',
-    `Logo oficial persistido para ${updatedTeam.name} (${updatedTeam.shortName}).`,
-    'teams'
-  );
-
-  res.json({
-    success: true,
-    message: 'Logo del equipo actualizado y guardado permanentemente en la base de datos.',
-    team: updatedTeam,
-    logo: updatedTeam.logo,
-  });
 };
 
 apiRouter.put('/teams/:id/logo', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeamLogo);
@@ -775,7 +779,7 @@ apiRouter.post(
   requireAdmin,
   requireRole('superadmin', 'official_scorer'),
   sensitiveWriteLimiter,
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
       const { teamLogos, customPlayers, customTeams, deletedPlayerIds } = req.body;
       let logosCount = 0;
@@ -786,7 +790,7 @@ apiRouter.post(
       if (teamLogos && typeof teamLogos === 'object') {
         for (const [teamId, logoData] of Object.entries(teamLogos as Record<string, any>)) {
           if (logoData && logoData.logo) {
-            const updated = baseballRepo.updateTeam(teamId, {
+            const updated = await baseballRepo.updateTeam(teamId, {
               logo: logoData.logo,
               colors: logoData.primaryColor
                 ? { primary: logoData.primaryColor, secondary: '#FFFFFF', text: '#FFFFFF' }
@@ -804,7 +808,7 @@ apiRouter.post(
             const existing = baseballRepo.getTeamById(t.id);
             if (!existing) {
               try {
-                baseballRepo.createTeam(t);
+                await baseballRepo.createTeam(t);
                 teamsCount++;
               } catch {
                 // Already exists or invalid
@@ -844,9 +848,9 @@ apiRouter.post(
   }
 );
 
-const handleUpdateTeam = (req: Request, res: Response) => {
+const handleUpdateTeam = async (req: Request, res: Response) => {
   try {
-    const updatedTeam = baseballRepo.updateTeam(req.params.id, req.body);
+    const updatedTeam = await baseballRepo.updateTeam(req.params.id, req.body);
     if (!updatedTeam) {
       return res.status(404).json({ error: 'Equipo no encontrado.' });
     }
@@ -871,9 +875,9 @@ apiRouter.put('/teams/:id', requireAdmin, requireRole('superadmin', 'official_sc
 apiRouter.put('/admin/teams/:id', requireAdmin, requireRole('superadmin', 'official_scorer'), handleUpdateTeam);
 
 // Create Team
-const handleCreateTeam = (req: Request, res: Response) => {
+const handleCreateTeam = async (req: Request, res: Response) => {
   try {
-    const newTeam = baseballRepo.createTeam(req.body);
+    const newTeam = await baseballRepo.createTeam(req.body);
     const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
@@ -893,9 +897,9 @@ apiRouter.post('/teams', requireAdmin, requireRole('superadmin', 'official_score
 apiRouter.post('/admin/teams', requireAdmin, requireRole('superadmin', 'official_scorer'), handleCreateTeam);
 
 // Seed 16 Official Cuban Series Teams
-const handleSeed16Teams = (req: Request, res: Response) => {
+const handleSeed16Teams = async (req: Request, res: Response) => {
   try {
-    const teams = baseballRepo.seed16NationalSeriesTeams();
+    const teams = await baseballRepo.seed16NationalSeriesTeams();
     const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
@@ -919,9 +923,9 @@ apiRouter.post('/teams/seed-16', requireAdmin, requireRole('superadmin'), handle
 apiRouter.post('/admin/teams/seed-16', requireAdmin, requireRole('superadmin'), handleSeed16Teams);
 
 // Delete Team
-const handleDeleteTeam = (req: Request, res: Response) => {
+const handleDeleteTeam = async (req: Request, res: Response) => {
   try {
-    const result = baseballRepo.deleteTeam(req.params.id);
+    const result = await baseballRepo.deleteTeam(req.params.id);
     const admin = (req as any).adminUser;
     if (admin) {
       adminAuthService.addAuditLog(
@@ -1046,7 +1050,7 @@ apiRouter.delete('/players/:id/stats/:statId', requireAdmin, requireRole('supera
 });
 
 // Bulk Import Historical Stats specifically for one player
-apiRouter.post('/players/:id/stats/import', requireAdmin, requireRole('superadmin', 'official_scorer'), (req: Request, res: Response) => {
+apiRouter.post('/players/:id/stats/import', requireAdmin, requireRole('superadmin', 'official_scorer'), async (req: Request, res: Response) => {
   const player = baseballRepo.getPlayerById(req.params.id);
   if (!player) {
     return res.status(404).json({ error: 'Jugador no encontrado' });
@@ -1059,7 +1063,7 @@ apiRouter.post('/players/:id/stats/import', requireAdmin, requireRole('superadmi
     ? req.body
     : req.body;
 
-  const result = baseballRepo.importHistoricalStats(rawList, player.id);
+  const result = await baseballRepo.importHistoricalStats(rawList, player.id);
   const historical = baseballRepo.getPlayerHistoricalStats(player.id);
 
   res.json({
@@ -1309,15 +1313,19 @@ apiRouter.post('/ingest/validate', requireAdmin, requireRole('superadmin'), (req
   res.json(summary);
 });
 
-apiRouter.post('/ingest/commit', requireAdmin, requireRole('superadmin'), (req: Request, res: Response) => {
+apiRouter.post('/ingest/commit', requireAdmin, requireRole('superadmin'), async (req: Request, res: Response) => {
   const admin = (req as any).adminUser;
   const { records, username } = req.body;
   if (!Array.isArray(records) || records.length === 0) {
     return res.status(400).json({ error: 'Lista de registros válida requerida para commit' });
   }
-  const insertedCount = IngestionService.commitIngestion(records);
-  adminAuthService.recordIngestionSuccess(insertedCount, admin?.username || username || 'admin');
-  res.json({ success: true, count: insertedCount, message: `${insertedCount} registros insertados exitosamente` });
+  try {
+    const insertedCount = await IngestionService.commitIngestion(records);
+    adminAuthService.recordIngestionSuccess(insertedCount, admin?.username || username || 'admin');
+    res.json({ success: true, count: insertedCount, message: `${insertedCount} registros insertados exitosamente` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al persistir registros en base de datos.' });
+  }
 });
 
 // ==========================================

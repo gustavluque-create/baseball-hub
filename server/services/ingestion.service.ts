@@ -448,7 +448,7 @@ export class IngestionService {
     };
   }
 
-  static commitIngestion(records: BattingStats[]): number {
-    return baseballRepo.insertBattingStatsBatch(records);
+  static async commitIngestion(records: BattingStats[]): Promise<number> {
+    return await baseballRepo.insertBattingStatsBatch(records);
   }
 }
