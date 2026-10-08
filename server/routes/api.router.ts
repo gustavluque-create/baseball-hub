@@ -4,8 +4,10 @@ import { IngestionService } from '../services/ingestion.service.ts';
 import { notificationService } from '../services/notification.service.ts';
 import { adminAuthService } from '../services/admin-auth.service.ts';
 import { fcmServer } from '../services/fcm.service.ts';
-import { requireAuth, AuthRequest } from '../../src/middleware/auth.ts';
+import { requireAuth, AuthRequest, extractRequestToken } from '../../src/middleware/auth.ts';
 import { getOrCreateUser, getUserByUid } from '../../src/db/users.ts';
+import { supabaseAuthService, AppUserRole } from '../services/supabase-auth.service.ts';
+import { isSupabaseServerConfigured } from '../lib/supabase.ts';
 import {
   adminLoginLimiter,
   commentsLimiter,
@@ -52,15 +54,47 @@ export const getRequestToken = (req: Request): string | undefined => {
 
 // Middleware to authenticate admin requests
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
-  const token = getRequestToken(req);
-  let admin = adminAuthService.verifySession(token);
-  if (!admin && token && token.includes('.')) {
-    admin = await adminAuthService.verifySupabaseToken(token);
+  const token = getRequestToken(req) || extractRequestToken(req);
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: 'Acceso no autorizado. Se requiere iniciar sesión con credenciales de administrador.',
+    });
   }
+
+  // 1. Supabase Auth validation (PRIMARY)
+  try {
+    const sessionRes = await supabaseAuthService.verifyToken(token);
+    if (sessionRes.valid && sessionRes.user) {
+      const role = sessionRes.user.role;
+      if (['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'].includes(role)) {
+        (req as any).adminUser = sessionRes.admin || {
+          id: sessionRes.user.id,
+          username: sessionRes.user.email?.split('@')[0] || sessionRes.user.id,
+          name: sessionRes.user.name,
+          email: sessionRes.user.email,
+          role,
+          lastLogin: new Date().toISOString(),
+        };
+        (req as any).adminToken = token;
+        return next();
+      } else {
+        return res.status(403).json({
+          success: false,
+          error: 'Permisos insuficientes. El usuario autenticado no posee rol administrativo.',
+        });
+      }
+    }
+  } catch (err) {
+    // continue to fallback check
+  }
+
+  // 2. Fallback to local admin session store
+  const admin = adminAuthService.verifySession(token);
   if (!admin) {
     return res.status(401).json({
       success: false,
-      error: 'Acceso no autorizado. Se requiere iniciar sesión con usuario y contraseña de administrador.',
+      error: 'Acceso no autorizado. Sesión de administrador inválida o expirada.',
     });
   }
 
@@ -69,8 +103,8 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
   next();
 };
 
-// Middleware to authorize specific administrative roles
-export const requireRole = (...allowedRoles: ('superadmin' | 'official_scorer' | 'editor')[]) => {
+// Middleware to authorize specific administrative roles server-side
+export const requireRole = (...allowedRoles: (AppUserRole | 'superadmin' | 'official_scorer' | 'editor')[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const admin = (req as any).adminUser;
     if (!admin) {
@@ -80,7 +114,7 @@ export const requireRole = (...allowedRoles: ('superadmin' | 'official_scorer' |
       });
     }
 
-    if (!adminAuthService.hasRole(admin, allowedRoles)) {
+    if (!supabaseAuthService.hasPermission(admin.role, allowedRoles as AppUserRole[])) {
       return res.status(403).json({
         success: false,
         error: 'Permisos insuficientes. Su rol no tiene autorización para ejecutar esta acción.',
@@ -95,16 +129,42 @@ export const requireRole = (...allowedRoles: ('superadmin' | 'official_scorer' |
 // ADMIN AUTHENTICATION & SECURITY ENDPOINTS
 // ==========================================
 
-apiRouter.post('/admin/login', adminLoginLimiter, (req: Request, res: Response) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
+apiRouter.post('/admin/login', adminLoginLimiter, async (req: Request, res: Response) => {
+  const { username, email, password } = req.body || {};
+  const userIdentifier = (email || username || '').trim();
+  if (!userIdentifier || !password) {
     return res.status(400).json({
       success: false,
-      error: 'Debe ingresar el usuario y la contraseña de administración.',
+      error: 'Debe ingresar el usuario/correo y la contraseña de administración.',
     });
   }
 
-  const result = adminAuthService.authenticate(username, password);
+  // 1. Supabase Auth as PRIMARY when configured
+  if (isSupabaseServerConfigured()) {
+    const supaResult = await supabaseAuthService.adminLogin(userIdentifier, password);
+    if (supaResult.success && supaResult.token && supaResult.admin) {
+      res.cookie('baseball_admin_token', supaResult.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+      res.cookie('baseball_session', supaResult.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+      return res.json(supaResult);
+    } else if (supaResult.unauthorizedRole) {
+      return res.status(403).json(supaResult);
+    }
+  }
+
+  // 2. Fallback to local admin auth (local dev / test fallback)
+  const result = adminAuthService.authenticate(userIdentifier, password);
   if (!result.success) {
     return res.status(401).json(result);
   }
@@ -123,8 +183,32 @@ apiRouter.post('/admin/login', adminLoginLimiter, (req: Request, res: Response) 
   res.json(result);
 });
 
-apiRouter.get('/admin/session', (req: Request, res: Response) => {
-  const token = getRequestToken(req);
+apiRouter.get('/admin/session', async (req: Request, res: Response) => {
+  const token = getRequestToken(req) || extractRequestToken(req);
+  if (!token) {
+    return res.status(401).json({ valid: false, error: 'Sesión inválida o expirada' });
+  }
+
+  // 1. Supabase Auth check (PRIMARY)
+  const sessionRes = await supabaseAuthService.verifyToken(token);
+  if (sessionRes.valid && sessionRes.user) {
+    const role = sessionRes.user.role;
+    if (['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'].includes(role)) {
+      return res.json({
+        valid: true,
+        admin: sessionRes.admin || {
+          id: sessionRes.user.id,
+          username: sessionRes.user.email?.split('@')[0] || sessionRes.user.id,
+          name: sessionRes.user.name,
+          email: sessionRes.user.email,
+          role,
+          lastLogin: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  // 2. Local session fallback
   const admin = adminAuthService.verifySession(token);
   if (!admin) {
     return res.status(401).json({ valid: false, error: 'Sesión inválida o expirada' });
@@ -133,11 +217,13 @@ apiRouter.get('/admin/session', (req: Request, res: Response) => {
   res.json({ valid: true, admin });
 });
 
-apiRouter.post('/admin/logout', (req: Request, res: Response) => {
-  const token = getRequestToken(req);
+apiRouter.post('/admin/logout', async (req: Request, res: Response) => {
+  const token = getRequestToken(req) || extractRequestToken(req);
   res.clearCookie('baseball_admin_token', { path: '/' });
+  res.clearCookie('baseball_session', { path: '/' });
+  await supabaseAuthService.signOut(token);
   const success = adminAuthService.logout(token);
-  res.json({ success });
+  res.json({ success: true });
 });
 
 apiRouter.get('/admin/overview', requireAdmin, (req: Request, res: Response) => {
@@ -1234,7 +1320,102 @@ apiRouter.post('/ingest/commit', requireAdmin, requireRole('superadmin'), (req: 
   res.json({ success: true, count: insertedCount, message: `${insertedCount} registros insertados exitosamente` });
 });
 
-// Firebase User Profile Synchronization with Cloud SQL PostgreSQL
+// ==========================================
+// USER AUTHENTICATION ENDPOINTS (SUPABASE AUTH PRIMARY)
+// ==========================================
+
+// Register new user (Supabase Auth PRIMARY)
+apiRouter.post('/auth/register', async (req: Request, res: Response) => {
+  const { email, password, displayName, name, photoUrl, avatar, preferences } = req.body || {};
+  const result = await supabaseAuthService.registerUser({
+    email,
+    password,
+    displayName: displayName || name,
+    photoUrl: photoUrl || avatar,
+    preferences,
+    role: 'user', // default role for public registration
+  });
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  if (result.token) {
+    res.cookie('baseball_session', result.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  }
+
+  res.status(201).json(result);
+});
+
+// User login (Supabase Auth PRIMARY)
+apiRouter.post('/auth/login', async (req: Request, res: Response) => {
+  const { email, username, password } = req.body || {};
+  const identifier = email || username;
+  const result = await supabaseAuthService.loginUser(identifier, password);
+
+  if (!result.success) {
+    return res.status(401).json(result);
+  }
+
+  if (result.token) {
+    res.cookie('baseball_session', result.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  }
+
+  res.json(result);
+});
+
+// User logout
+apiRouter.post('/auth/logout', async (req: Request, res: Response) => {
+  const token = extractRequestToken(req) || getRequestToken(req);
+  res.clearCookie('baseball_session', { path: '/' });
+  res.clearCookie('baseball_admin_token', { path: '/' });
+  await supabaseAuthService.signOut(token);
+  res.json({ success: true, message: 'Sesión finalizada exitosamente.' });
+});
+
+// Get current user session
+apiRouter.get('/auth/session', async (req: Request, res: Response) => {
+  const token = extractRequestToken(req) || getRequestToken(req);
+  if (!token) {
+    return res.status(401).json({ valid: false, error: 'No se encontró sesión activa.' });
+  }
+
+  const result = await supabaseAuthService.verifyToken(token);
+  if (!result.valid) {
+    return res.status(401).json(result);
+  }
+
+  res.json({ valid: true, user: result.user });
+});
+
+// User migration without passwords, tokens, sessions, or secrets
+apiRouter.post('/admin/migrate-users', requireAdmin, requireRole('superadmin'), async (req: Request, res: Response) => {
+  try {
+    const rawUsers = Array.isArray(req.body?.users) ? req.body.users : supabaseAuthService.getLocalUsers();
+    const result = await supabaseAuthService.migrateUsersWithoutSecrets(rawUsers);
+    res.json({
+      success: true,
+      message: `Migrados ${result.totalMigrated} usuarios sin copiar contraseñas, tokens ni secretos.`,
+      summary: result,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Error durante la migración de usuarios.' });
+  }
+});
+
+// Firebase User Profile Synchronization with Cloud SQL / Supabase
 apiRouter.post('/auth/sync', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user || !req.user.uid) {
@@ -1244,7 +1425,9 @@ apiRouter.post('/auth/sync', requireAuth, async (req: AuthRequest, res: Response
       req.user.uid,
       req.user.email || `${req.user.uid}@app.internal`,
       req.body?.displayName || (req.user as any).name || null,
-      req.body?.photoUrl || (req.user as any).picture || null
+      req.body?.photoUrl || (req.user as any).picture || null,
+      req.user.role || 'user',
+      req.body?.preferences || req.user.preferences || {}
     );
     res.json({ success: true, user });
   } catch (error: any) {
@@ -1259,7 +1442,13 @@ apiRouter.get('/users/me', requireAuth, async (req: AuthRequest, res: Response) 
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
     const user = await getUserByUid(req.user.uid);
-    res.json(user || { uid: req.user.uid, email: req.user.email });
+    res.json(user || {
+      uid: req.user.uid,
+      email: req.user.email,
+      name: req.user.name,
+      role: req.user.role || 'user',
+      preferences: req.user.preferences || {},
+    });
   } catch (error: any) {
     console.error('Failed to fetch user:', error);
     res.status(500).json({ error: 'Error al consultar usuario' });

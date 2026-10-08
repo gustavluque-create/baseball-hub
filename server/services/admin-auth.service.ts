@@ -328,11 +328,25 @@ export class AdminAuthService {
   /**
    * Check if a user has one of the allowed roles
    */
-  hasRole(admin: AdminUser | null, allowedRoles: ('superadmin' | 'official_scorer' | 'editor')[]): boolean {
+  hasRole(
+    admin: AdminUser | null,
+    allowedRoles: ('superadmin' | 'admin' | 'anotador' | 'prensa' | 'official_scorer' | 'editor')[]
+  ): boolean {
     if (!admin) return false;
     // Superadmin has universal permissions across all administrative domains
     if (admin.role === 'superadmin') return true;
-    return allowedRoles.includes(admin.role);
+    if (admin.role === 'admin' && (allowedRoles.includes('admin') || allowedRoles.includes('official_scorer') || allowedRoles.includes('editor') || allowedRoles.includes('anotador') || allowedRoles.includes('prensa'))) {
+      return true;
+    }
+    const role = admin.role;
+    const isScorer = role === 'anotador' || role === 'official_scorer';
+    const isEditor = role === 'prensa' || role === 'editor';
+    return allowedRoles.some((r) => {
+      if (r === role) return true;
+      if (isScorer && (r === 'anotador' || r === 'official_scorer')) return true;
+      if (isEditor && (r === 'prensa' || r === 'editor')) return true;
+      return false;
+    });
   }
 
   /**

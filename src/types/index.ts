@@ -603,7 +603,7 @@ export interface AdminUser {
   username: string;
   name: string;
   email: string;
-  role: 'superadmin' | 'official_scorer' | 'editor';
+  role: 'superadmin' | 'admin' | 'anotador' | 'prensa' | 'official_scorer' | 'editor';
   lastLogin: string;
 }
 

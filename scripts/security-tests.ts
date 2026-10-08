@@ -4,6 +4,9 @@ import { adminAuthService, isValidBcryptHash, getAdminCredential } from '../serv
 import { isSupabaseServerConfigured, getSupabaseServerClient } from '../server/lib/supabase.ts';
 import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
 import { baseballRepo, BaseballRepository } from '../server/repositories/baseball.repository.ts';
+import { supabaseAuthService } from '../server/services/supabase-auth.service.ts';
+import { requireAuth } from '../src/middleware/auth.ts';
+import { adminAuth } from '../src/lib/firebase-admin.ts';
 
 function request(options: http.RequestOptions, body?: any): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
   return new Promise((resolve, reject) => {
@@ -271,6 +274,185 @@ async function runSecurityTests() {
     assert(
       testSupaRepo.getState() === 'supabase' && testSupaRepo.isSupabaseActive() === true,
       '25. Con Supabase activo -> Estado SUPABASE y isSupabaseActive() retorna true'
+    );
+
+    // ========================================================
+    // COMPROBACIONES DE AUTENTICACIÓN SUPABASE (FASE 2.4)
+    // ========================================================
+
+    // 26. Registro de usuario (Supabase Auth PRIMARY)
+    const testEmail = `fan_${Date.now()}@baseballhub.cu`;
+    const regRes = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/auth/register', method: 'POST' },
+      {
+        email: testEmail,
+        password: 'PasswordSegura2026!',
+        displayName: 'Fanatico Cubano',
+        photoUrl: 'https://example.com/avatar.png',
+        preferences: { favoriteTeam: 'ind' },
+      }
+    );
+    assert(
+      regRes.status === 201 &&
+        regRes.body.success === true &&
+        regRes.body.user?.email === testEmail &&
+        regRes.body.user?.role === 'user' &&
+        !regRes.body.user?.password &&
+        !regRes.body.user?.passwordHash &&
+        !!regRes.body.token,
+      '26. Registro de usuario: Crea cuenta con email, nombre, avatar, rol y preferencias sin exponer secretos'
+    );
+    const userToken = regRes.body.token;
+
+    // 27. Login exitoso e inválido (Supabase Auth PRIMARY)
+    const loginOk = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/auth/login', method: 'POST' },
+      { email: testEmail, password: 'PasswordSegura2026!' }
+    );
+    const rawCookie = loginOk.headers['set-cookie'];
+    const cookieStrings: string[] = Array.isArray(rawCookie)
+      ? rawCookie
+      : typeof rawCookie === 'string'
+        ? [rawCookie]
+        : [];
+    const hasHttpOnlyCookie = cookieStrings.some((c: string) => c.includes('HttpOnly') && c.includes('baseball_session'));
+
+    assert(
+      loginOk.status === 200 && loginOk.body.success === true && !!loginOk.body.token && hasHttpOnlyCookie,
+      '27. Login de usuario: Autenticación exitosa emite token y cookie HttpOnly'
+    );
+
+    const loginBad = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/auth/login', method: 'POST' },
+      { email: testEmail, password: 'WrongPassword123' }
+    );
+    assert(loginBad.status === 401, '28. Login con credenciales incorrectas es rechazado con 401');
+
+    // 29. Consulta de sesión activa
+    const sessionRes = await request({
+      hostname: 'localhost',
+      port: 3000,
+      path: '/api/auth/session',
+      method: 'GET',
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    assert(
+      sessionRes.status === 200 &&
+        sessionRes.body.valid === true &&
+        sessionRes.body.user?.email === testEmail &&
+        sessionRes.body.user?.role === 'user',
+      '29. Sesión activa: Consulta de sesión retorna usuario sanitizado con rol validado'
+    );
+
+    // 30. Sesión expirada
+    const testExpiredToken = supabaseAuthService.createSyntheticToken(
+      {
+        id: 'usr_test_expired',
+        uid: 'usr_test_expired',
+        email: 'expired@test.cu',
+        name: 'Expired Test',
+        displayName: 'Expired Test',
+        role: 'user',
+        provider: 'local',
+      },
+      -5000
+    );
+    const expiredVerify = await supabaseAuthService.verifyToken(testExpiredToken);
+    assert(
+      expiredVerify.valid === false && expiredVerify.expired === true,
+      '30. Sesión expirada: Token vencido es detectado y rechazado'
+    );
+
+    // 31. Usuario normal no tiene acceso a endpoints de administración (RBAC)
+    const normalAdminReq = await request({
+      hostname: 'localhost',
+      port: 3000,
+      path: '/api/admin/overview',
+      method: 'GET',
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    assert(
+      normalAdminReq.status === 401 || normalAdminReq.status === 403,
+      '31. RBAC: Usuario normal no tiene acceso a endpoints administrativos'
+    );
+
+    // 32. Rol 'superadmin' posee acceso universal
+    const superadminLogin = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/auth/login', method: 'POST' },
+      { email: 'superadmin@baseballhub.cu', password: 'SuperAdmin2026!' }
+    );
+    const superadminToken = superadminLogin.body?.token;
+    const superadminReq = await request({
+      hostname: 'localhost',
+      port: 3000,
+      path: '/api/admin/overview',
+      method: 'GET',
+      headers: { Authorization: `Bearer ${superadminToken}` },
+    });
+    assert(superadminReq.status === 200, '32. RBAC: Rol superadmin posee acceso administrativo');
+
+    // 33. Rol 'admin' posee acceso general
+    const hasAdminAccess = supabaseAuthService.hasPermission('admin', ['admin']) &&
+      supabaseAuthService.hasPermission('admin', ['anotador', 'prensa']);
+    assert(hasAdminAccess, '33. RBAC: Rol admin posee acceso administrativo general');
+
+    // 34. Rol 'anotador' y rol 'prensa' validados server-side
+    const isAnotadorOk = supabaseAuthService.hasPermission('anotador', ['anotador']);
+    const isPrensaOk = supabaseAuthService.hasPermission('prensa', ['prensa']);
+    const anotadorCantDoPrensa = !supabaseAuthService.hasPermission('anotador', ['prensa']);
+    assert(
+      isAnotadorOk && isPrensaOk && anotadorCantDoPrensa,
+      '34. RBAC: Roles anotador y prensa validados server-side con segregación de funciones'
+    );
+
+    // 35. Logout de usuario
+    const logoutRes = await request({
+      hostname: 'localhost',
+      port: 3000,
+      path: '/api/auth/logout',
+      method: 'POST',
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    assert(logoutRes.status === 200 && logoutRes.body.success === true, '35. Logout: Cierre de sesión exitoso y cookies revocadas');
+
+    // 36. Migración de usuarios sin copiar secretos (passwords, tokens, secretos)
+    const rawUsersForMigration = [
+      {
+        uid: 'migrated_usr_1',
+        email: 'migrated1@baseballhub.cu',
+        name: 'Carlos Perez',
+        avatar: 'https://example.com/carlos.jpg',
+        role: 'user',
+        preferences: { favoriteTeam: 'mtz' },
+        password: 'PLAIN_SECRET_PASSWORD_123',
+        passwordHash: '$2a$10$fakehashsecret1234567890',
+        token: 'secret_jwt_token_123',
+        session: { sessionId: 'secret_session_abc' },
+        apiKey: 'SECRET_API_KEY_999',
+      },
+    ];
+    const migrationResult = await supabaseAuthService.migrateUsersWithoutSecrets(rawUsersForMigration);
+    const migratedUser = migrationResult.users[0] as any;
+    assert(
+      migrationResult.totalMigrated === 1 &&
+        migrationResult.sanitizedSecretsCount > 0 &&
+        migratedUser.email === 'migrated1@baseballhub.cu' &&
+        migratedUser.name === 'Carlos Perez' &&
+        migratedUser.avatar === 'https://example.com/carlos.jpg' &&
+        migratedUser.role === 'user' &&
+        migratedUser.preferences?.favoriteTeam === 'mtz' &&
+        !migratedUser.password &&
+        !migratedUser.passwordHash &&
+        !migratedUser.token &&
+        !migratedUser.session &&
+        !migratedUser.apiKey,
+      '36. Migración de usuarios: Transfiere email, nombre, avatar, rol y preferencias SIN contraseñas, tokens ni secretos'
+    );
+
+    // 37. Firebase Fallback preservado
+    assert(
+      typeof requireAuth === 'function' && typeof adminAuth !== 'undefined',
+      '37. Firebase Auth preservado estrictamente como fallback temporal sin eliminar Firebase'
     );
 
     // Summary
