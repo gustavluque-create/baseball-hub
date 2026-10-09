@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { Request, Response, NextFunction } from 'express';
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '../lib/supabase.ts';
 import { adminAuth } from '../../src/lib/firebase-admin.ts';
 import { adminAuthService } from './admin-auth.service.ts';
@@ -95,6 +96,64 @@ class SupabaseAuthService {
   }
 
   /**
+   * Resolve user role strictly from server-controlled sources:
+   * 1. Supabase public.users table (via service role client matching verified user UUID)
+   * 2. Supabase Auth app_metadata (server-controlled, read-only for client)
+   * 3. Local users in-memory registry (fallback for local dev/testing)
+   * SECURITY RULE: Never trust or use user_metadata.role for any authorization decisions!
+   */
+  public async resolveServerRole(
+    userId: string,
+    appMetadataRole?: string,
+    userEmail?: string
+  ): Promise<AppUserRole> {
+    if (!userId || typeof userId !== 'string') return 'user';
+
+    // 1. Check Supabase public.users table (PRIMARY server source)
+    if (this.isSupabaseAuthConfigured()) {
+      const supabase = getSupabaseServerClient();
+      if (supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .select('id, uid, role')
+            .or(`id.eq.${userId},uid.eq.${userId}`)
+            .maybeSingle();
+
+          if (!error && data) {
+            // Strict verification: user profile corresponds to the authenticated UUID
+            if ((data.id === userId || data.uid === userId) && data.role) {
+              return this.normalizeRole(data.role);
+            }
+          }
+        } catch (err: any) {
+          // If query fails or table is not ready, continue to server-controlled app_metadata
+        }
+      }
+    }
+
+    // 2. Server-controlled app_metadata (tamper-proof by client)
+    if (appMetadataRole && typeof appMetadataRole === 'string') {
+      return this.normalizeRole(appMetadataRole);
+    }
+
+    // 3. Fallback: check server local users store
+    if (userEmail) {
+      const local = this.localUsers.get(userEmail.toLowerCase().trim());
+      if (local && (local.id === userId || local.uid === userId)) {
+        return this.normalizeRole(local.role);
+      }
+    }
+    for (const [, local] of this.localUsers.entries()) {
+      if (local.id === userId || local.uid === userId) {
+        return this.normalizeRole(local.role);
+      }
+    }
+
+    return 'user';
+  }
+
+  /**
    * Register a new user in Supabase Auth (PRIMARY) with local fallback.
    * SECURITY REQUIREMENT:
    * 1. Public registration ALWAYS forces role = 'user'.
@@ -137,7 +196,6 @@ class SupabaseAuthService {
               name: displayName,
               full_name: displayName,
               avatar_url: photoUrl,
-              role: 'user',
               preferences,
             },
             app_metadata: {
@@ -277,8 +335,10 @@ class SupabaseAuthService {
 
           if (!error && data?.session && data?.user) {
             const supaUser = data.user;
-            const role = this.normalizeRole(
-              supaUser.app_metadata?.role || supaUser.user_metadata?.role || 'user'
+            const role = await this.resolveServerRole(
+              supaUser.id,
+              supaUser.app_metadata?.role,
+              supaUser.email || identifier
             );
             const authUser: AuthenticatedUser = {
               id: supaUser.id,
@@ -388,10 +448,14 @@ class SupabaseAuthService {
           }
 
           const user = data.user;
-          const role = this.normalizeRole(user.app_metadata?.role || user.user_metadata?.role || '');
+          const role = await this.resolveServerRole(
+            user.id,
+            user.app_metadata?.role,
+            user.email || identifier
+          );
 
           // Verify administrative role server-side
-          const adminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa'];
+          const adminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
           if (!adminRoles.includes(role)) {
             return {
               success: false,
@@ -464,8 +528,10 @@ class SupabaseAuthService {
 
           if (data?.user) {
             const user = data.user;
-            const role = this.normalizeRole(
-              user.app_metadata?.role || user.user_metadata?.role || 'user'
+            const role = await this.resolveServerRole(
+              user.id,
+              user.app_metadata?.role,
+              user.email || ''
             );
             const authUser: AuthenticatedUser = {
               id: user.id,
@@ -480,7 +546,8 @@ class SupabaseAuthService {
               provider: 'supabase',
             };
 
-            const adminUser: AdminUser | undefined = ['superadmin', 'admin', 'anotador', 'prensa'].includes(role)
+            const adminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
+            const adminUser: AdminUser | undefined = adminRoles.includes(role)
               ? {
                   id: user.id,
                   username: user.email?.split('@')[0] || user.id,
@@ -670,7 +737,7 @@ class SupabaseAuthService {
    * 4. Prevents self-promotion to higher roles
    * 5. Admins cannot elevate anyone to superadmin (only superadmin can)
    * 6. Normalizes target role via normalizeRole()
-   * 7. Updates app_metadata.role and user_metadata.role in Supabase Auth via admin.updateUserById
+   * 7. Updates app_metadata.role in Supabase Auth via admin.updateUserById (never user_metadata.role)
    * 8. Updates role in public.users table
    */
   public async updateUserRole(
@@ -716,13 +783,13 @@ class SupabaseAuthService {
     // 3. Normalize the target role
     const normalizedNewRole = this.normalizeRole(newRoleInput);
 
-    // 4. Prevent self-promotion or self-escalation
+    // 4. Prevent users from modifying their own role (clients cannot modify their own role)
     const requesterId = (requesterUser as any).id || (requesterUser as any).uid;
     if (requesterId && (requesterId === targetUserId || (requesterUser as any).email === targetUserId)) {
-      if (requesterRole === 'admin' && normalizedNewRole === 'superadmin') {
+      if (requesterRole !== 'superadmin') {
         return {
           success: false,
-          error: 'Acceso denegado: no se permite la auto-promoción a roles superiores.',
+          error: 'Acceso denegado: no se permite a los usuarios modificar su propio rol.',
         };
       }
     }
@@ -735,14 +802,14 @@ class SupabaseAuthService {
       };
     }
 
-    // 6. Update in Supabase Auth (PRIMARY)
+    // 6. Update in Supabase Auth (PRIMARY) — Strictly app_metadata, NEVER user_metadata
     if (this.isSupabaseAuthConfigured()) {
       const supabase = getSupabaseServerClient();
       if (supabase) {
         try {
           const { error: updateAuthErr } = await supabase.auth.admin.updateUserById(targetUserId, {
             app_metadata: { role: normalizedNewRole },
-            user_metadata: { role: normalizedNewRole },
+            // SECURITY: Never update user_metadata.role. Roles are strictly controlled by server.
           });
 
           if (updateAuthErr) {
@@ -761,7 +828,7 @@ class SupabaseAuthService {
                 role: normalizedNewRole,
                 updated_at: new Date().toISOString(),
               })
-              .eq('id', targetUserId);
+              .or(`id.eq.${targetUserId},uid.eq.${targetUserId}`);
           } catch (tblErr: any) {
             console.warn('[SupabaseAuth] Notice updating users table:', tblErr?.message || tblErr);
           }
@@ -830,3 +897,106 @@ class SupabaseAuthService {
 }
 
 export const supabaseAuthService = new SupabaseAuthService();
+
+function extractToken(req: Request): string | undefined {
+  const authHeader = req.headers?.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  const customHeader = req.headers?.['x-admin-token'];
+  if (customHeader) {
+    return String(customHeader).trim();
+  }
+  const cookieHeader = req.headers?.cookie;
+  if (cookieHeader) {
+    const match = cookieHeader.match(/baseball_admin_token=([^;]+)/) || cookieHeader.match(/baseball_session=([^;]+)/);
+    if (match) return decodeURIComponent(match[1]).trim();
+  }
+  return undefined;
+}
+
+/**
+ * Middleware to authenticate administrative requests server-side
+ */
+export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: 'Acceso no autorizado. Se requiere iniciar sesión con credenciales de administrador.',
+    });
+  }
+
+  // 1. Supabase Auth validation (PRIMARY)
+  try {
+    const sessionRes = await supabaseAuthService.verifyToken(token);
+    if (sessionRes.valid && sessionRes.user) {
+      const role = sessionRes.user.role;
+      const validAdminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
+      if (validAdminRoles.includes(role) && role !== 'user') {
+        (req as any).adminUser = sessionRes.admin || {
+          id: sessionRes.user.id,
+          username: sessionRes.user.email?.split('@')[0] || sessionRes.user.id,
+          name: sessionRes.user.name,
+          email: sessionRes.user.email,
+          role,
+          lastLogin: new Date().toISOString(),
+        };
+        (req as any).adminToken = token;
+        return next();
+      } else {
+        return res.status(403).json({
+          success: false,
+          error: 'Permisos insuficientes. El usuario autenticado no posee rol administrativo.',
+        });
+      }
+    }
+  } catch (err) {
+    // continue to fallback check
+  }
+
+  // 2. Fallback to local admin session store
+  const admin = adminAuthService.verifySession(token);
+  if (!admin) {
+    return res.status(401).json({
+      success: false,
+      error: 'Acceso no autorizado. Sesión de administrador inválida o expirada.',
+    });
+  }
+
+  const validAdminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
+  if (!validAdminRoles.includes(admin.role as any)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Permisos insuficientes. El usuario autenticado no posee rol administrativo.',
+    });
+  }
+
+  (req as any).adminUser = admin;
+  (req as any).adminToken = token;
+  next();
+};
+
+/**
+ * Middleware to authorize specific administrative roles server-side
+ */
+export const requireRole = (...allowedRoles: (AppUserRole | 'superadmin' | 'official_scorer' | 'editor')[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const admin = (req as any).adminUser;
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        error: 'Acceso no autorizado. Debe autenticarse previamente.',
+      });
+    }
+
+    if (!supabaseAuthService.hasPermission(admin.role, allowedRoles as AppUserRole[])) {
+      return res.status(403).json({
+        success: false,
+        error: 'Permisos insuficientes. Su rol no tiene autorización para ejecutar esta acción.',
+      });
+    }
+
+    next();
+  };
+};

@@ -421,6 +421,16 @@ async function runSecurityTests() {
       '34c. RBAC: Superadministrador autorizado puede actualizar rol mediante updateUserRole'
     );
 
+    // 34d. Eliminación de dependencia de user_metadata.role: Rol se resuelve exclusivamente server-side
+    const serverRoleFromMetadata = await supabaseAuthService.resolveServerRole(
+      'usr_test_server_controlled',
+      'prensa'
+    );
+    assert(
+      serverRoleFromMetadata === 'prensa',
+      '34d. RBAC: Rol resuelto estrictamente desde fuente server-side controlada sin depender de user_metadata.role'
+    );
+
     // 35. Logout de usuario
     const logoutRes = await request({
       hostname: 'localhost',

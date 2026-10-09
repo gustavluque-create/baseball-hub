@@ -98,6 +98,14 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
     });
   }
 
+  const validAdminRoles = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
+  if (!validAdminRoles.includes(admin.role as any)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Permisos insuficientes. El usuario autenticado no posee rol administrativo.',
+    });
+  }
+
   (req as any).adminUser = admin;
   (req as any).adminToken = token;
   next();

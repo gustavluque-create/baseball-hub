@@ -286,8 +286,20 @@ export class AdminAuthService {
       if (error || !data?.user) return null;
 
       const user = data.user;
-      const role = (user.app_metadata?.role || user.user_metadata?.role || '') as 'superadmin' | 'official_scorer' | 'editor';
-      if (!role || !['superadmin', 'official_scorer', 'editor'].includes(role)) {
+      let role = (user.app_metadata?.role || '') as string;
+      if (!role) {
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('id, uid, role')
+          .or(`id.eq.${user.id},uid.eq.${user.id}`)
+          .maybeSingle();
+        if (userRow && (userRow.id === user.id || userRow.uid === user.id) && userRow.role) {
+          role = userRow.role;
+        }
+      }
+
+      const validAdminRoles = ['superadmin', 'official_scorer', 'editor', 'admin', 'anotador', 'prensa'];
+      if (!role || !validAdminRoles.includes(role)) {
         return null;
       }
 
@@ -296,7 +308,7 @@ export class AdminAuthService {
         username: user.email?.split('@')[0] || user.id,
         name: user.user_metadata?.full_name || user.email || 'Administrador Supabase',
         email: user.email || '',
-        role,
+        role: role as 'superadmin' | 'official_scorer' | 'editor',
         lastLogin: new Date().toISOString(),
       };
     } catch {
