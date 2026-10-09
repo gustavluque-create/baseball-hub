@@ -260,16 +260,33 @@ class SupabaseAuthService {
             if (profileErr) {
               console.error('[SupabaseAuth] Error al crear perfil en public.users durante registro:', profileErr.message);
               // Intento de reversión / compensación: eliminar usuario recién creado en Supabase Auth
+              let deletionSucceeded = false;
+              let deletionErrorMsg: string | undefined;
+
               try {
-                await adminClient.auth.admin.deleteUser(uid);
-                console.log(`[SupabaseAuth] Reversión exitosa: usuario ${uid} eliminado de Supabase Auth tras fallo en public.users.`);
+                const deleteRes = await adminClient.auth.admin.deleteUser(uid);
+                if (deleteRes.error) {
+                  deletionErrorMsg = deleteRes.error.message;
+                  console.error('[SupabaseAuth] [CRÍTICO] Falló la eliminación del usuario en Supabase Auth tras error en public.users:', deleteRes.error.message);
+                } else {
+                  deletionSucceeded = true;
+                  console.log(`[SupabaseAuth] Reversión exitosa: usuario ${uid} eliminado de Supabase Auth tras fallo en public.users.`);
+                }
               } catch (rollbackErr: any) {
-                console.error('[SupabaseAuth] Error al revertir creación en Supabase Auth:', rollbackErr?.message || rollbackErr);
+                deletionErrorMsg = rollbackErr?.message || String(rollbackErr);
+                console.error('[SupabaseAuth] [CRÍTICO] Excepción al revertir creación en Supabase Auth:', deletionErrorMsg);
+              }
+
+              if (!deletionSucceeded) {
+                return {
+                  success: false,
+                  error: `Error crítico durante el registro: falló la creación del perfil en base de datos (${profileErr.message}) y falló la eliminación de la cuenta en Supabase Auth (${deletionErrorMsg || 'Error desconocido'}). La cuenta requiere atención administrativa.`,
+                };
               }
 
               return {
                 success: false,
-                error: `Error al crear el perfil de usuario en base de datos: ${profileErr.message}. Registro cancelado.`,
+                error: `Error al crear el perfil de usuario en base de datos: ${profileErr.message}. Se canceló el registro y se eliminó la cuenta creada para mantener la consistencia.`,
               };
             }
 
@@ -909,15 +926,8 @@ class SupabaseAuthService {
       const targetAuthUser = targetAuthData.user;
       const previousRole = this.normalizeRole(targetAuthUser.app_metadata?.role);
 
-      // Un administrador regular no puede modificar el rol de un superadministrador existente
-      if (requesterRole === 'admin' && previousRole === 'superadmin') {
-        return {
-          success: false,
-          error: 'Acceso denegado: un administrador no puede modificar el rol de un superadministrador.',
-        };
-      }
-
       // 5. Comprobar que el perfil de public.users corresponde al UUID objetivo
+      // y obtener el estado anterior real desde la fuente autoritativa (public.users)
       const { data: existingProfile, error: profileFetchErr } = await adminClient
         .from('users')
         .select('id, uid, role')
@@ -939,6 +949,20 @@ class SupabaseAuthService {
             error: 'Inconsistencia de perfil: el registro en public.users no coincide con el UUID objetivo.',
           };
         }
+      }
+
+      // Fuente autoritativa para el rol anterior real:
+      // Si existe perfil en public.users, usar su rol real; si no existe, el rol real es 'user'
+      const authoritativePreviousRole = existingProfile?.role
+        ? this.normalizeRole(existingProfile.role)
+        : this.normalizeRole(targetAuthUser.app_metadata?.role);
+
+      // Un administrador regular no puede modificar el rol de un superadministrador existente
+      if (requesterRole === 'admin' && authoritativePreviousRole === 'superadmin') {
+        return {
+          success: false,
+          error: 'Acceso denegado: un administrador no puede modificar el rol de un superadministrador.',
+        };
       }
 
       // 6. Comprobar explícitamente el resultado y el campo 'error' de cada operación Supabase
@@ -996,23 +1020,24 @@ class SupabaseAuthService {
 
       // 7. No devolver success: true si alguna escritura necesaria falla
       // 8. Evitar dejar app_metadata.role y public.users.role inconsistentes mediante reversión
+      // Conservando el estado anterior real de la fuente autoritativa (authoritativePreviousRole)
       if (profileWriteError) {
-        console.error('[SupabaseAuth] Falló la persistencia en public.users. Revertiendo app_metadata.role...');
+        console.error('[SupabaseAuth] Falló la persistencia en public.users. Revertiendo app_metadata.role al rol anterior real autoritativo:', authoritativePreviousRole);
         const { error: rollbackErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
-          app_metadata: { role: previousRole },
+          app_metadata: { role: authoritativePreviousRole },
         });
         if (rollbackErr) {
           // Reversión fallida: se registra como error crítico sin exponer secretos
           console.error('[SupabaseAuth] [CRÍTICO] Falló la reversión de app_metadata tras error en public.users:', rollbackErr.message);
           return {
             success: false,
-            error: `Error crítico de persistencia: falló la actualización en public.users (${profileWriteError}) y falló la reversión en Supabase Auth (${rollbackErr.message}).`,
+            error: `Inconsistencia crítica de roles detectada: falló la persistencia en public.users (${profileWriteError}) y la reversión de Supabase Auth falló (${rollbackErr.message}). El rol anterior real era '${authoritativePreviousRole}' y requiere intervención administrativa.`,
           };
         }
 
         return {
           success: false,
-          error: `Error al persistir rol en public.users: ${profileWriteError}. Se revirtió el cambio en Supabase Auth para mantener la consistencia.`,
+          error: `Error al persistir rol en public.users: ${profileWriteError}. Se revirtió el cambio en Supabase Auth restaurando el rol anterior '${authoritativePreviousRole}' para mantener la consistencia.`,
         };
       }
     } else {

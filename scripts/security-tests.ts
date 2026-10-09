@@ -8,6 +8,7 @@ import {
   getSupabaseAuthClient,
   getSupabaseAdminClient,
   createSupabaseAuthClient,
+  setSupabaseAdminClientOverride,
 } from '../server/lib/supabase.ts';
 import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
 import { baseballRepo, BaseballRepository } from '../server/repositories/baseball.repository.ts';
@@ -429,13 +430,16 @@ async function runSecurityTests() {
     );
 
     // 34d. Eliminación de dependencia de user_metadata.role: Rol se resuelve exclusivamente server-side
-    const serverRoleFromMetadata = await supabaseAuthService.resolveServerRole(
+    // Si Supabase está activo y el usuario no tiene perfil en public.users, el rol esperado es 'user' (nunca 'prensa' ni administrativo).
+    // Con fallback local (sin Supabase), se prueba la resolución controlada.
+    const serverRoleFallback = await supabaseAuthService.resolveServerRole(
       'usr_test_server_controlled',
       'prensa'
     );
+    // Si Supabase server estuviera activo, un usuario sin perfil retornaría 'user'. En fallback local retorna el rol controlado por el servidor.
     assert(
-      serverRoleFromMetadata === 'prensa',
-      '34d. RBAC: Rol resuelto estrictamente desde fuente server-side controlada sin depender de user_metadata.role'
+      (supabaseAuthService.isSupabaseServerConfigured() ? serverRoleFallback === 'user' : serverRoleFallback === 'prensa'),
+      '34d. RBAC: Si Supabase está activo y el usuario no tiene perfil válido en public.users, el rol esperado debe ser "user" (nunca privilegios no autorizados)'
     );
 
     // 35. Logout de usuario
@@ -649,12 +653,59 @@ async function runSecurityTests() {
       else delete process.env.SUPABASE_URL;
     }
 
-    // 49. Verificación de registro con fallo en public.users: No reporta éxito falso
-    // (Verificado que el código de registerUser valida profileErr y revierte el usuario de Supabase Auth)
-    assert(
-      typeof supabaseAuthService.registerUser === 'function',
-      '49. Registro de usuario: Manejo estricto de errores en public.users y reversión en Supabase Auth verificado'
-    );
+    // 49. Verificación de registro con fallo en public.users: Simular fallo real al guardar el perfil
+    // y comprobar que el registro devuelve error (success: false) y que se intenta eliminar la cuenta creada (deleteUser)
+    let deleteUserAttemptedWithUid: string | null = null;
+    const mockUid = 'simulated_user_uuid_12345';
+
+    const mockAdminClientWithProfileFailure: any = {
+      auth: {
+        admin: {
+          createUser: async () => {
+            return {
+              data: {
+                user: {
+                  id: mockUid,
+                  email: 'test_failure_sim@baseballhub.cu',
+                  app_metadata: { role: 'user' },
+                  user_metadata: { full_name: 'Test Failure' },
+                },
+              },
+              error: null,
+            };
+          },
+          deleteUser: async (uidToDelete: string) => {
+            deleteUserAttemptedWithUid = uidToDelete;
+            return { data: { user: null }, error: null };
+          },
+        },
+      },
+      from: () => ({
+        upsert: async () => {
+          // Simular fallo real de PostgreSQL / Supabase al insertar el perfil
+          return { error: { message: 'relation public.users does not exist or disk full simulated error' } };
+        },
+      }),
+    };
+
+    setSupabaseAdminClientOverride(mockAdminClientWithProfileFailure);
+    try {
+      const failedRegRes = await supabaseAuthService.registerUser({
+        email: 'test_failure_sim@baseballhub.cu',
+        password: 'PasswordSegura2026!',
+        displayName: 'Test Failure',
+      });
+
+      assert(
+        failedRegRes.success === false &&
+          !!failedRegRes.error &&
+          failedRegRes.error.includes('Error al crear el perfil') &&
+          deleteUserAttemptedWithUid === mockUid,
+        '49. Registro de usuario: Fallo real en public.users devuelve error (success: false) e intenta eliminar la cuenta creada en Supabase Auth'
+      );
+    } finally {
+      setSupabaseAdminClientOverride(null);
+    }
 
     // Summary
     console.log('\n🔒 ==========================================');

@@ -25,11 +25,23 @@ let cachedAuthInstance: SupabaseClient | null = null;
 let cachedAuthKey: string = '';
 let cachedAuthUrl: string = '';
 
+let customAdminInstanceOverride: SupabaseClient | null = null;
+
+/**
+ * Permite inyectar o restaurar una instancia mock/custom del cliente administrativo para tests controlados.
+ */
+export function setSupabaseAdminClientOverride(client: SupabaseClient | null): void {
+  customAdminInstanceOverride = client;
+}
+
 /**
  * Verifica si las credenciales administrativas de Supabase están configuradas.
  * Requiere estrictamente SUPABASE_SERVICE_ROLE_KEY (nunca acepta la clave anónima).
  */
 export function isSupabaseServerConfigured(): boolean {
+  if (customAdminInstanceOverride !== null) {
+    return true;
+  }
   const url = getSupabaseUrl();
   const key = getSupabaseServiceRoleKey();
   if (!url || !key) return false;
@@ -57,6 +69,10 @@ export function isSupabaseAuthConfigured(): boolean {
  * - Configurado con persistSession: false y autoRefreshToken: false en backend.
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
+  if (customAdminInstanceOverride !== null) {
+    return customAdminInstanceOverride;
+  }
+
   if (!isSupabaseServerConfigured()) {
     return null;
   }
