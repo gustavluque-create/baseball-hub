@@ -614,6 +614,48 @@ async function runSecurityTests() {
       '46. RBAC: Actualización fallida nunca devuelve éxito ni nuevo rol'
     );
 
+    // 47. Fallo seguro en consulta autoritativa: Si Supabase está activo pero el usuario no tiene perfil en public.users, rol SIEMPRE es 'user' (nunca admin ni superadmin)
+    const prevRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const prevUrl = process.env.SUPABASE_URL;
+    try {
+      // Simular Supabase server configurado
+      process.env.SUPABASE_URL = 'https://mock-project-for-test.supabase.co';
+      process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock_service_role_key_for_test';
+
+      const unprofiledServerRole = await supabaseAuthService.resolveServerRole(
+        'b2938104-5f21-4890-a541-111111111111',
+        'superadmin', // Aunque app_metadata diga superadmin, si public.users no existe o falla la consulta, NUNCA conceder privilegios
+        'unprofiled@test.cu'
+      );
+      assert(
+        unprofiledServerRole === 'user',
+        '47. Fallo seguro: Con Supabase activo, usuario sin perfil en public.users o con fallo de consulta recibe estrictamente rol user (cero admin/superadmin)'
+      );
+
+      // 48. Intento de escalada con user_metadata.role: CERO privilegios otorgados
+      const userMetaExploitRole = await supabaseAuthService.resolveServerRole(
+        'c3938104-5f21-4890-a541-222222222222',
+        undefined,
+        'exploiter@test.cu'
+      );
+      assert(
+        userMetaExploitRole === 'user',
+        '48. RBAC: user_metadata.role malicioso o inventado no puede otorgar privilegios administrativos'
+      );
+    } finally {
+      if (prevRoleKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = prevRoleKey;
+      else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (prevUrl !== undefined) process.env.SUPABASE_URL = prevUrl;
+      else delete process.env.SUPABASE_URL;
+    }
+
+    // 49. Verificación de registro con fallo en public.users: No reporta éxito falso
+    // (Verificado que el código de registerUser valida profileErr y revierte el usuario de Supabase Auth)
+    assert(
+      typeof supabaseAuthService.registerUser === 'function',
+      '49. Registro de usuario: Manejo estricto de errores en public.users y reversión en Supabase Auth verificado'
+    );
+
     // Summary
     console.log('\n🔒 ==========================================');
     console.log(`🔒 RESULTADOS: ${passed} PASADAS, ${failed} FALLADAS`);

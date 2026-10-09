@@ -258,12 +258,25 @@ class SupabaseAuthService {
             });
 
             if (profileErr) {
-              console.warn('[SupabaseAuth] Notice upserting users table on register:', profileErr.message);
+              console.error('[SupabaseAuth] Error al crear perfil en public.users durante registro:', profileErr.message);
+              // Intento de reversión / compensación: eliminar usuario recién creado en Supabase Auth
+              try {
+                await adminClient.auth.admin.deleteUser(uid);
+                console.log(`[SupabaseAuth] Reversión exitosa: usuario ${uid} eliminado de Supabase Auth tras fallo en public.users.`);
+              } catch (rollbackErr: any) {
+                console.error('[SupabaseAuth] Error al revertir creación en Supabase Auth:', rollbackErr?.message || rollbackErr);
+              }
+
+              return {
+                success: false,
+                error: `Error al crear el perfil de usuario en base de datos: ${profileErr.message}. Registro cancelado.`,
+              };
             }
 
             // Authenticate directly via signInWithPassword using independent authentication client (with SUPABASE_ANON_KEY).
             // Separado estrictamente del cliente administrativo. ZERO synthetic tokens for Supabase users!
             let realSessionToken: string | undefined;
+            let sessionFetchError: string | undefined;
             const authClient = createSupabaseAuthClient();
             if (authClient) {
               try {
@@ -273,10 +286,16 @@ class SupabaseAuthService {
                 });
                 if (!signInErr && signInData?.session?.access_token) {
                   realSessionToken = signInData.session.access_token;
+                } else if (signInErr) {
+                  sessionFetchError = signInErr.message;
+                  console.warn('[SupabaseAuth] Error al obtener sesión real post-registro:', signInErr.message);
                 }
-              } catch (authErr) {
-                console.warn('[SupabaseAuth] Notice during post-registration sign-in:', authErr);
+              } catch (authErr: any) {
+                sessionFetchError = authErr?.message || 'Error de conexión de autenticación';
+                console.warn('[SupabaseAuth] Excepción al obtener sesión post-registro:', authErr);
               }
+            } else {
+              sessionFetchError = 'Cliente de autenticación pública no configurado.';
             }
 
             return {
@@ -294,6 +313,7 @@ class SupabaseAuthService {
                 provider: 'supabase',
               },
               token: realSessionToken,
+              error: realSessionToken ? undefined : sessionFetchError ? `Usuario registrado correctamente. Inicio de sesión automático no disponible: ${sessionFetchError}` : undefined,
             };
           }
         } catch (err: any) {
