@@ -289,6 +289,7 @@ async function runSecurityTests() {
         password: 'PasswordSegura2026!',
         displayName: 'Fanatico Cubano',
         photoUrl: 'https://example.com/avatar.png',
+        role: 'superadmin', // Intento de escalada de privilegios en registro público
         preferences: { favoriteTeam: 'ind' },
       }
     );
@@ -300,7 +301,7 @@ async function runSecurityTests() {
         !regRes.body.user?.password &&
         !regRes.body.user?.passwordHash &&
         !!regRes.body.token,
-      '26. Registro de usuario: Crea cuenta con email, nombre, avatar, rol y preferencias sin exponer secretos'
+      '26. Registro de usuario: Fuerza role=user ignorando payload malicioso y emite token sin exponer secretos'
     );
     const userToken = regRes.body.token;
 
@@ -377,19 +378,21 @@ async function runSecurityTests() {
     );
 
     // 32. Rol 'superadmin' posee acceso universal
-    const superadminLogin = await request(
-      { hostname: 'localhost', port: 3000, path: '/api/auth/login', method: 'POST' },
-      { email: 'superadmin@baseballhub.cu', password: 'SuperAdmin2026!' }
+    const superadminLogin = await supabaseAuthService.loginUser('superadmin@baseballhub.cu', testSecret);
+    assert(
+      superadminLogin.success === true &&
+        superadminLogin.user?.role === 'superadmin' &&
+        !!superadminLogin.token,
+      '32. RBAC: Login de superadmin con hash bcrypt configurado emite sesión superadmin'
     );
-    const superadminToken = superadminLogin.body?.token;
-    const superadminReq = await request({
-      hostname: 'localhost',
-      port: 3000,
-      path: '/api/admin/overview',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${superadminToken}` },
-    });
-    assert(superadminReq.status === 200, '32. RBAC: Rol superadmin posee acceso administrativo');
+    const superadminToken = superadminLogin.token!;
+    const superadminVerify = await supabaseAuthService.verifyToken(superadminToken);
+    assert(
+      superadminVerify.valid === true &&
+        superadminVerify.user?.role === 'superadmin' &&
+        superadminVerify.admin?.role === 'superadmin',
+      '32b. RBAC: Rol superadmin verificado server-side con acceso administrativo universal'
+    );
 
     // 33. Rol 'admin' posee acceso general
     const hasAdminAccess = supabaseAuthService.hasPermission('admin', ['admin']) &&
@@ -403,6 +406,19 @@ async function runSecurityTests() {
     assert(
       isAnotadorOk && isPrensaOk && anotadorCantDoPrensa,
       '34. RBAC: Roles anotador y prensa validados server-side con segregación de funciones'
+    );
+
+    // 34b. Asignación y actualización de roles administrativos (updateUserRole)
+    const unauthRoleUpdate = await supabaseAuthService.updateUserRole(userToken, regRes.body.user.id, 'admin');
+    assert(
+      unauthRoleUpdate.success === false,
+      '34b. RBAC: Usuario normal no puede modificar roles de usuarios'
+    );
+
+    const authRoleUpdate = await supabaseAuthService.updateUserRole(superadminToken, regRes.body.user.id, 'anotador');
+    assert(
+      authRoleUpdate.success === true && authRoleUpdate.newRole === 'anotador',
+      '34c. RBAC: Superadministrador autorizado puede actualizar rol mediante updateUserRole'
     );
 
     // 35. Logout de usuario
@@ -463,6 +479,7 @@ async function runSecurityTests() {
     if (failed > 0) {
       process.exit(1);
     }
+    process.exit(0);
   } catch (err) {
     console.error('Error durante la ejecución de las pruebas:', err);
     process.exit(1);

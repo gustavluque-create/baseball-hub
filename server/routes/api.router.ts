@@ -1499,6 +1499,23 @@ apiRouter.post('/admin/migrate-users', requireAdmin, requireRole('superadmin'), 
   }
 });
 
+// Update user role (Server-side RBAC)
+apiRouter.put('/admin/users/:userId/role', requireAdmin, requireRole('superadmin', 'admin'), async (req: Request, res: Response) => {
+  const token = extractRequestToken(req) || getRequestToken(req);
+  const { userId } = req.params;
+  const { role } = req.body || {};
+
+  if (!userId || !role) {
+    return res.status(400).json({ success: false, error: 'Debe especificar userId y role.' });
+  }
+
+  const result = await supabaseAuthService.updateUserRole(token || (req as any).adminUser, userId, role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
 // Firebase User Profile Synchronization with Cloud SQL / Supabase
 apiRouter.post('/auth/sync', requireAuth, async (req: AuthRequest, res: Response) => {
   try {

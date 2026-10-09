@@ -29,7 +29,7 @@ export function isValidBcryptHash(hash?: string): boolean {
 export function getAdminCredential(username: string): StoredCredential | null {
   const clean = username.trim().toLowerCase();
 
-  if (clean === 'admin') {
+  if (clean === 'admin' || clean === 'admin@baseballhub.cu' || clean === 'superadmin' || clean === 'superadmin@baseballhub.cu') {
     const rawHash = (process.env.ADMIN_SUPERADMIN_PASSWORD_HASH || process.env.ADMIN_PASSWORD_HASH || '').trim();
     if (!rawHash || !isValidBcryptHash(rawHash)) {
       return null;
@@ -38,13 +38,13 @@ export function getAdminCredential(username: string): StoredCredential | null {
       id: 'admin_1',
       username: 'admin',
       passwordHash: rawHash,
-      name: 'Administrador General',
-      email: 'admin@baseballhub.cu',
+      name: 'Super Administrador',
+      email: 'superadmin@baseballhub.cu',
       role: 'superadmin',
     };
   }
 
-  if (clean === 'anotador') {
+  if (clean === 'anotador' || clean === 'anotador@baseballhub.cu') {
     const rawHash = (process.env.ADMIN_SCORER_PASSWORD_HASH || '').trim();
     if (!rawHash || !isValidBcryptHash(rawHash)) {
       return null;
@@ -59,7 +59,7 @@ export function getAdminCredential(username: string): StoredCredential | null {
     };
   }
 
-  if (clean === 'prensa') {
+  if (clean === 'prensa' || clean === 'prensa@baseballhub.cu') {
     const rawHash = (process.env.ADMIN_EDITOR_PASSWORD_HASH || '').trim();
     if (!rawHash || !isValidBcryptHash(rawHash)) {
       return null;
