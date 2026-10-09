@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import {
   getSupabaseAdminClient,
   getSupabaseAuthClient,
+  createSupabaseAuthClient,
   getSupabaseServerClient,
   isSupabaseServerConfigured,
   isSupabaseAuthConfigured,
@@ -109,11 +110,14 @@ class SupabaseAuthService {
   }
 
   /**
-   * Resolve user role strictly from server-controlled sources:
-   * 1. Supabase public.users table (via service role client matching verified user UUID)
-   * 2. Supabase Auth app_metadata (server-controlled, read-only for client)
-   * 3. Local users in-memory registry (fallback for local dev/testing)
-   * SECURITY RULE: Never trust or use user_metadata.role for any authorization decisions!
+   * Fuente autoritativa de roles: tabla 'public.users' en PostgreSQL / Supabase.
+   * Reglas de seguridad:
+   * 1. Consulta el perfil mediante el UUID real validado por Supabase.
+   * 2. Si la consulta falla (error de red o base de datos), falla de forma segura retornando 'user'
+   *    (nunca concede privilegios administrativos ante un fallo de consulta ni recurre a app_metadata para eludir el error).
+   * 3. Si no existe el perfil del usuario en public.users, retorna 'user' (cero privilegios administrativos).
+   * 4. Nunca confía en user_metadata.role para ninguna decisión de autorización.
+   * 5. Solo cuando Supabase Server no está configurado (modo local-fallback/testing), recurre a localUsers o appMetadataRole de prueba.
    */
   public async resolveServerRole(
     userId: string,
@@ -122,30 +126,47 @@ class SupabaseAuthService {
   ): Promise<AppUserRole> {
     if (!userId || typeof userId !== 'string') return 'user';
 
-    // 1. Check Supabase public.users table (PRIMARY server source via admin client)
+    // 1. Fuente autoritativa primaria: tabla public.users cuando Supabase Server está configurado
     if (this.isSupabaseServerConfigured()) {
       const supabase = getSupabaseAdminClient();
-      if (supabase) {
-        try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('id, uid, role')
-            .or(`id.eq.${userId},uid.eq.${userId}`)
-            .maybeSingle();
+      if (!supabase) {
+        // Fallo seguro: sin cliente administrativo configurado, no conceder privilegios administrativos
+        return 'user';
+      }
 
-          if (!error && data) {
-            // Strict verification: user profile corresponds to the authenticated UUID
-            if ((data.id === userId || data.uid === userId) && data.role) {
-              return this.normalizeRole(data.role);
-            }
-          }
-        } catch (err: any) {
-          // If query fails or table is not ready, continue to server-controlled app_metadata
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, uid, role')
+          .or(`id.eq.${userId},uid.eq.${userId}`)
+          .maybeSingle();
+
+        // Si la consulta falla, fallar de forma segura sin conceder privilegios ni eludir el error
+        if (error) {
+          console.error('[SupabaseAuth] Error en consulta autoritativa de public.users:', error.message);
+          return 'user';
         }
+
+        // Si no existe el perfil, no conceder privilegios administrativos
+        if (!data) {
+          return 'user';
+        }
+
+        // Verificación estricta: perfil corresponde al UUID autenticado
+        if ((data.id === userId || data.uid === userId) && data.role) {
+          return this.normalizeRole(data.role);
+        }
+
+        // Si el perfil no coincide con el UUID, denegar privilegios administrativos
+        return 'user';
+      } catch (err: any) {
+        // En caso de excepción, fallar de forma segura retornando rol 'user'
+        console.error('[SupabaseAuth] Excepción en consulta de rol autoritativo:', err?.message || err);
+        return 'user';
       }
     }
 
-    // 2. Server-controlled app_metadata (tamper-proof by client)
+    // 2. Modo fallback local (estrictamente cuando Supabase Server NO está configurado)
     if (appMetadataRole && typeof appMetadataRole === 'string') {
       return this.normalizeRole(appMetadataRole);
     }
@@ -240,10 +261,10 @@ class SupabaseAuthService {
               console.warn('[SupabaseAuth] Notice upserting users table on register:', profileErr.message);
             }
 
-            // Authenticate directly via signInWithPassword using authentication client (with SUPABASE_ANON_KEY).
+            // Authenticate directly via signInWithPassword using independent authentication client (with SUPABASE_ANON_KEY).
             // Separado estrictamente del cliente administrativo. ZERO synthetic tokens for Supabase users!
             let realSessionToken: string | undefined;
-            const authClient = getSupabaseAuthClient();
+            const authClient = createSupabaseAuthClient();
             if (authClient) {
               try {
                 const { data: signInData, error: signInErr } = await authClient.auth.signInWithPassword({
@@ -345,7 +366,8 @@ class SupabaseAuthService {
 
     // 1. Supabase Auth (PRIMARY)
     if (this.isSupabaseAuthConfigured() || this.isSupabaseServerConfigured()) {
-      const authClient = getSupabaseAuthClient();
+      // Cliente de autenticación independiente por operación para aislar sesiones concurrentes
+      const authClient = createSupabaseAuthClient();
       if (authClient) {
         try {
           const { data, error } = await authClient.auth.signInWithPassword({
@@ -463,7 +485,8 @@ class SupabaseAuthService {
 
     // 1. Supabase Auth (PRIMARY)
     if (this.isSupabaseAuthConfigured() || this.isSupabaseServerConfigured()) {
-      const authClient = getSupabaseAuthClient();
+      // Cliente de autenticación independiente por operación para aislar sesiones
+      const authClient = createSupabaseAuthClient();
       if (authClient) {
         try {
           const { data, error } = await authClient.auth.signInWithPassword({
@@ -959,7 +982,12 @@ class SupabaseAuthService {
           app_metadata: { role: previousRole },
         });
         if (rollbackErr) {
-          console.error('[SupabaseAuth] Error crítico revirtiendo app_metadata tras fallo de public.users:', rollbackErr.message);
+          // Reversión fallida: se registra como error crítico sin exponer secretos
+          console.error('[SupabaseAuth] [CRÍTICO] Falló la reversión de app_metadata tras error en public.users:', rollbackErr.message);
+          return {
+            success: false,
+            error: `Error crítico de persistencia: falló la actualización en public.users (${profileWriteError}) y falló la reversión en Supabase Auth (${rollbackErr.message}).`,
+          };
         }
 
         return {

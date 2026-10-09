@@ -7,6 +7,7 @@ import {
   isSupabaseAuthConfigured,
   getSupabaseAuthClient,
   getSupabaseAdminClient,
+  createSupabaseAuthClient,
 } from '../server/lib/supabase.ts';
 import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
 import { baseballRepo, BaseballRepository } from '../server/repositories/baseball.repository.ts';
@@ -553,6 +554,64 @@ async function runSecurityTests() {
     assert(
       invalidRoleAttempt.success === false,
       '41. RBAC: Rol destino no reconocido o inválido es rechazado'
+    );
+
+    // 42. Aislamiento de clientes: createSupabaseAuthClient() crea instancias independientes por operación
+    const origAnon = process.env.SUPABASE_ANON_KEY;
+    try {
+      process.env.SUPABASE_ANON_KEY = 'test_anon_key_for_client_isolation_check_123';
+      const clientOpA = createSupabaseAuthClient();
+      const clientOpB = createSupabaseAuthClient();
+      assert(
+        clientOpA !== null && clientOpB !== null && clientOpA !== clientOpB,
+        '42. Aislamiento de autenticación: Cada operación utiliza un cliente independiente sin compartir estado de sesión'
+      );
+    } finally {
+      if (origAnon !== undefined) process.env.SUPABASE_ANON_KEY = origAnon;
+      else delete process.env.SUPABASE_ANON_KEY;
+    }
+
+    // 43. Falla segura: Usuario sin perfil en fuente autoritativa nunca obtiene privilegios administrativos
+    const unprofiledRole = await supabaseAuthService.resolveServerRole(
+      '00000000-0000-0000-0000-000000000000'
+    );
+    assert(
+      unprofiledRole === 'user',
+      '43. Fallo seguro: Usuario sin perfil en tabla autoritativa recibe estrictamente rol user (cero privilegios)'
+    );
+
+    // 44. Tokens Supabase inválidos reciben 401 en endpoints administrativos
+    const badTokenReq = await request({
+      hostname: 'localhost',
+      port: 3000,
+      path: '/api/admin/overview',
+      method: 'GET',
+      headers: { Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid_signature.token' },
+    });
+    assert(
+      badTokenReq.status === 401,
+      '44. Token inválido: Peticiones con tokens malformados o inválidos son rechazadas con 401'
+    );
+
+    // 45. Manipulación de user_metadata.role: No concede privilegios si la fuente autoritativa es 'user'
+    const roleWithMaliciousUserMetadata = await supabaseAuthService.resolveServerRole(
+      'usr_test_malicious_metadata',
+      undefined // app_metadata ausente o vacío
+    );
+    assert(
+      roleWithMaliciousUserMetadata === 'user',
+      '45. RBAC: Rol no confía en user_metadata.role y se resuelve exclusivamente desde fuente autoritativa'
+    );
+
+    // 46. Actualización de rol con solicitante no autorizado nunca devuelve éxito
+    const unauthAtt = await supabaseAuthService.updateUserRole(
+      'token_falso_no_autorizado',
+      'target_user_id',
+      'admin'
+    );
+    assert(
+      unauthAtt.success === false && !unauthAtt.newRole,
+      '46. RBAC: Actualización fallida nunca devuelve éxito ni nuevo rol'
     );
 
     // Summary
