@@ -1,7 +1,13 @@
 import http from 'http';
 import bcrypt from 'bcryptjs';
 import { adminAuthService, isValidBcryptHash, getAdminCredential } from '../server/services/admin-auth.service.ts';
-import { isSupabaseServerConfigured, getSupabaseServerClient } from '../server/lib/supabase.ts';
+import {
+  isSupabaseServerConfigured,
+  getSupabaseServerClient,
+  isSupabaseAuthConfigured,
+  getSupabaseAuthClient,
+  getSupabaseAdminClient,
+} from '../server/lib/supabase.ts';
 import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
 import { baseballRepo, BaseballRepository } from '../server/repositories/baseball.repository.ts';
 import { supabaseAuthService } from '../server/services/supabase-auth.service.ts';
@@ -479,6 +485,74 @@ async function runSecurityTests() {
     assert(
       typeof requireAuth === 'function' && typeof adminAuth !== 'undefined',
       '37. Firebase Auth preservado estrictamente como fallback temporal sin eliminar Firebase'
+    );
+
+    // 38. Separación estricta: Cliente administrativo vs Cliente de autenticación
+    const savedRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const savedAnonKey = process.env.SUPABASE_ANON_KEY;
+    try {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_role_key_secret_for_test';
+      delete process.env.SUPABASE_ANON_KEY;
+      delete process.env.VITE_SUPABASE_ANON_KEY;
+      delete process.env.SUPABASE_PUBLIC_KEY;
+
+      const adminClient = getSupabaseAdminClient();
+      const authClientMissing = getSupabaseAuthClient();
+      assert(
+        adminClient !== null && authClientMissing === null,
+        '38. Separación de clientes: Cliente administrativo no comparte clave ni instancia con cliente de autenticación'
+      );
+
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env.SUPABASE_ANON_KEY = 'anon_key_public_for_test';
+      const adminClientMissing = getSupabaseAdminClient();
+      const authClientPresent = getSupabaseAuthClient();
+      assert(
+        adminClientMissing === null && authClientPresent !== null,
+        '38b. Separación de clientes: Cliente de autenticación requiere SUPABASE_ANON_KEY y no sustituye al cliente administrativo'
+      );
+    } finally {
+      if (savedRoleKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedRoleKey;
+      else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (savedAnonKey !== undefined) process.env.SUPABASE_ANON_KEY = savedAnonKey;
+      else delete process.env.SUPABASE_ANON_KEY;
+    }
+
+    // 39. updateUserRole: Restricción contra auto-modificación de rol
+    const superadminId = superadminVerify.admin?.id || superadminVerify.user?.id || 'admin_1';
+    const selfRoleAttempt = await supabaseAuthService.updateUserRole(
+      superadminToken,
+      superadminId,
+      'user'
+    );
+    assert(
+      selfRoleAttempt.success === false,
+      '39. RBAC: Intento de auto-modificación de rol es rechazado por el servidor'
+    );
+
+    // 40. updateUserRole: 'admin' no puede promover a 'superadmin'
+    process.env.ADMIN_SCORER_PASSWORD_HASH = dynamicBcryptHash;
+    const scorerAuth = adminAuthService.authenticate('anotador', testSecret);
+    const scorerToken = scorerAuth.token || '';
+    const promoteToSuperadminAttempt = await supabaseAuthService.updateUserRole(
+      scorerToken,
+      regRes.body.user.id,
+      'superadmin'
+    );
+    assert(
+      promoteToSuperadminAttempt.success === false,
+      '40. RBAC: Administrador regular no puede promover ni asignar rol de superadmin'
+    );
+
+    // 41. updateUserRole: Rol destino inválido es rechazado
+    const invalidRoleAttempt = await supabaseAuthService.updateUserRole(
+      superadminToken,
+      regRes.body.user.id,
+      'invalid_role_xyz'
+    );
+    assert(
+      invalidRoleAttempt.success === false,
+      '41. RBAC: Rol destino no reconocido o inválido es rechazado'
     );
 
     // Summary

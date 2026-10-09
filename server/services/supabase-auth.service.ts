@@ -1,6 +1,12 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { getSupabaseServerClient, isSupabaseServerConfigured } from '../lib/supabase.ts';
+import {
+  getSupabaseAdminClient,
+  getSupabaseAuthClient,
+  getSupabaseServerClient,
+  isSupabaseServerConfigured,
+  isSupabaseAuthConfigured,
+} from '../lib/supabase.ts';
 import { adminAuth } from '../../src/lib/firebase-admin.ts';
 import { adminAuthService } from './admin-auth.service.ts';
 import { AdminUser } from '../../src/types/index.ts';
@@ -64,9 +70,16 @@ class SupabaseAuthService {
   }
 
   /**
-   * Check if Supabase Auth is active and configured
+   * Check if Supabase Auth (public anon client) is active and configured
    */
   public isSupabaseAuthConfigured(): boolean {
+    return isSupabaseAuthConfigured();
+  }
+
+  /**
+   * Check if Supabase Server (administrative client) is active and configured
+   */
+  public isSupabaseServerConfigured(): boolean {
     return isSupabaseServerConfigured();
   }
 
@@ -109,9 +122,9 @@ class SupabaseAuthService {
   ): Promise<AppUserRole> {
     if (!userId || typeof userId !== 'string') return 'user';
 
-    // 1. Check Supabase public.users table (PRIMARY server source)
-    if (this.isSupabaseAuthConfigured()) {
-      const supabase = getSupabaseServerClient();
+    // 1. Check Supabase public.users table (PRIMARY server source via admin client)
+    if (this.isSupabaseServerConfigured()) {
+      const supabase = getSupabaseAdminClient();
       if (supabase) {
         try {
           const { data, error } = await supabase
@@ -183,12 +196,12 @@ class SupabaseAuthService {
     }
 
     // 1. Supabase Auth (PRIMARY)
-    if (this.isSupabaseAuthConfigured()) {
-      const supabase = getSupabaseServerClient();
-      if (supabase) {
+    if (this.isSupabaseServerConfigured()) {
+      const adminClient = getSupabaseAdminClient();
+      if (adminClient) {
         try {
           // Create user in Supabase Auth using service role with strict role: 'user'
-          const { data: supaUser, error: supaErr } = await supabase.auth.admin.createUser({
+          const { data: supaUser, error: supaErr } = await adminClient.auth.admin.createUser({
             email,
             password,
             email_confirm: true,
@@ -212,7 +225,7 @@ class SupabaseAuthService {
           if (supaUser?.user) {
             const uid = supaUser.user.id;
             // Upsert user profile into public.users table (WITHOUT copying secrets/passwords)
-            await supabase.from('users').upsert({
+            const { error: profileErr } = await adminClient.from('users').upsert({
               id: uid,
               uid,
               email,
@@ -223,19 +236,26 @@ class SupabaseAuthService {
               updated_at: new Date().toISOString(),
             });
 
-            // Authenticate directly via signInWithPassword to obtain genuine Supabase Auth session token.
-            // ZERO synthetic tokens for Supabase users!
+            if (profileErr) {
+              console.warn('[SupabaseAuth] Notice upserting users table on register:', profileErr.message);
+            }
+
+            // Authenticate directly via signInWithPassword using authentication client (with SUPABASE_ANON_KEY).
+            // Separado estrictamente del cliente administrativo. ZERO synthetic tokens for Supabase users!
             let realSessionToken: string | undefined;
-            try {
-              const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-              });
-              if (!signInErr && signInData?.session?.access_token) {
-                realSessionToken = signInData.session.access_token;
+            const authClient = getSupabaseAuthClient();
+            if (authClient) {
+              try {
+                const { data: signInData, error: signInErr } = await authClient.auth.signInWithPassword({
+                  email,
+                  password,
+                });
+                if (!signInErr && signInData?.session?.access_token) {
+                  realSessionToken = signInData.session.access_token;
+                }
+              } catch (authErr) {
+                console.warn('[SupabaseAuth] Notice during post-registration sign-in:', authErr);
               }
-            } catch (authErr) {
-              console.warn('[SupabaseAuth] Notice during post-registration sign-in:', authErr);
             }
 
             return {
@@ -324,11 +344,11 @@ class SupabaseAuthService {
     }
 
     // 1. Supabase Auth (PRIMARY)
-    if (this.isSupabaseAuthConfigured()) {
-      const supabase = getSupabaseServerClient();
-      if (supabase) {
+    if (this.isSupabaseAuthConfigured() || this.isSupabaseServerConfigured()) {
+      const authClient = getSupabaseAuthClient();
+      if (authClient) {
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
+          const { data, error } = await authClient.auth.signInWithPassword({
             email: identifier,
             password,
           });
@@ -360,7 +380,7 @@ class SupabaseAuthService {
             };
           }
         } catch (err: any) {
-          console.warn('[SupabaseAuth] signInWithPassword error:', err?.message || err);
+          console.warn('[SupabaseAuth] signInWithPassword notice:', err?.message || err);
         }
       }
     }
@@ -383,6 +403,14 @@ class SupabaseAuthService {
         success: true,
         user: authUser,
         token: adminAuthResult.token,
+      };
+    }
+
+    // Si Supabase Server está activo pero el cliente de autenticación no está configurado, error controlado
+    if (this.isSupabaseServerConfigured() && !getSupabaseAuthClient()) {
+      return {
+        success: false,
+        error: 'Cliente de autenticación de Supabase no configurado.',
       };
     }
 
@@ -434,52 +462,50 @@ class SupabaseAuthService {
     }
 
     // 1. Supabase Auth (PRIMARY)
-    if (this.isSupabaseAuthConfigured()) {
-      const supabase = getSupabaseServerClient();
-      if (supabase) {
+    if (this.isSupabaseAuthConfigured() || this.isSupabaseServerConfigured()) {
+      const authClient = getSupabaseAuthClient();
+      if (authClient) {
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
+          const { data, error } = await authClient.auth.signInWithPassword({
             email: identifier,
             password,
           });
 
-          if (error || !data?.session || !data?.user) {
-            return { success: false, error: 'Usuario o contraseña incorrectos en Supabase Auth.' };
-          }
+          if (!error && data?.session && data?.user) {
+            const user = data.user;
+            const role = await this.resolveServerRole(
+              user.id,
+              user.app_metadata?.role,
+              user.email || identifier
+            );
 
-          const user = data.user;
-          const role = await this.resolveServerRole(
-            user.id,
-            user.app_metadata?.role,
-            user.email || identifier
-          );
+            // Verify administrative role server-side
+            const adminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
+            if (!adminRoles.includes(role)) {
+              return {
+                success: false,
+                error: 'Acceso denegado: el usuario no posee permisos de administración.',
+                unauthorizedRole: true,
+              };
+            }
 
-          // Verify administrative role server-side
-          const adminRoles: AppUserRole[] = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor'];
-          if (!adminRoles.includes(role)) {
+            const adminUser: AdminUser = {
+              id: user.id,
+              username: user.email?.split('@')[0] || user.id,
+              name: user.user_metadata?.full_name || user.email || 'Administrador Supabase',
+              email: user.email || '',
+              role: role as any,
+              lastLogin: new Date().toISOString(),
+            };
+
             return {
-              success: false,
-              error: 'Acceso denegado: el usuario no posee permisos de administración.',
-              unauthorizedRole: true,
+              success: true,
+              admin: adminUser,
+              token: data.session.access_token,
             };
           }
-
-          const adminUser: AdminUser = {
-            id: user.id,
-            username: user.email?.split('@')[0] || user.id,
-            name: user.user_metadata?.full_name || user.email || 'Administrador Supabase',
-            email: user.email || '',
-            role: role as any,
-            lastLogin: new Date().toISOString(),
-          };
-
-          return {
-            success: true,
-            admin: adminUser,
-            token: data.session.access_token,
-          };
         } catch (err: any) {
-          return { success: false, error: err?.message || 'Error al autenticar con Supabase Auth.' };
+          console.warn('[SupabaseAuth] adminLogin Supabase notice:', err?.message || err);
         }
       }
     }
@@ -516,8 +542,8 @@ class SupabaseAuthService {
     const cleanToken = token.trim();
 
     // 1. Check Supabase Auth JWT (PRIMARY)
-    if (this.isSupabaseAuthConfigured() && cleanToken.includes('.')) {
-      const supabase = getSupabaseServerClient();
+    if ((this.isSupabaseAuthConfigured() || this.isSupabaseServerConfigured()) && cleanToken.includes('.')) {
+      const supabase = getSupabaseAdminClient();
       if (supabase) {
         try {
           const { data, error } = await supabase.auth.getUser(cleanToken);
@@ -729,16 +755,15 @@ class SupabaseAuthService {
   }
 
   /**
-   * Dedicated server-side method to assign / update user roles in Supabase Auth & public.users table.
-   * Enforces strict RBAC and security validations:
-   * 1. Validates requester's session or identity
-   * 2. Only authorized administrators (superadmin, admin) can change roles
-   * 3. Prevents regular users from modifying any roles
-   * 4. Prevents self-promotion to higher roles
-   * 5. Admins cannot elevate anyone to superadmin (only superadmin can)
-   * 6. Normalizes target role via normalizeRole()
-   * 7. Updates app_metadata.role in Supabase Auth via admin.updateUserById (never user_metadata.role)
-   * 8. Updates role in public.users table
+   * Actualiza el rol de un usuario estrictamente mediante fuentes controladas por el servidor:
+   * 1. Valida la sesión del solicitante.
+   * 2. Comprueba el rol del solicitante mediante la fuente autoritativa del servidor.
+   * 3. Comprueba que el usuario objetivo existe en Supabase Auth.
+   * 4. Valida las restricciones de roles actuales (superadmin, admin, no auto-modificación).
+   * 5. Comprueba que el perfil de public.users corresponde al UUID objetivo.
+   * 6. Comprueba explícitamente el resultado y el campo 'error' de cada operación Supabase.
+   * 7. No devuelve success: true si alguna escritura necesaria falla.
+   * 8. Evita dejar app_metadata.role y public.users.role inconsistentes mediante reversión.
    */
   public async updateUserRole(
     requesterTokenOrUser: string | AuthenticatedUser | AdminUser,
@@ -754,9 +779,9 @@ class SupabaseAuthService {
       return { success: false, error: 'Identificador de usuario objetivo inválido.' };
     }
 
-    // 1. Validate requester session / authorization
+    // 1. Validar la sesión del solicitante
     let requesterUser: AuthenticatedUser | AdminUser | undefined;
-    let requesterRole: AppUserRole = 'user';
+    let requesterId: string | undefined;
 
     if (typeof requesterTokenOrUser === 'string') {
       const verifyRes = await this.verifyToken(requesterTokenOrUser);
@@ -764,15 +789,27 @@ class SupabaseAuthService {
         return { success: false, error: 'Sesión del solicitante inválida o expirada.' };
       }
       requesterUser = (verifyRes.admin || verifyRes.user) as any;
-      requesterRole = this.normalizeRole(requesterUser?.role);
+      requesterId = (verifyRes.user as any)?.id || (verifyRes.admin as any)?.id || (verifyRes.user as any)?.uid;
     } else if (typeof requesterTokenOrUser === 'object' && requesterTokenOrUser !== null) {
       requesterUser = requesterTokenOrUser;
-      requesterRole = this.normalizeRole((requesterUser as any).role);
+      requesterId = (requesterUser as any).id || (requesterUser as any).uid;
     } else {
       return { success: false, error: 'Solicitante no autorizado.' };
     }
 
-    // 2. Reject regular users or unauthorized roles
+    // 2. Comprobar el rol del solicitante mediante la fuente autoritativa del servidor
+    let requesterRole: AppUserRole = 'user';
+    if (requesterId && (requesterUser as any)?.provider === 'supabase') {
+      requesterRole = await this.resolveServerRole(
+        requesterId,
+        (requesterUser as any)?.app_metadata?.role,
+        (requesterUser as any)?.email
+      );
+    } else {
+      requesterRole = this.normalizeRole((requesterUser as any)?.role);
+    }
+
+    // Solo superadmin o admin pueden modificar roles
     if (requesterRole !== 'superadmin' && requesterRole !== 'admin') {
       return {
         success: false,
@@ -780,21 +817,26 @@ class SupabaseAuthService {
       };
     }
 
-    // 3. Normalize the target role
+    // 4. Validar las restricciones de roles actuales
+    const cleanRoleInput = (newRoleInput || '').toLowerCase().trim();
+    const validRoleInputs = ['superadmin', 'admin', 'anotador', 'prensa', 'official_scorer', 'editor', 'user'];
+    if (!validRoleInputs.includes(cleanRoleInput)) {
+      return {
+        success: false,
+        error: `Rol destino no válido: ${newRoleInput}.`,
+      };
+    }
     const normalizedNewRole = this.normalizeRole(newRoleInput);
 
-    // 4. Prevent users from modifying their own role (clients cannot modify their own role)
-    const requesterId = (requesterUser as any).id || (requesterUser as any).uid;
-    if (requesterId && (requesterId === targetUserId || (requesterUser as any).email === targetUserId)) {
-      if (requesterRole !== 'superadmin') {
-        return {
-          success: false,
-          error: 'Acceso denegado: no se permite a los usuarios modificar su propio rol.',
-        };
-      }
+    // Impedir que los usuarios modifiquen su propio rol (sin autoelevación)
+    if (requesterId && (requesterId === targetUserId || (requesterUser as any)?.email === targetUserId)) {
+      return {
+        success: false,
+        error: 'Acceso denegado: no se permite a los usuarios modificar su propio rol.',
+      };
     }
 
-    // 5. 'admin' cannot promote someone to 'superadmin' (only superadmin can create/promote superadmin)
+    // 'admin' no puede asignar ni promover a 'superadmin' (únicamente superadmin puede asignar superadmin)
     if (requesterRole === 'admin' && normalizedNewRole === 'superadmin') {
       return {
         success: false,
@@ -802,59 +844,152 @@ class SupabaseAuthService {
       };
     }
 
-    // 6. Update in Supabase Auth (PRIMARY) — Strictly app_metadata, NEVER user_metadata
-    if (this.isSupabaseAuthConfigured()) {
-      const supabase = getSupabaseServerClient();
-      if (supabase) {
-        try {
-          const { error: updateAuthErr } = await supabase.auth.admin.updateUserById(targetUserId, {
-            app_metadata: { role: normalizedNewRole },
-            // SECURITY: Never update user_metadata.role. Roles are strictly controlled by server.
-          });
+    // Operaciones en Supabase si está configurado el cliente administrativo
+    if (this.isSupabaseServerConfigured()) {
+      const adminClient = getSupabaseAdminClient();
+      if (!adminClient) {
+        return {
+          success: false,
+          error: 'Cliente administrativo de Supabase no disponible.',
+        };
+      }
 
-          if (updateAuthErr) {
-            console.error('[SupabaseAuth] Error updating user role in Supabase Auth:', updateAuthErr.message);
-            return {
-              success: false,
-              error: `Error al actualizar rol en Supabase Auth: ${updateAuthErr.message}`,
-            };
-          }
+      // 3. Comprobar que el usuario objetivo existe en Supabase Auth
+      const { data: targetAuthData, error: targetAuthErr } = await adminClient.auth.admin.getUserById(targetUserId);
+      if (targetAuthErr || !targetAuthData?.user) {
+        return {
+          success: false,
+          error: `Usuario objetivo no encontrado en Supabase Auth: ${targetAuthErr?.message || 'Usuario inexistente'}`,
+        };
+      }
 
-          // Update public.users table if it exists
-          try {
-            await supabase
-              .from('users')
-              .update({
-                role: normalizedNewRole,
-                updated_at: new Date().toISOString(),
-              })
-              .or(`id.eq.${targetUserId},uid.eq.${targetUserId}`);
-          } catch (tblErr: any) {
-            console.warn('[SupabaseAuth] Notice updating users table:', tblErr?.message || tblErr);
-          }
-        } catch (err: any) {
-          console.error('[SupabaseAuth] Exception updating user role in Supabase:', err);
+      const targetAuthUser = targetAuthData.user;
+      const previousRole = this.normalizeRole(targetAuthUser.app_metadata?.role);
+
+      // Un administrador regular no puede modificar el rol de un superadministrador existente
+      if (requesterRole === 'admin' && previousRole === 'superadmin') {
+        return {
+          success: false,
+          error: 'Acceso denegado: un administrador no puede modificar el rol de un superadministrador.',
+        };
+      }
+
+      // 5. Comprobar que el perfil de public.users corresponde al UUID objetivo
+      const { data: existingProfile, error: profileFetchErr } = await adminClient
+        .from('users')
+        .select('id, uid, role')
+        .or(`id.eq.${targetUserId},uid.eq.${targetUserId}`)
+        .maybeSingle();
+
+      if (profileFetchErr) {
+        console.error('[SupabaseAuth] Error al consultar perfil en public.users:', profileFetchErr.message);
+        return {
+          success: false,
+          error: `Error al validar perfil en base de datos: ${profileFetchErr.message}`,
+        };
+      }
+
+      if (existingProfile) {
+        if (existingProfile.id !== targetUserId && existingProfile.uid !== targetUserId) {
           return {
             success: false,
-            error: err?.message || 'Error al actualizar rol en Supabase.',
+            error: 'Inconsistencia de perfil: el registro en public.users no coincide con el UUID objetivo.',
           };
+        }
+      }
+
+      // 6. Comprobar explícitamente el resultado y el campo 'error' de cada operación Supabase
+      // Operación 1: Actualizar app_metadata.role en Supabase Auth (NUNCA en user_metadata.role)
+      const { data: updateAuthData, error: updateAuthErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
+        app_metadata: { role: normalizedNewRole },
+      });
+
+      if (updateAuthErr || !updateAuthData?.user) {
+        console.error('[SupabaseAuth] Error actualizando app_metadata en Supabase Auth:', updateAuthErr?.message);
+        return {
+          success: false,
+          error: `Error al actualizar rol en Supabase Auth: ${updateAuthErr?.message || 'Operación rechazada'}`,
+        };
+      }
+
+      // Operación 2: Actualizar rol en public.users
+      let profileWriteError: string | undefined;
+
+      if (existingProfile) {
+        const { error: updateTblErr } = await adminClient
+          .from('users')
+          .update({
+            role: normalizedNewRole,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`id.eq.${targetUserId},uid.eq.${targetUserId}`);
+
+        if (updateTblErr) {
+          profileWriteError = updateTblErr.message;
+        }
+      } else {
+        const { error: insertTblErr } = await adminClient
+          .from('users')
+          .insert({
+            id: targetUserId,
+            uid: targetUserId,
+            email: targetAuthUser.email || '',
+            display_name:
+              targetAuthUser.user_metadata?.full_name ||
+              targetAuthUser.user_metadata?.name ||
+              targetAuthUser.email?.split('@')[0] ||
+              'Usuario',
+            photo_url: targetAuthUser.user_metadata?.avatar_url || '',
+            role: normalizedNewRole,
+            preferences: targetAuthUser.user_metadata?.preferences || {},
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+
+        if (insertTblErr) {
+          profileWriteError = insertTblErr.message;
+        }
+      }
+
+      // 7. No devolver success: true si alguna escritura necesaria falla
+      // 8. Evitar dejar app_metadata.role y public.users.role inconsistentes mediante reversión
+      if (profileWriteError) {
+        console.error('[SupabaseAuth] Falló la persistencia en public.users. Revertiendo app_metadata.role...');
+        const { error: rollbackErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
+          app_metadata: { role: previousRole },
+        });
+        if (rollbackErr) {
+          console.error('[SupabaseAuth] Error crítico revirtiendo app_metadata tras fallo de public.users:', rollbackErr.message);
+        }
+
+        return {
+          success: false,
+          error: `Error al persistir rol en public.users: ${profileWriteError}. Se revirtió el cambio en Supabase Auth para mantener la consistencia.`,
+        };
+      }
+    } else {
+      // Fallback local: actualizar en almacenamiento local si el usuario existe
+      for (const [email, userRec] of this.localUsers.entries()) {
+        if (
+          userRec.id === targetUserId ||
+          userRec.uid === targetUserId ||
+          email.toLowerCase() === targetUserId.toLowerCase()
+        ) {
+          userRec.role = normalizedNewRole;
+          userRec.updatedAt = new Date().toISOString();
+          this.localUsers.set(email, userRec);
+          break;
         }
       }
     }
 
-    // 7. Update in local storage / in-memory cache if target user is stored locally
-    for (const [email, userRec] of this.localUsers.entries()) {
-      if (userRec.id === targetUserId || userRec.uid === targetUserId || email.toLowerCase() === targetUserId.toLowerCase()) {
-        userRec.role = normalizedNewRole;
-        userRec.updatedAt = new Date().toISOString();
-        this.localUsers.set(email, userRec);
-        break;
-      }
-    }
-
-    // Also update any active tokens for this user
+    // Actualizar también tokens activos en memoria para reflejar de inmediato el cambio
     for (const [, session] of this.activeTokens.entries()) {
-      if (session.user.id === targetUserId || session.user.uid === targetUserId || session.user.email === targetUserId) {
+      if (
+        session.user.id === targetUserId ||
+        session.user.uid === targetUserId ||
+        session.user.email === targetUserId
+      ) {
         session.user.role = normalizedNewRole;
       }
     }
