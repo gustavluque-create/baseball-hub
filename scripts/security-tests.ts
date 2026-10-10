@@ -430,16 +430,18 @@ async function runSecurityTests() {
     );
 
     // 34d. Eliminación de dependencia de user_metadata.role: Rol se resuelve exclusivamente server-side
-    // Si Supabase está activo y el usuario no tiene perfil en public.users, el rol esperado es 'user' (nunca 'prensa' ni administrativo).
-    // Con fallback local (sin Supabase), se prueba la resolución controlada.
-    const serverRoleFallback = await supabaseAuthService.resolveServerRole(
+    // Distinción estricta entre Supabase activo y modo local:
+    // Si Supabase está activo y el usuario no tiene perfil válido en public.users, el rol esperado es estrictamente 'user' (nunca 'prensa' ni rol administrativo).
+    // Si se encuentra en modo local (sin Supabase activo), se resuelve el rol del servidor de prueba ('prensa').
+    const isSupaActive = supabaseAuthService.isSupabaseServerConfigured();
+    const serverRole34d = await supabaseAuthService.resolveServerRole(
       'usr_test_server_controlled',
       'prensa'
     );
-    // Si Supabase server estuviera activo, un usuario sin perfil retornaría 'user'. En fallback local retorna el rol controlado por el servidor.
+    const expectedRole34d = isSupaActive ? 'user' : 'prensa';
     assert(
-      (supabaseAuthService.isSupabaseServerConfigured() ? serverRoleFallback === 'user' : serverRoleFallback === 'prensa'),
-      '34d. RBAC: Si Supabase está activo y el usuario no tiene perfil válido en public.users, el rol esperado debe ser "user" (nunca privilegios no autorizados)'
+      serverRole34d === expectedRole34d,
+      `34d. RBAC: Distinción entre Supabase activo y modo local verificada. Modo: ${isSupaActive ? 'Supabase Activo (esperado: user)' : 'Local Fallback (esperado: prensa)'}, obtenido: ${serverRole34d}`
     );
 
     // 35. Logout de usuario
@@ -653,55 +655,182 @@ async function runSecurityTests() {
       else delete process.env.SUPABASE_URL;
     }
 
-    // 49. Verificación de registro con fallo en public.users: Simular fallo real al guardar el perfil
-    // y comprobar que el registro devuelve error (success: false) y que se intenta eliminar la cuenta creada (deleteUser)
-    let deleteUserAttemptedWithUid: string | null = null;
-    const mockUid = 'simulated_user_uuid_12345';
+    // 49a. Situación 1: Fallo al guardar perfil en public.users con deleteUser() exitoso
+    // Debe devolver success: false y eliminar la cuenta creada en Supabase Auth
+    let deleteUserAttemptedWithUid1: string | null = null;
+    const mockUid1 = 'simulated_user_uuid_ok_deletion';
 
-    const mockAdminClientWithProfileFailure: any = {
+    const mockAdminClientDeleteSuccess: any = {
       auth: {
         admin: {
-          createUser: async () => {
-            return {
-              data: {
-                user: {
-                  id: mockUid,
-                  email: 'test_failure_sim@baseballhub.cu',
-                  app_metadata: { role: 'user' },
-                  user_metadata: { full_name: 'Test Failure' },
-                },
+          createUser: async () => ({
+            data: {
+              user: {
+                id: mockUid1,
+                email: 'test_del_ok@baseballhub.cu',
+                app_metadata: { role: 'user' },
+                user_metadata: { full_name: 'Test Delete Ok' },
               },
-              error: null,
-            };
-          },
+            },
+            error: null,
+          }),
           deleteUser: async (uidToDelete: string) => {
-            deleteUserAttemptedWithUid = uidToDelete;
+            deleteUserAttemptedWithUid1 = uidToDelete;
             return { data: { user: null }, error: null };
           },
         },
       },
       from: () => ({
-        upsert: async () => {
-          // Simular fallo real de PostgreSQL / Supabase al insertar el perfil
-          return { error: { message: 'relation public.users does not exist or disk full simulated error' } };
-        },
+        upsert: async () => ({
+          error: { message: 'relation public.users does not exist or disk full simulated error' },
+        }),
       }),
     };
 
-    setSupabaseAdminClientOverride(mockAdminClientWithProfileFailure);
+    setSupabaseAdminClientOverride(mockAdminClientDeleteSuccess);
     try {
-      const failedRegRes = await supabaseAuthService.registerUser({
-        email: 'test_failure_sim@baseballhub.cu',
+      const regRes1 = await supabaseAuthService.registerUser({
+        email: 'test_del_ok@baseballhub.cu',
         password: 'PasswordSegura2026!',
-        displayName: 'Test Failure',
+        displayName: 'Test Delete Ok',
       });
 
       assert(
-        failedRegRes.success === false &&
-          !!failedRegRes.error &&
-          failedRegRes.error.includes('Error al crear el perfil') &&
-          deleteUserAttemptedWithUid === mockUid,
-        '49. Registro de usuario: Fallo real en public.users devuelve error (success: false) e intenta eliminar la cuenta creada en Supabase Auth'
+        regRes1.success === false &&
+          !!regRes1.error &&
+          regRes1.error.includes('Error al crear el perfil') &&
+          regRes1.error.includes('eliminó la cuenta creada') &&
+          deleteUserAttemptedWithUid1 === mockUid1,
+        '49a. Registro: Si falla public.users y deleteUser() funciona, devuelve success: false y elimina la cuenta creada'
+      );
+    } finally {
+      setSupabaseAdminClientOverride(null);
+    }
+
+    // 49b. Situación 2: Fallo al guardar perfil en public.users y deleteUser() también falla
+    // En ambos casos el registro debe devolver success: false y debe quedar constancia expresa del error crítico
+    let deleteUserAttemptedWithUid2: string | null = null;
+    const mockUid2 = 'simulated_user_uuid_failed_deletion';
+
+    const mockAdminClientDeleteFailure: any = {
+      auth: {
+        admin: {
+          createUser: async () => ({
+            data: {
+              user: {
+                id: mockUid2,
+                email: 'test_del_fail@baseballhub.cu',
+                app_metadata: { role: 'user' },
+                user_metadata: { full_name: 'Test Delete Fail' },
+              },
+            },
+            error: null,
+          }),
+          deleteUser: async (uidToDelete: string) => {
+            deleteUserAttemptedWithUid2 = uidToDelete;
+            return {
+              data: { user: null },
+              error: { message: 'Simulated connection failure during compensation delete' },
+            };
+          },
+        },
+      },
+      from: () => ({
+        upsert: async () => ({
+          error: { message: 'Database connection dropped while inserting user profile' },
+        }),
+      }),
+    };
+
+    setSupabaseAdminClientOverride(mockAdminClientDeleteFailure);
+    try {
+      const regRes2 = await supabaseAuthService.registerUser({
+        email: 'test_del_fail@baseballhub.cu',
+        password: 'PasswordSegura2026!',
+        displayName: 'Test Delete Fail',
+      });
+
+      assert(
+        regRes2.success === false &&
+          !!regRes2.error &&
+          regRes2.error.includes('Error crítico') &&
+          regRes2.error.includes('falló la eliminación de la cuenta') &&
+          deleteUserAttemptedWithUid2 === mockUid2,
+        '49b. Registro: Si falla public.users y deleteUser() falla, devuelve success: false y registra explícitamente el error crítico'
+      );
+    } finally {
+      setSupabaseAdminClientOverride(null);
+    }
+
+    // 50. Reversión en updateUserRole(): Si falla la escritura en public.users, restaura el rol anterior correcto en Supabase Auth
+    // y si no tenía perfil en public.users, el rol anterior restaurado es estrictamente 'user' (fuente autoritativa).
+    let rollbackRoleAttempted: string | null = null;
+    const mockTargetUserId = 'user_target_role_rollback';
+
+    const mockAdminClientRoleRollback: any = {
+      auth: {
+        admin: {
+          getUserById: async (uid: string) => {
+            return {
+              data: {
+                user: {
+                  id: mockTargetUserId,
+                  email: 'target@baseballhub.cu',
+                  app_metadata: { role: 'admin' }, // metadata residual en Auth
+                },
+              },
+              error: null,
+            };
+          },
+          updateUserById: async (uid: string, attrs: any) => {
+            if (attrs?.app_metadata?.role) {
+              rollbackRoleAttempted = attrs.app_metadata.role;
+            }
+            return {
+              data: {
+                user: {
+                  id: uid,
+                  app_metadata: attrs?.app_metadata || {},
+                },
+              },
+              error: null,
+            };
+          },
+        },
+      },
+      from: () => ({
+        select: () => ({
+          or: () => ({
+            maybeSingle: async () => {
+              // Sin perfil en public.users para el usuario objetivo
+              return { data: null, error: null };
+            },
+          }),
+        }),
+        insert: async () => ({
+          error: { message: 'Disk quota exceeded inserting into public.users' },
+        }),
+        update: async () => ({
+          error: { message: 'Disk quota exceeded updating public.users' },
+        }),
+      }),
+    };
+
+    setSupabaseAdminClientOverride(mockAdminClientRoleRollback);
+    try {
+      const roleUpdateRes = await supabaseAuthService.updateUserRole(
+        { id: 'requester_admin_id', role: 'superadmin' } as any,
+        mockTargetUserId,
+        'prensa'
+      );
+
+      assert(
+        roleUpdateRes.success === false &&
+          !!roleUpdateRes.error &&
+          roleUpdateRes.error.includes('Error al persistir rol en public.users') &&
+          roleUpdateRes.error.includes("restaurando el rol anterior 'user'") &&
+          rollbackRoleAttempted === 'user',
+        "50. Reversión de rol: Si falla public.users sin perfil previo, restaura en Auth el rol anterior autoritativo 'user' (nunca app_metadata residual)"
       );
     } finally {
       setSupabaseAdminClientOverride(null);

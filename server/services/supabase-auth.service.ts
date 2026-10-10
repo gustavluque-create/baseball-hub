@@ -924,7 +924,6 @@ class SupabaseAuthService {
       }
 
       const targetAuthUser = targetAuthData.user;
-      const previousRole = this.normalizeRole(targetAuthUser.app_metadata?.role);
 
       // 5. Comprobar que el perfil de public.users corresponde al UUID objetivo
       // y obtener el estado anterior real desde la fuente autoritativa (public.users)
@@ -952,10 +951,12 @@ class SupabaseAuthService {
       }
 
       // Fuente autoritativa para el rol anterior real:
-      // Si existe perfil en public.users, usar su rol real; si no existe, el rol real es 'user'
-      const authoritativePreviousRole = existingProfile?.role
+      // public.users es la fuente autoritativa cuando Supabase está activo.
+      // Si existe perfil en public.users, usar su rol real; si no existe perfil, el rol anterior es estrictamente 'user'.
+      // No usar app_metadata.role como alternativa, para evitar eludir la fuente autoritativa.
+      const authoritativePreviousRole: AppUserRole = existingProfile?.role
         ? this.normalizeRole(existingProfile.role)
-        : this.normalizeRole(targetAuthUser.app_metadata?.role);
+        : 'user';
 
       // Un administrador regular no puede modificar el rol de un superadministrador existente
       if (requesterRole === 'admin' && authoritativePreviousRole === 'superadmin') {
