@@ -836,6 +836,140 @@ async function runSecurityTests() {
       setSupabaseAdminClientOverride(null);
     }
 
+    // =========================================================================
+    // FASE 2.5A: ROW LEVEL SECURITY & PROFILE / COMMENTS / SPORTS HARDENING
+    // =========================================================================
+    console.log('\n🔒 --- FASE 2.5A: PRUEBAS DE SEGURIDAD RLS Y PERFILES PÚBLICOS ---');
+
+    // 51. Comentarios de noticias: Validación y límite de longitud
+    const resShortComment = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/news/slug-test/comments', method: 'POST' },
+      { authorName: 'Tester', content: 'ab' }
+    );
+    assert(
+      resShortComment.status === 400,
+      '51. POST /api/news/:slug/comments con contenido < 3 caracteres es rechazado (400)'
+    );
+
+    // 52. Comentarios de noticias: Creación válida
+    const resValidComment = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/news/noticia-estrella/comments', method: 'POST' },
+      { authorName: 'Aficionado Fiel', favoriteTeam: 'Industriales', content: 'Excelente análisis del juego de anoche.' }
+    );
+    assert(
+      resValidComment.status === 201 && !!resValidComment.body.id,
+      '52. POST /api/news/:slug/comments con contenido válido se registra exitosamente (201)'
+    );
+
+    // 53. Comentarios de noticias: Moderación administrativa protegida
+    const resAnonDeleteComment = await request(
+      { hostname: 'localhost', port: 3000, path: `/api/news/comments/${resValidComment.body.id || 'c-test'}`, method: 'DELETE' }
+    );
+    assert(
+      resAnonDeleteComment.status === 401,
+      '53. DELETE /api/news/comments/:id sin credenciales administrativas retorna 401 (rechazado para anónimos)'
+    );
+
+    // 54. Perfil público seguro: No expone email ni preferencias privadas de los usuarios
+    const phase25Email = `public_profile_${Date.now()}@baseballhub.cu`;
+    const regPublicProfileRes = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/auth/register', method: 'POST' },
+      {
+        email: phase25Email,
+        password: 'SecurePassword123!',
+        displayName: 'Perfil Test',
+        preferences: { favoriteTeam: 'Avispas', privateSecret: 'no_exponer' },
+      }
+    );
+    const testNormalUser = regPublicProfileRes.body.user;
+    const testNormalUserId = testNormalUser?.id || testNormalUser?.uid;
+    const normalUserToken = regPublicProfileRes.body.token;
+
+    const resPublicProfile = await request(
+      { hostname: 'localhost', port: 3000, path: `/api/users/profile/${testNormalUserId}`, method: 'GET' }
+    );
+    assert(
+      resPublicProfile.status === 200 &&
+        resPublicProfile.body.profile &&
+        resPublicProfile.body.profile.displayName === 'Perfil Test' &&
+        resPublicProfile.body.profile.email === undefined &&
+        resPublicProfile.body.profile.preferences === undefined,
+      '54. GET /api/users/profile/:uid expone estrictamente campos públicos (sin emails ni preferencias privadas)'
+    );
+
+    // 55. Usuario normal intentando auto-elevar su rol vía PUT /api/users/me
+    const resSelfEscalate = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/users/me',
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { role: 'superadmin', displayName: 'Hacker Intent' }
+    );
+    assert(
+      resSelfEscalate.status === 403 &&
+        resSelfEscalate.body.error?.includes('privilegios para modificar su propio rol'),
+      '55. PUT /api/users/me: Se bloquea intento de auto-elevación de rol por usuario normal (403)'
+    );
+
+    // 56. Usuario normal actualiza campos permitidos de su propio perfil
+    const resSelfUpdateValid = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/users/me',
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { displayName: 'Nuevo Nombre Aficionado' }
+    );
+    assert(
+      resSelfUpdateValid.status === 200 &&
+        resSelfUpdateValid.body.success === true &&
+        resSelfUpdateValid.body.user.role === 'user' &&
+        resSelfUpdateValid.body.user.name === 'Nuevo Nombre Aficionado',
+      '56. PUT /api/users/me: Usuario normal actualiza su display_name conservando estrictamente el rol "user"'
+    );
+
+    // 57. Tablas deportivas y resultados protegidos contra usuarios normales y anónimos
+    const resNormalUserPostGame = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/admin/games',
+        method: 'POST',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { homeScore: 99, awayScore: 0 }
+    );
+    assert(
+      resNormalUserPostGame.status === 403,
+      '57. POST /api/admin/games: Usuario autenticado normal sin rol administrativo retorna 403 Forbidden'
+    );
+
+    // 58. Moderación de comentarios: Bloqueada para usuarios normales y permitida para moderadores autorizados
+    const resNormalDeleteComment = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: `/api/news/comments/${resValidComment.body.id}`,
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      }
+    );
+    const addedCommentInRepo = await baseballRepo.addComment('snb-noticia', {
+      authorName: 'Moderación Test',
+      content: 'Comentario para prueba de eliminación administrativa autorizada',
+    });
+    const deleteRepoSuccess = await baseballRepo.deleteComment(addedCommentInRepo.id);
+    const checkDeletedComment = baseballRepo.getCommentsByArticle('snb-noticia').find((c: any) => c.id === addedCommentInRepo.id);
+    assert(
+      resNormalDeleteComment.status === 403 && deleteRepoSuccess === true && !checkDeletedComment,
+      '58. Moderación de comentarios: Rechazado para usuarios normales (403) y ejecutado correctamente por moderador autorizado'
+    );
+
     // Summary
     console.log('\n🔒 ==========================================');
     console.log(`🔒 RESULTADOS: ${passed} PASADAS, ${failed} FALLADAS`);

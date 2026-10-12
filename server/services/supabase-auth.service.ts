@@ -1076,6 +1076,114 @@ class SupabaseAuthService {
   }
 
   /**
+   * Actualización segura del perfil propio del usuario autenticado.
+   * Se prohíbe cualquier mutación de 'role', 'uid', 'id' o 'email'.
+   */
+  public async updateOwnProfile(
+    userId: string,
+    updates: { displayName?: string; photoUrl?: string; preferences?: Record<string, any> }
+  ): Promise<{ success: boolean; user?: AuthenticatedUser; error?: string }> {
+    if (!userId) {
+      return { success: false, error: 'Identificador de usuario inválido.' };
+    }
+
+    if (this.isSupabaseServerConfigured()) {
+      const adminClient = getSupabaseAdminClient();
+      if (adminClient) {
+        try {
+          const updatePayload: Record<string, any> = {
+            updated_at: new Date().toISOString(),
+          };
+          if (updates.displayName !== undefined) updatePayload.display_name = updates.displayName;
+          if (updates.photoUrl !== undefined) updatePayload.photo_url = updates.photoUrl;
+          if (updates.preferences !== undefined) updatePayload.preferences = updates.preferences;
+
+          const { data, error } = await adminClient
+            .from('users')
+            .update(updatePayload)
+            .or(`id.eq.${userId},uid.eq.${userId}`)
+            .select()
+            .single();
+
+          if (error) {
+            console.error('[SupabaseAuth] Error actualizando perfil propio en public.users:', error.message);
+            return { success: false, error: `Error al actualizar perfil: ${error.message}` };
+          }
+
+          // Actualizar metadatos en Supabase Auth si es necesario
+          await adminClient.auth.admin.updateUserById(userId, {
+            user_metadata: {
+              ...(updates.displayName ? { full_name: updates.displayName, name: updates.displayName } : {}),
+              ...(updates.photoUrl ? { avatar_url: updates.photoUrl } : {}),
+              ...(updates.preferences ? { preferences: updates.preferences } : {}),
+            },
+          });
+
+          return {
+            success: true,
+            user: {
+              id: data.id,
+              uid: data.uid,
+              email: data.email,
+              name: data.display_name || '',
+              displayName: data.display_name || '',
+              role: data.role || 'user',
+              photoUrl: data.photo_url || undefined,
+              avatar: data.photo_url || undefined,
+              preferences: data.preferences || {},
+              provider: 'supabase',
+            },
+          };
+        } catch (err: any) {
+          return { success: false, error: err?.message || 'Error inesperado al actualizar perfil.' };
+        }
+      }
+    }
+
+    // Fallback local
+    for (const [email, userRec] of this.localUsers.entries()) {
+      if (userRec.id === userId || userRec.uid === userId || email === userId) {
+        if (updates.displayName !== undefined) userRec.displayName = updates.displayName;
+        if (updates.photoUrl !== undefined) userRec.photoUrl = updates.photoUrl;
+        if (updates.preferences !== undefined) userRec.preferences = updates.preferences;
+        userRec.updatedAt = new Date().toISOString();
+        this.localUsers.set(email, userRec);
+
+        for (const [, session] of this.activeTokens.entries()) {
+          if (session.user.id === userId || session.user.uid === userId) {
+            if (updates.displayName !== undefined) {
+              session.user.name = updates.displayName;
+              session.user.displayName = updates.displayName;
+            }
+            if (updates.photoUrl !== undefined) {
+              session.user.photoUrl = updates.photoUrl;
+              session.user.avatar = updates.photoUrl;
+            }
+            if (updates.preferences !== undefined) session.user.preferences = updates.preferences;
+          }
+        }
+
+        const authUser: AuthenticatedUser = {
+          id: userRec.id,
+          uid: userRec.uid,
+          email: userRec.email,
+          name: userRec.displayName,
+          displayName: userRec.displayName,
+          photoUrl: userRec.photoUrl,
+          avatar: userRec.photoUrl,
+          role: userRec.role,
+          preferences: userRec.preferences,
+          provider: 'local',
+        };
+
+        return { success: true, user: authUser };
+      }
+    }
+
+    return { success: false, error: 'Usuario no encontrado.' };
+  }
+
+  /**
    * Helper to create high-entropy synthetic session token for local/fallback sessions
    */
   public createSyntheticToken(user: AuthenticatedUser, ttlMs: number = this.defaultTtlMs): string {

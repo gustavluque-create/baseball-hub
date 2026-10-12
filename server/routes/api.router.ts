@@ -5,7 +5,7 @@ import { notificationService } from '../services/notification.service.ts';
 import { adminAuthService } from '../services/admin-auth.service.ts';
 import { fcmServer } from '../services/fcm.service.ts';
 import { requireAuth, AuthRequest, extractRequestToken } from '../../src/middleware/auth.ts';
-import { getOrCreateUser, getUserByUid } from '../../src/db/users.ts';
+import { getOrCreateUser, getUserByUid, getPublicUserProfileByUid } from '../../src/db/users.ts';
 import { supabaseAuthService, AppUserRole } from '../services/supabase-auth.service.ts';
 import { isSupabaseServerConfigured } from '../lib/supabase.ts';
 import {
@@ -1492,6 +1492,40 @@ apiRouter.get('/auth/session', async (req: Request, res: Response) => {
   res.json({ valid: true, user: result.user });
 });
 
+// Update own user profile (Strict: cannot modify role, uid, id, or email)
+apiRouter.put('/users/me', async (req: Request, res: Response) => {
+  const token = extractRequestToken(req) || getRequestToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Autenticación requerida.' });
+  }
+
+  const session = await supabaseAuthService.verifyToken(token);
+  if (!session.valid || !session.user) {
+    return res.status(401).json({ success: false, error: 'Sesión no válida o expirada.' });
+  }
+
+  // Descartar explícitamente cualquier intento de alterar 'role', 'id', 'uid'
+  const { role: requestedRole, uid: requestedUid, id: requestedId, ...safePayload } = req.body || {};
+  if (requestedRole && requestedRole !== session.user.role) {
+    return res.status(403).json({
+      success: false,
+      error: 'Operación denegada: no tiene privilegios para modificar su propio rol o elevar permisos.',
+    });
+  }
+
+  const updateResult = await supabaseAuthService.updateOwnProfile(session.user.id, {
+    displayName: safePayload.displayName || safePayload.name,
+    photoUrl: safePayload.photoUrl || safePayload.avatar,
+    preferences: safePayload.preferences,
+  });
+
+  if (!updateResult.success) {
+    return res.status(400).json(updateResult);
+  }
+
+  res.json(updateResult);
+});
+
 // User migration without passwords, tokens, sessions, or secrets
 apiRouter.post('/admin/migrate-users', requireAdmin, requireRole('superadmin'), async (req: Request, res: Response) => {
   try {
@@ -1561,6 +1595,35 @@ apiRouter.get('/users/me', requireAuth, async (req: AuthRequest, res: Response) 
   } catch (error: any) {
     console.error('Failed to fetch user:', error);
     res.status(500).json({ error: 'Error al consultar usuario' });
+  }
+});
+
+// Endpoint seguro de consulta de perfil público (solo campos públicos: id, uid, display_name, photo_url)
+apiRouter.get('/users/profile/:uid', async (req: Request, res: Response) => {
+  try {
+    const uid = (req.params.uid || '').trim();
+    if (!uid) {
+      return res.status(400).json({ error: 'Identificador de usuario requerido' });
+    }
+    let profile = await getPublicUserProfileByUid(uid);
+    if (!profile) {
+      const localUsers = supabaseAuthService.getLocalUsers();
+      const localMatch = localUsers.find((u) => u.uid === uid || u.id === uid);
+      if (localMatch) {
+        profile = {
+          uid: localMatch.uid || localMatch.id,
+          displayName: localMatch.displayName,
+          photoUrl: localMatch.photoUrl,
+        };
+      }
+    }
+    if (!profile) {
+      return res.status(404).json({ error: 'Perfil de usuario no encontrado' });
+    }
+    res.json({ success: true, profile });
+  } catch (error: any) {
+    console.error('Failed to fetch public profile:', error);
+    res.status(500).json({ error: 'Error al consultar perfil público' });
   }
 });
 

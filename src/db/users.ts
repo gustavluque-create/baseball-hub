@@ -118,3 +118,40 @@ export async function getUserByUid(uid: string) {
     return null;
   }
 }
+
+/**
+ * Consulta segura de perfil público (exclusivamente campos no sensibles: uid, display_name, photo_url).
+ * No expone correos electrónicos, preferencias privadas ni tokens/hashes.
+ */
+export async function getPublicUserProfileByUid(uid: string) {
+  if (isSupabaseServerConfigured()) {
+    const supabase = getSupabaseServerClient();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('public_user_profiles')
+          .select('id, uid, display_name, photo_url, created_at')
+          .eq('uid', uid)
+          .single();
+
+        if (!error && data) {
+          return {
+            uid: data.uid,
+            displayName: data.display_name,
+            photoUrl: data.photo_url,
+          };
+        }
+      } catch (err) {
+        console.warn('[UsersDB] Public profile query notice:', err);
+      }
+    }
+  }
+
+  const user = await getUserByUid(uid);
+  if (!user) return null;
+  return {
+    uid: user.uid,
+    displayName: user.displayName,
+    photoUrl: user.photoUrl,
+  };
+}
