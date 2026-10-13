@@ -850,6 +850,7 @@ export class BaseballRepository {
         .upsert({
           id: c.id,
           article_slug: c.articleSlug,
+          user_id: c.userId || null,
           author_name: c.authorName || 'Aficionado',
           favorite_team: c.favoriteTeam || null,
           content: c.content || '',
@@ -4554,7 +4555,7 @@ export class BaseballRepository {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  async addComment(slug: string, data: { authorName?: string; favoriteTeam?: string; content: string }): Promise<ArticleComment> {
+  async addComment(slug: string, data: { authorName?: string; favoriteTeam?: string; content: string; userId?: string }): Promise<ArticleComment> {
     const authorName = (data.authorName || '').trim() || 'Aficionado al Béisbol';
     const content = (data.content || '').trim();
     const favoriteTeam = (data.favoriteTeam || '').trim() || undefined;
@@ -4563,6 +4564,7 @@ export class BaseballRepository {
       id: 'comm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       articleSlug: slug.trim().toLowerCase(),
       authorName,
+      userId: data.userId,
       favoriteTeam,
       content,
       createdAt: new Date().toISOString(),
@@ -4579,6 +4581,43 @@ export class BaseballRepository {
       cloudSqlSync.saveComment(newComment).catch(() => {});
     }
     return newComment;
+  }
+
+  async updateComment(
+    id: string,
+    content: string,
+    requesterUserId?: string,
+    isModerator = false
+  ): Promise<{ success: boolean; comment?: ArticleComment; error?: string }> {
+    const comment = this.comments.find((c) => c.id === id);
+    if (!comment) {
+      return { success: false, error: 'Comentario no encontrado.' };
+    }
+
+    if (!isModerator && comment.userId && comment.userId !== requesterUserId) {
+      return { success: false, error: 'No tiene permisos para modificar este comentario.' };
+    }
+
+    const trimmed = (content || '').trim();
+    if (trimmed.length < 3 || trimmed.length > 2000) {
+      return { success: false, error: 'El contenido del comentario debe tener entre 3 y 2000 caracteres.' };
+    }
+
+    comment.content = trimmed;
+    this.persistState();
+
+    if (this.isSupabaseActive()) {
+      try {
+        const supabase = getSupabaseServerClient();
+        if (supabase) {
+          await supabase.from('news_comments').update({ content: trimmed }).eq('id', id);
+        }
+      } catch (err) {
+        console.warn('[BaseballRepository] Failed to sync comment update to Supabase:', err);
+      }
+    }
+
+    return { success: true, comment };
   }
 
   async deleteComment(id: string): Promise<boolean> {

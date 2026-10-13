@@ -637,6 +637,7 @@ export interface ArticleComment {
   id: string;
   articleSlug: string;
   authorName: string;
+  userId?: string;
   favoriteTeam?: string;
   content: string;
   createdAt: string;

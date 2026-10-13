@@ -1328,15 +1328,58 @@ apiRouter.post('/news/:slug/comments', commentsLimiter, async (req: Request, res
 
   const { authorName, favoriteTeam, content } = validation.data;
   try {
+    const token = extractRequestToken(req) || getRequestToken(req);
+    let userId: string | undefined;
+    if (token) {
+      const session = await supabaseAuthService.verifyToken(token);
+      if (session.valid && session.user) {
+        userId = session.user.id || session.user.uid;
+      }
+    }
+
     const comment = await baseballRepo.addComment(req.params.slug, {
       authorName,
       favoriteTeam,
       content,
+      userId,
     });
     res.status(201).json(comment);
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Error al publicar comentario.' });
   }
+});
+
+// Update comment (Author of the comment or administrative moderators only)
+apiRouter.put('/news/comments/:id', sensitiveWriteLimiter, async (req: Request, res: Response) => {
+  const token = extractRequestToken(req) || getRequestToken(req);
+  if (!token) {
+    return res.status(401).json({ error: 'Autenticación requerida para editar comentarios.' });
+  }
+
+  const session = await supabaseAuthService.verifyToken(token);
+  if (!session.valid || !session.user) {
+    return res.status(401).json({ error: 'Sesión inválida o expirada.' });
+  }
+
+  const newContent = req.body?.content;
+  if (!newContent || typeof newContent !== 'string') {
+    return res.status(400).json({ error: 'Contenido del comentario requerido.' });
+  }
+
+  const isModerator = ['superadmin', 'editor', 'admin'].includes(session.user.role || '');
+  const result = await baseballRepo.updateComment(
+    req.params.id,
+    newContent,
+    session.user.id || session.user.uid,
+    isModerator
+  );
+
+  if (!result.success) {
+    const status = result.error?.includes('permisos') ? 403 : 400;
+    return res.status(status).json({ error: result.error });
+  }
+
+  res.json({ success: true, comment: result.comment });
 });
 
 // Delete comment (Administrative moderation only)

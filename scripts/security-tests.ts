@@ -970,6 +970,122 @@ async function runSecurityTests() {
       '58. Moderación de comentarios: Rechazado para usuarios normales (403) y ejecutado correctamente por moderador autorizado'
     );
 
+    // 59. Acceso a perfiles privados: Usuario anónimo no tiene acceso a /api/users/me
+    const resAnonPrivateProfile = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/users/me', method: 'GET' }
+    );
+    assert(
+      resAnonPrivateProfile.status === 401,
+      '59. GET /api/users/me: Usuario anónimo no puede acceder a perfiles privados (401)'
+    );
+
+    // 60. Modificación de roles de terceros: Usuario normal recibe 403 en /api/admin/users/:userId/role
+    const resNormalChangeRole = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: `/api/admin/users/${testNormalUserId}/role`,
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { role: 'superadmin' }
+    );
+    assert(
+      resNormalChangeRole.status === 403,
+      '60. PUT /api/admin/users/:userId/role: Usuario normal no puede modificar roles de usuarios (403 Forbidden)'
+    );
+
+    // 61. Edición de comentarios: Autor legítimo actualiza su propio comentario
+    const resAuthorPostComment = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/news/snb-noticia/comments',
+        method: 'POST',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { authorName: 'Autor Legítimo', content: 'Comentario original del autor que será editado.' }
+    );
+    const authorCommentId = resAuthorPostComment.body?.id;
+    assert(
+      resAuthorPostComment.status === 201 && !!authorCommentId,
+      '61a. POST /api/news/:slug/comments: Autor autenticado crea comentario con autoría vinculada (201)'
+    );
+
+    const resAuthorUpdateComment = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: `/api/news/comments/${authorCommentId}`,
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { content: 'Comentario actualizado legítimamente por su autor con texto válido.' }
+    );
+    assert(
+      resAuthorUpdateComment.status === 200 &&
+        resAuthorUpdateComment.body.success === true &&
+        resAuthorUpdateComment.body.comment?.content?.includes('actualizado legítimamente'),
+      '61b. PUT /api/news/comments/:id: Autor legítimo actualiza exitosamente su propio comentario (200)'
+    );
+
+    // 62. Edición de comentarios: Usuario normal B no puede editar el comentario del usuario A
+    const regUserB = await request(
+      { hostname: 'localhost', port: 3000, path: '/api/auth/register', method: 'POST' },
+      {
+        email: `user_b_${Date.now()}@baseballhub.cu`,
+        password: 'PasswordB123456!',
+        displayName: 'Usuario B Aficionado',
+      }
+    );
+    const userBToken = regUserB.body.token;
+
+    const resUserBEditOtherComment = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: `/api/news/comments/${authorCommentId}`,
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${userBToken}` },
+      },
+      { content: 'Intento malicioso de modificar el comentario de otra persona.' }
+    );
+    assert(
+      resUserBEditOtherComment.status === 403,
+      '62. PUT /api/news/comments/:id: Usuario normal no puede modificar comentarios de otros autores (403 Forbidden)'
+    );
+
+    // 63. Escritura de estadísticas: Usuario anónimo no puede ingresar estadísticas de bateo
+    const resAnonStatsBatting = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/players/p-01/stats/batting',
+        method: 'POST',
+      },
+      { hr: 40, avg: 0.400 }
+    );
+    assert(
+      resAnonStatsBatting.status === 401,
+      '63. POST /api/players/:id/stats/batting: Usuario anónimo no puede escribir estadísticas (401)'
+    );
+
+    // 64. Escritura de estadísticas: Usuario normal autenticado sin rol administrativo recibe 403
+    const resNormalStatsBatting = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/players/p-01/stats/batting',
+        method: 'POST',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { hr: 50, avg: 0.500 }
+    );
+    assert(
+      resNormalStatsBatting.status === 403,
+      '64. POST /api/players/:id/stats/batting: Usuario normal sin rol administrativo recibe 403 Forbidden'
+    );
+
     // Summary
     console.log('\n🔒 ==========================================');
     console.log(`🔒 RESULTADOS: ${passed} PASADAS, ${failed} FALLADAS`);

@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "initialized": true,
-  "lastUpdated": "2026-10-12T09:02:14.508Z",
+  "lastUpdated": "2026-10-13T09:22:52.525Z",
   "competitions": [
     {
       "id": "snb",
@@ -95,5 +95,58 @@
   "standings": [],
   "news": [],
   "videos": [],
-  "comments": []
+  "comments": [
+    {
+      "id": "comm_1791883372521_smt8",
+      "articleSlug": "snb-noticia",
+      "authorName": "Autor Legítimo",
+      "userId": "usr_e87f5b408c551218",
+      "content": "Comentario actualizado legítimamente por su autor con texto válido.",
+      "createdAt": "2026-10-13T09:22:52.521Z",
+      "likes": 0
+    },
+    {
+      "id": "comm_1791883372407_f5ak",
+      "articleSlug": "noticia-estrella",
+      "authorName": "Aficionado Fiel",
+      "favoriteTeam": "Industriales",
+      "content": "Excelente análisis del juego de anoche.",
+      "createdAt": "2026-10-13T09:22:52.407Z",
+      "likes": 0
+    },
+    {
+      "id": "comm_1791883350943_yevf",
+      "articleSlug": "snb-noticia",
+      "authorName": "&lt;script&gt;alert(&quot;hack&quot;)&lt;&#x2F;script&gt;Fan",
+      "content": "Buen partido &lt;img src=x onerror=alert(1)&gt;",
+      "createdAt": "2026-10-13T09:22:30.943Z",
+      "likes": 0
+    },
+    {
+      "id": "comm_1791883264902_zwkf",
+      "articleSlug": "snb-noticia",
+      "authorName": "Autor Legítimo",
+      "userId": "usr_4a6179988c997920",
+      "content": "Comentario actualizado legítimamente por su autor con texto válido.",
+      "createdAt": "2026-10-13T09:21:04.902Z",
+      "likes": 0
+    },
+    {
+      "id": "comm_1791883264701_qxv2",
+      "articleSlug": "noticia-estrella",
+      "authorName": "Aficionado Fiel",
+      "favoriteTeam": "Industriales",
+      "content": "Excelente análisis del juego de anoche.",
+      "createdAt": "2026-10-13T09:21:04.701Z",
+      "likes": 0
+    },
+    {
+      "id": "comm_1791883243128_a53p",
+      "articleSlug": "snb-noticia",
+      "authorName": "&lt;script&gt;alert(&quot;hack&quot;)&lt;&#x2F;script&gt;Fan",
+      "content": "Buen partido &lt;img src=x onerror=alert(1)&gt;",
+      "createdAt": "2026-10-13T09:20:43.128Z",
+      "likes": 0
+    }
+  ]
 }
