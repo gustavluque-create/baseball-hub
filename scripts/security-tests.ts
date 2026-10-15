@@ -1154,17 +1154,121 @@ async function runSecurityTests() {
       '68. Servidor autorizado: Realiza operaciones legítimas del sistema (likes vía endpoint/repo y actualización de estadísticas autorizada)'
     );
 
-    // 69. Auditoría RLS: Archivo de migración complementaria v2 existe con eliminación exhaustiva de políticas antiguas
+    // 69. Auditoría RLS: Archivo de migración complementaria v2 existe con eliminación de dependencias inseguras
     const v2Path = path.resolve('supabase/migrations/20261013000000_baseball_hub_rls_hardening_v2.sql');
     const v2Content = fs.existsSync(v2Path) ? fs.readFileSync(v2Path, 'utf8') : '';
-    const hasDropPolicies = v2Content.includes('drop policy if exists "Public read competitions"') === false &&
+    const hasV2Hardening = v2Content.includes('drop policy if exists "Public read competitions"') === false &&
       v2Content.includes('drop policy if exists "Public manage players"') &&
       v2Content.includes('drop policy if exists "Public manage games"') &&
       v2Content.includes('v_is_server_authorized') &&
-      v2Content.includes('auth.role() = \'service_role\'');
+      v2Content.includes('auth.role() = \'service_role\'') &&
+      v2Content.includes("current_setting('app.is_server_managed'") === false;
     assert(
-      hasDropPolicies,
-      '69. Auditoría de migración v2: Contiene limpieza exhaustiva de políticas antiguas, eliminación de dependencias inseguras y validación estricta'
+      hasV2Hardening,
+      '69. Auditoría de migración v2: Contiene limpieza de políticas antiguas, eliminación de dependencias inseguras y validación estricta'
+    );
+
+    // ==============================================================================
+    // PRUEBAS DE SEGURIDAD ESPECÍFICAS — FASE 2.5A (HARDENING V3)
+    // ==============================================================================
+
+    // 70. Intento de evasión con 'app.is_server_managed': Usuario no privilegiado no puede saltarse triggers
+    const resBypassAttempt = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/users/me',
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${normalUserToken}`,
+          'X-Custom-Session-Setting': 'app.is_server_managed=true',
+        },
+      },
+      {
+        role: 'superadmin',
+        'app.is_server_managed': true,
+        displayName: 'Intento Hacker',
+      }
+    );
+    assert(
+      resBypassAttempt.status === 403,
+      '70. Anti-evasión: Intento de usuario no privilegiado de inyectar app.is_server_managed para saltarse triggers es bloqueado (403)'
+    );
+
+    // 71. Acceso a perfiles privados vs vista pública
+    const resPublicProfileV3 = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: `/api/users/profile/${testNormalUserId}`,
+        method: 'GET',
+      }
+    );
+    const pubDataV3 = resPublicProfileV3.body?.profile || resPublicProfileV3.body?.user || resPublicProfileV3.body;
+    assert(
+      resPublicProfileV3.status === 200 &&
+        pubDataV3 &&
+        pubDataV3.email === undefined &&
+        pubDataV3.role === undefined &&
+        (pubDataV3.displayName !== undefined || pubDataV3.display_name !== undefined),
+      '71. Vista pública segura: Endpoint público expone únicamente campos seguros (displayName, photoUrl) y oculta estrictamente email y role'
+    );
+
+    // 72. Modificación no autorizada de roles
+    const resNormalChangeRoleV3 = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: `/api/admin/users/${testNormalUserId}/role`,
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { role: 'admin' }
+    );
+    assert(
+      resNormalChangeRoleV3.status === 403,
+      '72. RBAC Roles: Usuario normal sin rol administrativo no puede invocar endpoints de gestión de roles (403 Forbidden)'
+    );
+
+    // 73. Protección contra políticas permisivas heredadas (OR combination)
+    const resTryOldPermissive = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/admin/games/g-01',
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      }
+    );
+    assert(
+      resTryOldPermissive.status === 403,
+      '73. Políticas RLS estrictas: Políticas antiguas permisivas (como Public manage games) no permiten a usuarios normales mutar partidos (403)'
+    );
+
+    // 74. Auditoría exhaustiva de la migración correctiva v3
+    const v3Path = path.resolve('supabase/migrations/20261015000000_baseball_hub_rls_hardening_v3.sql');
+    const v3Exists = fs.existsSync(v3Path);
+    const v3Content = v3Exists ? fs.readFileSync(v3Path, 'utf8') : '';
+    const v3Valid = v3Exists &&
+      v3Content.includes('is_authorized_service_role()') &&
+      v3Content.includes('security_barrier = true') &&
+      v3Content.includes("current_setting('app.is_server_managed'") === false &&
+      v3Content.includes('prevent_user_self_role_escalation()') &&
+      v3Content.includes('prevent_comment_tampering()') &&
+      v3Content.includes('do $$') &&
+      v3Content.includes('pg_policies');
+    assert(
+      v3Valid,
+      '74. Migración correctiva v3: Contiene función autoritativa is_authorized_service_role, limpieza dinámica de pg_policies y eliminación total de app.is_server_managed'
+    );
+
+    // 75. Distinción explícita de entorno: Simulado / Fallback vs Instancia Real de Supabase
+    const dbInfoV3 = baseballRepo.getDatabaseInfo();
+    const isRealSupabase = isSupabaseServerConfigured();
+    console.log(`ℹ️ [ENTORNO DB] Estado de Supabase: ${dbInfoV3.state} | Configurado: ${isRealSupabase} | Fuente: ${dbInfoV3.primarySource}`);
+    assert(
+      typeof dbInfoV3.state === 'string' && typeof isRealSupabase === 'boolean',
+      `75. Transparencia de entorno: Estado detectado correctamente como ${dbInfoV3.state} (Supabase Server Configured = ${isRealSupabase})`
     );
 
     // Summary

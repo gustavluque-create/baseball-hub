@@ -5,9 +5,8 @@
 -- Resumen de correcciones aplicadas en esta migración complementaria:
 -- 1. Trigger de usuarios (prevent_user_self_role_escalation):
 --    - Elimina la dependencia insegura de "current_user = 'service_role'".
---    - Emplea un mecanismo robusto y seguro de detección de contexto de ejecución:
---      Verifica (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role' 
---      OR nullif(current_setting('app.is_server_managed', true), '') = 'true').
+--      Verifica exclusivamente credenciales autorizadas (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role'
+--      OR session_user in ('service_role', 'supabase_admin')), descartando variables de sesión.
 --    - Si no es contexto de servidor autorizado ni 'superadmin' verificado por get_auth_user_role(),
 --      bloquea categóricamente la modificación de 'role', 'id', 'uid' y 'email'.
 --
@@ -98,18 +97,17 @@ declare
   v_auth_role text;
   v_current_user_role text;
 begin
-  -- 1. Detección segura de contexto de servidor de backend (service_role)
+  -- 1. Detección estricta y segura de contexto de servidor backend (service_role)
   -- En Supabase PostgREST, el JWT de service_role expone el rol de autenticación
-  -- mediante auth.role() o en el claim 'role' del JWT.
-  -- También se comprueba la configuración de sesión app.is_server_managed para llamadas RPC internas seguras.
+  -- mediante auth.role() o en el claim 'role' del JWT verificado criptográficamente.
+  -- Se descartan categóricamente variables de sesión arbitrarias (como app.is_server_managed).
   begin
     v_auth_role := coalesce(auth.role(), nullif(current_setting('request.jwt.claims', true)::jsonb->>'role', ''));
   exception when others then
     v_auth_role := null;
   end;
 
-  if v_auth_role = 'service_role' 
-     or nullif(current_setting('app.is_server_managed', true), '') = 'true' then
+  if v_auth_role = 'service_role' or session_user in ('service_role', 'supabase_admin') then
     v_is_server_authorized := true;
   end if;
 
@@ -234,8 +232,7 @@ begin
     v_auth_role := null;
   end;
 
-  if v_auth_role = 'service_role' 
-     or nullif(current_setting('app.is_server_managed', true), '') = 'true' then
+  if v_auth_role = 'service_role' or session_user in ('service_role', 'supabase_admin') then
     v_is_server_authorized := true;
   end if;
 
