@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "initialized": true,
-  "lastUpdated": "2026-10-13T15:02:43.245Z",
+  "lastUpdated": "2026-10-14T21:17:00.153Z",
   "competitions": [
     {
       "id": "snb",
@@ -90,63 +90,50 @@
   ],
   "players": [],
   "games": [],
-  "battingStats": [],
+  "battingStats": [
+    {
+      "id": "bs_p-01_2026_regular",
+      "playerId": "p-01",
+      "playerName": "Jugador",
+      "teamId": "",
+      "teamShort": "MTZ",
+      "position": "OF",
+      "seasonYear": 2026,
+      "seasonId": "snb-65",
+      "stage": "regular",
+      "games": 15,
+      "pa": 45,
+      "ab": 45,
+      "r": 0,
+      "h": 15,
+      "doubles": 0,
+      "triples": 0,
+      "hr": 3,
+      "rbi": 0,
+      "bb": 0,
+      "so": 0,
+      "sb": 0,
+      "cs": 0,
+      "avg": 0.333,
+      "obp": 0.333,
+      "slg": 0.533,
+      "ops": 0.866,
+      "war": 0
+    }
+  ],
   "pitchingStats": [],
   "standings": [],
   "news": [],
   "videos": [],
   "comments": [
     {
-      "id": "comm_1791903763242_6is3",
+      "id": "comm_1792012620151_f4jz",
       "articleSlug": "snb-noticia",
       "authorName": "Autor Legítimo",
-      "userId": "usr_2166d7c991406b97",
-      "content": "Comentario actualizado legítimamente por su autor con texto válido.",
-      "createdAt": "2026-10-13T15:02:43.242Z",
-      "likes": 0
-    },
-    {
-      "id": "comm_1791903763163_mv00",
-      "articleSlug": "noticia-estrella",
-      "authorName": "Aficionado Fiel",
-      "favoriteTeam": "Industriales",
-      "content": "Excelente análisis del juego de anoche.",
-      "createdAt": "2026-10-13T15:02:43.163Z",
-      "likes": 0
-    },
-    {
-      "id": "comm_1791903741709_mtlt",
-      "articleSlug": "snb-noticia",
-      "authorName": "&lt;script&gt;alert(&quot;hack&quot;)&lt;&#x2F;script&gt;Fan",
-      "content": "Buen partido &lt;img src=x onerror=alert(1)&gt;",
-      "createdAt": "2026-10-13T15:02:21.709Z",
-      "likes": 0
-    },
-    {
-      "id": "comm_1791903733315_u22e",
-      "articleSlug": "snb-noticia",
-      "authorName": "Autor Legítimo",
-      "userId": "usr_ce8b6204a534f423",
-      "content": "Comentario actualizado legítimamente por su autor con texto válido.",
-      "createdAt": "2026-10-13T15:02:13.315Z",
-      "likes": 0
-    },
-    {
-      "id": "comm_1791903733147_5qz5",
-      "articleSlug": "noticia-estrella",
-      "authorName": "Aficionado Fiel",
-      "favoriteTeam": "Industriales",
-      "content": "Excelente análisis del juego de anoche.",
-      "createdAt": "2026-10-13T15:02:13.147Z",
-      "likes": 0
-    },
-    {
-      "id": "comm_1791903710536_vhys",
-      "articleSlug": "snb-noticia",
-      "authorName": "&lt;script&gt;alert(&quot;hack&quot;)&lt;&#x2F;script&gt;Fan",
-      "content": "Buen partido &lt;img src=x onerror=alert(1)&gt;",
-      "createdAt": "2026-10-13T15:01:50.536Z",
-      "likes": 0
+      "userId": "usr_080f225ff180f3c6",
+      "content": "Contenido moderado con texto adecuado y respetuoso.",
+      "createdAt": "2026-10-14T21:17:00.151Z",
+      "likes": 1
     }
   ]
 }

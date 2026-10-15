@@ -1086,6 +1086,87 @@ async function runSecurityTests() {
       '64. POST /api/players/:id/stats/batting: Usuario normal sin rol administrativo recibe 403 Forbidden'
     );
 
+    // 65. Verificación de trigger anti-escalación: Usuario normal no puede elevar sus privilegios
+    const resNormalAttemptAdmin = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/users/me',
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${normalUserToken}` },
+      },
+      { role: 'admin', email: 'hacker@baseballhub.cu' }
+    );
+    assert(
+      resNormalAttemptAdmin.status === 403 &&
+        resNormalAttemptAdmin.body?.error?.includes('privilegios para modificar su propio rol'),
+      '65. Anti-escalación: Usuario normal no puede elevar privilegios ni cambiar su rol a admin (403)'
+    );
+
+    // 66. Gestión de roles autorizada: Un administrador autorizado (superadmin) puede gestionar roles mediante el flujo previsto
+    const resSuperadminPromoteUser = await supabaseAuthService.updateUserRole(
+      superadminToken,
+      testNormalUserId,
+      'prensa'
+    );
+    assert(
+      resSuperadminPromoteUser.success === true && resSuperadminPromoteUser.newRole === 'prensa',
+      '66. Gestión de roles autorizada: Superadmin autorizado promueve a usuario mediante flujo previsto (updateUserRole)'
+    );
+
+    // 67. Anti-tampering de comentarios: Moderador no puede transferir la propiedad de un comentario
+    const commentForTamperCheck = await baseballRepo.addComment('snb-noticia', {
+      authorName: 'Autor Legítimo',
+      content: 'Comentario original del autor que será moderado.',
+      userId: testNormalUserId,
+    });
+
+    const testModeratorEditAttempt = await baseballRepo.updateComment(
+      commentForTamperCheck.id,
+      'Contenido moderado con texto adecuado y respetuoso.',
+      'moderator_different_user_id',
+      true // isModerator
+    );
+    const updatedCommentAfterMod = baseballRepo.getCommentsByArticle('snb-noticia').find((c: any) => c.id === commentForTamperCheck.id);
+    assert(
+      testModeratorEditAttempt.success === true &&
+        updatedCommentAfterMod?.userId === testNormalUserId &&
+        updatedCommentAfterMod?.articleSlug === 'snb-noticia' &&
+        updatedCommentAfterMod?.id === commentForTamperCheck.id,
+      '67. Moderación anti-tampering: Moderador edita contenido pero autoría (userId), artículo y ID permanecen estrictamente inmutables'
+    );
+
+    // 68. Operaciones del servidor: El servidor puede realizar operaciones legítimas autorizadas (sync, stats, comentarios, likes)
+    const serverLikeRes = await baseballRepo.likeComment(commentForTamperCheck.id);
+    const serverStatRes = await baseballRepo.addOrUpdatePlayerSeasonBatting('p-01', {
+      seasonId: 'snb-65',
+      seasonYear: 2026,
+      teamShort: 'MTZ',
+      stage: 'regular',
+      games: 15,
+      ab: 45,
+      h: 15,
+      hr: 3,
+      avg: 0.333,
+    });
+    assert(
+      serverLikeRes.success === true && !!serverStatRes && Number(serverStatRes.avg) === 0.333,
+      '68. Servidor autorizado: Realiza operaciones legítimas del sistema (likes vía endpoint/repo y actualización de estadísticas autorizada)'
+    );
+
+    // 69. Auditoría RLS: Archivo de migración complementaria v2 existe con eliminación exhaustiva de políticas antiguas
+    const v2Path = path.resolve('supabase/migrations/20261013000000_baseball_hub_rls_hardening_v2.sql');
+    const v2Content = fs.existsSync(v2Path) ? fs.readFileSync(v2Path, 'utf8') : '';
+    const hasDropPolicies = v2Content.includes('drop policy if exists "Public read competitions"') === false &&
+      v2Content.includes('drop policy if exists "Public manage players"') &&
+      v2Content.includes('drop policy if exists "Public manage games"') &&
+      v2Content.includes('v_is_server_authorized') &&
+      v2Content.includes('auth.role() = \'service_role\'');
+    assert(
+      hasDropPolicies,
+      '69. Auditoría de migración v2: Contiene limpieza exhaustiva de políticas antiguas, eliminación de dependencias inseguras y validación estricta'
+    );
+
     // Summary
     console.log('\n🔒 ==========================================');
     console.log(`🔒 RESULTADOS: ${passed} PASADAS, ${failed} FALLADAS`);
