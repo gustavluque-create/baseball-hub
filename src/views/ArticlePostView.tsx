@@ -24,7 +24,7 @@ import {
 import { NewsArticle } from '../types/index.ts';
 import { ApiClient } from '../services/api.ts';
 import { useApp } from '../context/AppContext.tsx';
-import { useFirebaseAuth } from '../context/FirebaseAuthContext.tsx';
+import { useUserAuth } from '../context/UserAuthContext.tsx';
 import { useAdminAuth } from '../context/AdminAuthContext.tsx';
 import { getArticleFullUrl } from '../utils/slug.ts';
 import { ArticleModalSkeleton } from '../components/LoadingSkeleton.tsx';
@@ -37,7 +37,7 @@ interface ArticlePostViewProps {
 
 export const ArticlePostView: React.FC<ArticlePostViewProps> = ({ slug, onBack }) => {
   const { setActiveTab, navigateToNews, navigateToTeam, navigateToPlayer } = useApp();
-  const { user } = useFirebaseAuth();
+  const { user } = useUserAuth();
   const { isAdminAuthenticated } = useAdminAuth();
   const isLoggedIn = Boolean(user || isAdminAuthenticated);
 

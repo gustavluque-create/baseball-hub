@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useFirebaseAuth } from '../context/FirebaseAuthContext.tsx';
+import { useUserAuth } from '../context/UserAuthContext.tsx';
 import { LogIn, LogOut, User } from 'lucide-react';
 
 export const GoogleUserAuthButton: React.FC = () => {
-  const { user, loading, signInWithGoogle, signOutUser } = useFirebaseAuth();
+  const { user, loading, signInWithGoogle, signOutUser } = useUserAuth();
   const [isOpen, setIsOpen] = useState(false);
 
   if (loading) {

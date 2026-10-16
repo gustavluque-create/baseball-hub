@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext.tsx';
 import { ScoreNotificationProvider } from './context/ScoreNotificationContext.tsx';
 import { AdminAuthProvider } from './context/AdminAuthContext.tsx';
-import { FirebaseAuthProvider } from './context/FirebaseAuthContext.tsx';
+import { UserAuthProvider } from './context/UserAuthContext.tsx';
 import { MainLayout } from './layouts/MainLayout.tsx';
 import { HomeView } from './views/HomeView.tsx';
 import { GamesView } from './views/GamesView.tsx';
@@ -353,9 +353,9 @@ export default function App() {
     <AppProvider>
       <ScoreNotificationProvider>
         <AdminAuthProvider>
-          <FirebaseAuthProvider>
+          <UserAuthProvider>
             <AppContent />
-          </FirebaseAuthProvider>
+          </UserAuthProvider>
         </AdminAuthProvider>
       </ScoreNotificationProvider>
     </AppProvider>
