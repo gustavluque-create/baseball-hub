@@ -13,8 +13,8 @@ import {
 import { isValidImageString, playerPhotoSchema } from '../server/utils/validation.ts';
 import { baseballRepo, BaseballRepository } from '../server/repositories/baseball.repository.ts';
 import { supabaseAuthService } from '../server/services/supabase-auth.service.ts';
-import { requireAuth } from '../src/middleware/auth.ts';
-import { adminAuth } from '../src/lib/firebase-admin.ts';
+import { requireAuth } from '../server/middleware/auth.ts';
+import { adminAuth } from '../server/lib/firebase-admin.ts';
 
 function request(options: http.RequestOptions, body?: any): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
   return new Promise((resolve, reject) => {

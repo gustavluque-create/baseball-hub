@@ -5,6 +5,12 @@ coverage/
 .DS_Store
 *.log
 
+# Compressed backup archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
 # Sensitive administrative security and sessions
 server/data/admin-security.json
 server/data/admin-security.json.tmp

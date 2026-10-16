@@ -1,5 +1,5 @@
 export const INDUSTRIALES_DEFAULT_PHOTO = '/images/industriales-player-default.svg';
-export const INDUSTRIALES_DEFAULT_PHOTO_PNG = '/player-industriales.png';
+export const INDUSTRIALES_DEFAULT_PHOTO_PNG = '/images/player-industriales.png';
 export const GENERIC_DEFAULT_PHOTO = 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=256';
 
 export interface PlayerPhotoMeta {

@@ -8,7 +8,7 @@ import {
   isSupabaseServerConfigured,
   isSupabaseAuthConfigured,
 } from '../lib/supabase.ts';
-import { adminAuth } from '../../src/lib/firebase-admin.ts';
+import { adminAuth } from '../lib/firebase-admin.ts';
 import { adminAuthService } from './admin-auth.service.ts';
 import { AdminUser } from '../../src/types/index.ts';
 

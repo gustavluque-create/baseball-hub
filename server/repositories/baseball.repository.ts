@@ -22,7 +22,7 @@ import {
   GameLineups,
 } from '../../src/types/index.ts';
 import { generateSeoSlug } from '../../src/utils/slug.ts';
-import { cloudSqlSync } from '../../src/db/cloudsql-sync.ts';
+import { cloudSqlSync } from '../db/cloudsql-sync.ts';
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '../lib/supabase.ts';
 
 const KNOWN_SLUG_MAP: Record<string, string> = {

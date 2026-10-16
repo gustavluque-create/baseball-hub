@@ -4,8 +4,8 @@ import { IngestionService } from '../services/ingestion.service.ts';
 import { notificationService } from '../services/notification.service.ts';
 import { adminAuthService } from '../services/admin-auth.service.ts';
 import { fcmServer } from '../services/fcm.service.ts';
-import { requireAuth, AuthRequest, extractRequestToken } from '../../src/middleware/auth.ts';
-import { getOrCreateUser, getUserByUid, getPublicUserProfileByUid } from '../../src/db/users.ts';
+import { requireAuth, AuthRequest, extractRequestToken } from '../middleware/auth.ts';
+import { getOrCreateUser, getUserByUid, getPublicUserProfileByUid } from '../db/users.ts';
 import { supabaseAuthService, AppUserRole } from '../services/supabase-auth.service.ts';
 import { isSupabaseServerConfigured } from '../lib/supabase.ts';
 import {

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { adminAuth } from '../lib/firebase-admin.ts';
 import { DecodedIdToken } from 'firebase-admin/auth';
-import { supabaseAuthService, AppUserRole } from '../../server/services/supabase-auth.service.ts';
+import { supabaseAuthService, AppUserRole } from '../services/supabase-auth.service.ts';
 
 export interface AuthRequest extends Request {
   user?: DecodedIdToken | any;

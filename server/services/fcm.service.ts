@@ -1,4 +1,4 @@
-import { adminMessaging } from '../../src/lib/firebase-admin.ts';
+import { adminMessaging } from '../lib/firebase-admin.ts';
 import { ScoreNotificationEvent } from '../../src/types/index.ts';
 
 export interface FcmSubscriber {
