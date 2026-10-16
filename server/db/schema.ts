@@ -1,0 +1,148 @@
+import { boolean, integer, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  uid: text('uid').notNull().unique(),
+  email: text('email').notNull(),
+  displayName: text('display_name'),
+  photoUrl: text('photo_url'),
+  role: text('role').default('user'),
+  preferences: text('preferences'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const teams = pgTable('teams', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  nickname: text('nickname').notNull(),
+  shortName: text('short_name').notNull(),
+  city: text('city').notNull(),
+  stadium: text('stadium').notNull(),
+  capacity: integer('capacity').notNull(),
+  manager: text('manager').notNull(),
+  foundedYear: integer('founded_year').notNull(),
+  championships: integer('championships').notNull(),
+  primaryColor: text('primary_color').notNull(),
+  secondaryColor: text('secondary_color').notNull(),
+  textColor: text('text_color').notNull(),
+  logo: text('logo').notNull(),
+  competitionId: text('competition_id'),
+  seasonId: text('season_id'),
+  wins: integer('wins').default(0),
+  losses: integer('losses').default(0),
+  pct: text('pct').default('0'),
+  streak: text('streak').default('E0'),
+  lastTen: text('last_ten').default('0-0'),
+  position: integer('position').default(1),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const players = pgTable('players', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull(),
+  fullName: text('full_name').notNull(),
+  shortName: text('short_name'),
+  number: integer('number').notNull(),
+  position: text('position').notNull(),
+  teamId: text('team_id').notNull(),
+  teamShort: text('team_short').notNull(),
+  bats: text('bats').notNull(),
+  throws: text('throws').notNull(),
+  age: integer('age').notNull(),
+  birthDate: text('birth_date').notNull(),
+  photo: text('photo').notNull(),
+  isFavorite: boolean('is_favorite').default(false),
+  isHallOfFame: boolean('is_hall_of_fame').default(false),
+  isAllStar: boolean('is_all_star').default(false),
+  war: text('war').default('0.0'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const teamLogos = pgTable('team_logos', {
+  teamId: text('team_id').primaryKey(),
+  logo: text('logo').notNull(),
+  primaryColor: text('primary_color'),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const appSettings = pgTable('app_settings', {
+  id: serial('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const games = pgTable('games', {
+  id: text('id').primaryKey(),
+  competitionId: text('competition_id').notNull(),
+  seasonId: text('season_id').notNull(),
+  date: text('date').notNull(),
+  time: text('time').notNull(),
+  stadium: text('stadium').notNull(),
+  status: text('status').notNull(),
+  homeTeamId: text('home_team_id').notNull(),
+  awayTeamId: text('away_team_id').notNull(),
+  homeScore: integer('home_score').default(0).notNull(),
+  awayScore: integer('away_score').default(0).notNull(),
+  homeHits: integer('home_hits').default(0).notNull(),
+  awayHits: integer('away_hits').default(0).notNull(),
+  homeErrors: integer('home_errors').default(0).notNull(),
+  awayErrors: integer('away_errors').default(0).notNull(),
+  currentInning: integer('current_inning').default(1),
+  isTopInning: boolean('is_top_inning').default(true),
+  outs: integer('outs').default(0),
+  balls: integer('balls').default(0),
+  strikes: integer('strikes').default(0),
+  bases: text('bases'),
+  lineups: text('lineups'),
+  lineScore: text('line_score'),
+  winningPitcher: text('winning_pitcher'),
+  losingPitcher: text('losing_pitcher'),
+  savePitcher: text('save_pitcher'),
+  umpires: text('umpires'),
+  plays: text('plays'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const news = pgTable('news', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  title: text('title').notNull(),
+  subtitle: text('subtitle'),
+  excerpt: text('excerpt').notNull(),
+  content: text('content').notNull(),
+  image: text('image').notNull(),
+  author: text('author').notNull(),
+  publishedAt: text('published_at').notNull(),
+  category: text('category').notNull(),
+  tags: text('tags').notNull(),
+  readingTimeMinutes: integer('reading_time_minutes').default(4),
+  isFeatured: boolean('is_featured').default(false),
+  imageHeight: text('image_height').default('tall'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const newsComments = pgTable('news_comments', {
+  id: text('id').primaryKey(),
+  articleSlug: text('article_slug').notNull(),
+  authorName: text('author_name').notNull(),
+  favoriteTeam: text('favorite_team'),
+  content: text('content').notNull(),
+  likes: integer('likes').default(0),
+  createdAt: text('created_at').notNull(),
+});
+
+export const auditLogs = pgTable('audit_logs', {
+  id: text('id').primaryKey(),
+  username: text('username').notNull(),
+  action: text('action').notNull(),
+  details: text('details').notNull(),
+  category: text('category').default('general'),
+  timestamp: text('timestamp').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});

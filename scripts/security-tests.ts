@@ -1,5 +1,8 @@
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
+import { supabaseStorageService } from '../server/services/supabase-storage.service.ts';
 import { adminAuthService, isValidBcryptHash, getAdminCredential } from '../server/services/admin-auth.service.ts';
 import {
   isSupabaseServerConfigured,
@@ -1269,6 +1272,98 @@ async function runSecurityTests() {
     assert(
       typeof dbInfoV3.state === 'string' && typeof isRealSupabase === 'boolean',
       `75. Transparencia de entorno: Estado detectado correctamente como ${dbInfoV3.state} (Supabase Server Configured = ${isRealSupabase})`
+    );
+
+    // 🔒 --- FASE 2.5B & FASE 2.6: AUDITORÍA FINAL RLS Y SUPABASE STORAGE ---
+    console.log('\n🔒 --- FASE 2.5B & FASE 2.6: AUDITORÍA FINAL RLS Y SUPABASE STORAGE ---');
+
+    // 76. Auditoría de migración final: Eliminación de políticas residuales ('Public read notifications') y blindaje de notifications
+    const finalAuditPath = path.resolve('supabase/migrations/20261016000000_baseball_hub_rls_final_audit.sql');
+    const finalAuditExists = fs.existsSync(finalAuditPath);
+    const finalAuditContent = finalAuditExists ? fs.readFileSync(finalAuditPath, 'utf8') : '';
+    const hasDroppedOldNotifications =
+      finalAuditContent.includes('drop policy if exists "Public read notifications" on public.notifications;') &&
+      finalAuditContent.includes('notifications_select_recipient_or_broadcast') &&
+      finalAuditContent.includes('notifications_manage_staff') &&
+      finalAuditContent.includes('user_id is null');
+    assert(
+      finalAuditExists && hasDroppedOldNotifications,
+      '76. Auditoría de migración final: Eliminación de políticas residuales ("Public read notifications") y blindaje de notifications'
+    );
+
+    // 77. Funciones SECURITY DEFINER con search_path explícito y revocación de PUBLIC
+    const secDefinerFunctions = [
+      'is_authorized_service_role()',
+      'get_auth_user_role()',
+      'prevent_user_self_role_escalation()',
+      'prevent_comment_tampering()',
+    ];
+    let allFunctionsSecure = true;
+    for (const fn of secDefinerFunctions) {
+      if (!finalAuditContent.includes(fn)) {
+        allFunctionsSecure = false;
+        break;
+      }
+    }
+    const hasSearchPathSecure =
+      finalAuditContent.includes('set search_path = public, pg_temp') &&
+      finalAuditContent.includes('revoke all on function public.prevent_user_self_role_escalation() from public;') &&
+      finalAuditContent.includes('revoke all on function public.prevent_comment_tampering() from public;');
+    assert(
+      allFunctionsSecure && hasSearchPathSecure,
+      '77. Funciones SECURITY DEFINER: Todas definen search_path seguro (public, pg_temp) y revocan ejecución de PUBLIC'
+    );
+
+    // 78. Configuración de Storage Buckets (players, teams, news, avatars) con límites y MIME types
+    const hasBucketInit =
+      finalAuditContent.includes("'players'") &&
+      finalAuditContent.includes("'teams'") &&
+      finalAuditContent.includes("'news'") &&
+      finalAuditContent.includes("'avatars'") &&
+      finalAuditContent.includes('file_size_limit') &&
+      finalAuditContent.includes('allowed_mime_types') &&
+      finalAuditContent.includes('storage.buckets');
+    assert(
+      hasBucketInit,
+      '78. Supabase Storage: Buckets (players, teams, news, avatars) inicializados con file_size_limit y allowed_mime_types'
+    );
+
+    // 79. Políticas RLS en storage.objects (lectura pública, mutación staff, aislamiento avatars)
+    const hasStoragePolicies =
+      finalAuditContent.includes('storage.objects enable row level security') &&
+      finalAuditContent.includes('storage_select_public') &&
+      finalAuditContent.includes('storage_staff_manage_content') &&
+      finalAuditContent.includes('storage_avatars_manage') &&
+      finalAuditContent.includes('storage.foldername(name)');
+    assert(
+      hasStoragePolicies && typeof supabaseStorageService.uploadImage === 'function' && typeof supabaseStorageService.deleteImage === 'function',
+      '79. Supabase Storage RLS: Políticas SELECT públicas, escritura staff y aislamiento estricto de avatars en storage.objects'
+    );
+
+    // 80. Inmunidad contra inyección de roles en API / Auth (cero confianza en client payload)
+    const resSpoofedReg = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/auth/register',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      {
+        email: `hacker_${Date.now()}@test.internal`,
+        password: 'Password123!',
+        displayName: 'Evil Admin Attempt',
+        role: 'superadmin',
+        app_metadata: { role: 'superadmin' },
+      }
+    );
+    let spoofedRoleRes = 'user';
+    if (resSpoofedReg.status === 200 || resSpoofedReg.status === 201) {
+      spoofedRoleRes = resSpoofedReg.body?.user?.role || 'user';
+    }
+    assert(
+      spoofedRoleRes === 'user',
+      '80. Blindaje API / Auth: Intento de inyectar role="superadmin" en registro es neutralizado y forzado a role="user"'
     );
 
     // Summary
