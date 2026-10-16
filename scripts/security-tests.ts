@@ -1366,6 +1366,136 @@ async function runSecurityTests() {
       '80. Blindaje API / Auth: Intento de inyectar role="superadmin" en registro es neutralizado y forzado a role="user"'
     );
 
+    // 81. Idempotencia SQL estricta: Cada CREATE POLICY en la migración final posee su DROP previo
+    const finalAuditPolicies = [
+      'settings_select_public',
+      'settings_manage_superadmin',
+      'notifications_select_recipient_or_broadcast',
+      'notifications_manage_staff',
+      'storage_select_public',
+      'storage_staff_manage_content',
+      'storage_avatars_manage',
+    ];
+    let allPoliciesIdempotent = true;
+    for (const pol of finalAuditPolicies) {
+      const dropStmt = `drop policy if exists "${pol}"`;
+      if (!finalAuditContent.toLowerCase().includes(dropStmt.toLowerCase())) {
+        allPoliciesIdempotent = false;
+        console.error(`Falta DROP POLICY IF EXISTS para "${pol}" en la migración final`);
+        break;
+      }
+    }
+    assert(
+      allPoliciesIdempotent,
+      '81. Idempotencia SQL estricta: Todas las políticas de la migración final tienen su DROP POLICY IF EXISTS correspondiente'
+    );
+
+    // 82. Storage RBAC: Intento de subida anónima sin autenticación es rechazado (401)
+    const resAnonStorage = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      {
+        bucket: 'players',
+        filename: 'hacker.png',
+        fileData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      }
+    );
+    assert(
+      resAnonStorage.status === 401,
+      '82. Storage RBAC: Peticiones anónimas a /api/storage/upload retornan 401 Unauthorized'
+    );
+
+    // 83. Storage RBAC: Intento de usuario normal de subir a bucket institucional es rechazado (403)
+    const resUserStaffBucket = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'players',
+        filename: 'malicious_player.png',
+        fileData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      }
+    );
+    assert(
+      resUserStaffBucket.status === 403,
+      '83. Storage RBAC: Usuario normal sin rol staff no puede escribir en buckets de players, teams o news (403 Forbidden)'
+    );
+
+    // 84. Storage Ownership: Intento de usuario normal de modificar avatar ajeno es rechazado (403)
+    const resUserVictimAvatar = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: 'victim_user_other_123.png',
+        fileData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      }
+    );
+    assert(
+      resUserVictimAvatar.status === 403,
+      '84. Storage Ownership: Usuario normal no puede alterar avatares con prefijo o nombre ajeno a su UID (403 Forbidden)'
+    );
+
+    // 85. Storage Aislamiento: Usuario normal supera la validación de propiedad para su propio avatar
+    const resUserOwnAvatar = await supabaseStorageService.uploadImageSecure(
+      'avatars',
+      `${testNormalUserId}.png`,
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      { uid: testNormalUserId, role: 'user' }
+    );
+    assert(
+      Boolean(resUserOwnAvatar.status === 200 || resUserOwnAvatar.error?.includes('not configured')),
+      '85. Storage Aislamiento: Usuario normal supera la validación de propiedad para su propio avatar'
+    );
+
+    // 86. Storage Staff: Superadmin o editor autorizado para gestionar recursos institucionales
+    const resStaffUpload = await supabaseStorageService.uploadImageSecure(
+      'players',
+      'official_portrait.png',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      { uid: 'admin_1', role: 'superadmin' }
+    );
+    const resUnauthorizedDelete = await supabaseStorageService.deleteImageSecure(
+      'news',
+      'official_news.png',
+      { uid: testNormalUserId, role: 'user' }
+    );
+    assert(
+      Boolean((resStaffUpload.status === 200 || resStaffUpload.error?.includes('not configured')) &&
+        resUnauthorizedDelete.status === 403),
+      '86. Storage Staff: Superadministrador supera la validación RBAC para gestionar imágenes y usuario normal es bloqueado al intentar borrar (403)'
+    );
+
+    // 87. Barrido Dinámico de Políticas Residuales en migración final
+    const hasDynamicSweep =
+      finalAuditContent.includes('do $$') &&
+      finalAuditContent.includes('pg_policies') &&
+      finalAuditContent.includes("execute format('drop policy if exists");
+    assert(
+      hasDynamicSweep,
+      '87. Barrido Dinámico RLS: La migración final audita activamente pg_policies para erradicar políticas permisivas residuales'
+    );
+
     // Summary
     console.log('\n🔒 ==========================================');
     console.log(`🔒 RESULTADOS: ${passed} PASADAS, ${failed} FALLADAS`);

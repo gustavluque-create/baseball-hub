@@ -7,6 +7,7 @@ import { fcmServer } from '../services/fcm.service.ts';
 import { requireAuth, AuthRequest, extractRequestToken } from '../middleware/auth.ts';
 import { getOrCreateUser, getUserByUid, getPublicUserProfileByUid } from '../db/users.ts';
 import { supabaseAuthService, AppUserRole } from '../services/supabase-auth.service.ts';
+import { supabaseStorageService } from '../services/supabase-storage.service.ts';
 import { isSupabaseServerConfigured } from '../lib/supabase.ts';
 import {
   adminLoginLimiter,
@@ -1765,6 +1766,57 @@ apiRouter.get('/notifications/fcm/status', (_req: Request, res: Response) => {
     enabled: true,
     totalDevices: fcmServer.getSubscribersCount(),
   });
+});
+
+// ==========================================
+// Supabase Storage Secure Routes (RBAC & Ownership Protected)
+// ==========================================
+
+apiRouter.post('/storage/upload', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { bucket, filename, fileData, contentType } = req.body || {};
+    if (!bucket || !filename || !fileData) {
+      return res.status(400).json({ error: 'Parámetros requeridos: bucket, filename y fileData.' });
+    }
+
+    const result = await supabaseStorageService.uploadImageSecure(
+      bucket,
+      filename,
+      fileData,
+      req.user,
+      contentType || 'image/png'
+    );
+
+    if (!result.success) {
+      return res.status(result.status || 403).json({ error: result.error });
+    }
+
+    res.json({ success: true, url: result.url });
+  } catch (err: any) {
+    console.error('[Storage API] Upload error:', err);
+    res.status(500).json({ error: 'Error en la subida al almacenamiento.' });
+  }
+});
+
+apiRouter.delete('/storage/delete', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const bucket = req.body?.bucket || (req.query?.bucket as string);
+    const filename = req.body?.filename || (req.query?.filename as string);
+
+    if (!bucket || !filename) {
+      return res.status(400).json({ error: 'Parámetros requeridos: bucket y filename.' });
+    }
+
+    const result = await supabaseStorageService.deleteImageSecure(bucket, filename, req.user);
+    if (!result.success) {
+      return res.status(result.status || 403).json({ error: result.error });
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[Storage API] Delete error:', err);
+    res.status(500).json({ error: 'Error al eliminar del almacenamiento.' });
+  }
 });
 
 

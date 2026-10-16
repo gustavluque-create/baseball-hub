@@ -2,6 +2,11 @@ import { getSupabaseServerClient } from '../lib/supabase.ts';
 
 export type StorageBucket = 'players' | 'teams' | 'news' | 'avatars';
 
+export interface StorageUser {
+  uid: string;
+  role?: string;
+}
+
 export class SupabaseStorageService {
   private static instance: SupabaseStorageService;
 
@@ -10,6 +15,117 @@ export class SupabaseStorageService {
       SupabaseStorageService.instance = new SupabaseStorageService();
     }
     return SupabaseStorageService.instance;
+  }
+
+  /**
+   * Valida estrictamente si un usuario posee autorización para operar sobre un bucket y archivo específico
+   */
+  public validateStorageAccess(
+    bucket: StorageBucket,
+    filename: string,
+    user?: StorageUser | null,
+    operation: 'upload' | 'delete' = 'upload'
+  ): { allowed: boolean; error?: string; status: number } {
+    if (!user || !user.uid) {
+      return { allowed: false, error: 'Autenticación requerida para acceder al almacenamiento.', status: 401 };
+    }
+
+    const cleanFilename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+    const userRole = (user.role || 'user').toLowerCase();
+
+    // 1. Buckets institucionales (players, teams, news)
+    if (['players', 'teams', 'news'].includes(bucket)) {
+      const allowedRoles = ['superadmin', 'admin', 'editor'];
+      if (bucket === 'players' || bucket === 'teams') {
+        allowedRoles.push('official_scorer');
+      }
+
+      if (!allowedRoles.includes(userRole)) {
+        return {
+          allowed: false,
+          error: `Operación denegada: se requieren permisos administrativos (${allowedRoles.join(', ')}) para modificar el bucket '${bucket}'.`,
+          status: 403,
+        };
+      }
+
+      return { allowed: true, status: 200 };
+    }
+
+    // 2. Bucket de avatares (avatars)
+    if (bucket === 'avatars') {
+      // Superadministradores y administradores pueden gestionar cualquier avatar
+      if (['superadmin', 'admin'].includes(userRole)) {
+        return { allowed: true, status: 200 };
+      }
+
+      // Usuarios normales solo pueden subir/borrar archivos asociados estrictamente a su propio UID
+      const uidPrefix = user.uid.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      const isOwnedByUser =
+        cleanFilename === uidPrefix ||
+        cleanFilename === `${uidPrefix}.png` ||
+        cleanFilename === `${uidPrefix}.jpg` ||
+        cleanFilename === `${uidPrefix}.jpeg` ||
+        cleanFilename === `${uidPrefix}.webp` ||
+        cleanFilename.startsWith(`${uidPrefix}_`) ||
+        cleanFilename.startsWith(`${uidPrefix}/`);
+
+      if (!isOwnedByUser) {
+        return {
+          allowed: false,
+          error: 'Operación denegada: únicamente puede gestionar archivos dentro de su propia carpeta o prefijo de avatar.',
+          status: 403,
+        };
+      }
+
+      return { allowed: true, status: 200 };
+    }
+
+    return { allowed: false, error: 'Bucket no reconocido.', status: 400 };
+  }
+
+  /**
+   * Carga segura validando credenciales y permisos del usuario antes de utilizar el cliente administrativo
+   */
+  async uploadImageSecure(
+    bucket: StorageBucket,
+    filename: string,
+    fileData: Buffer | string,
+    user?: StorageUser | null,
+    contentType: string = 'image/png'
+  ): Promise<{ success: boolean; url?: string; error?: string; status: number }> {
+    const authCheck = this.validateStorageAccess(bucket, filename, user, 'upload');
+    if (!authCheck.allowed) {
+      return { success: false, error: authCheck.error, status: authCheck.status };
+    }
+
+    const uploadRes = await this.uploadImage(bucket, filename, fileData, contentType);
+    return {
+      success: uploadRes.success,
+      url: uploadRes.url,
+      error: uploadRes.error,
+      status: uploadRes.success ? 200 : 500,
+    };
+  }
+
+  /**
+   * Eliminación segura validando credenciales y permisos del usuario antes de utilizar el cliente administrativo
+   */
+  async deleteImageSecure(
+    bucket: StorageBucket,
+    filename: string,
+    user?: StorageUser | null
+  ): Promise<{ success: boolean; error?: string; status: number }> {
+    const authCheck = this.validateStorageAccess(bucket, filename, user, 'delete');
+    if (!authCheck.allowed) {
+      return { success: false, error: authCheck.error, status: authCheck.status };
+    }
+
+    const deleted = await this.deleteImage(bucket, filename);
+    return {
+      success: deleted,
+      error: deleted ? undefined : 'Error al eliminar el archivo de Supabase Storage.',
+      status: deleted ? 200 : 500,
+    };
   }
 
   /**

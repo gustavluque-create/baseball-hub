@@ -240,14 +240,79 @@ with check (
 -- 3. AUDITORÍA Y BLINDAJE DE APP_SETTINGS Y AUDIT_LOGS
 -- ==============================================================================
 
--- Limpieza de políticas en app_settings
+-- Bloque dinámico de barrido exhaustivo: audita y elimina cualquier política permisiva residual heredada
+do $$
+declare
+  r record;
+begin
+  for r in (
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and (
+        policyname ilike '%manage%'
+        or policyname ilike '%Public create%'
+        or policyname ilike '%Public insert%'
+        or policyname ilike '%Public update%'
+        or policyname ilike '%Public delete%'
+        or policyname ilike '%Public read notifications%'
+        or policyname in (
+          'Users read own profile',
+          'Users update own profile',
+          'Users read own profile strict',
+          'Users update own profile safe',
+          'Anyone read news_comments',
+          'Public read news_comments',
+          'Public create comments',
+          'Author or moderator update comment',
+          'Moderators delete comments',
+          'Authenticated users create comments',
+          'Public read notifications',
+          'Public manage notifications',
+          'Public manage settings'
+        )
+      )
+      and policyname not in (
+        'users_select_own_strict',
+        'users_update_own_safe',
+        'news_comments_select_public',
+        'news_comments_insert_auth',
+        'news_comments_update_author',
+        'news_comments_delete_moderator',
+        'games_insert_staff',
+        'games_update_staff',
+        'games_delete_staff',
+        'lineups_manage_staff',
+        'events_manage_staff',
+        'players_manage_staff',
+        'player_photos_manage_staff',
+        'batting_manage_staff',
+        'pitching_manage_staff',
+        'career_stats_manage_staff',
+        'standings_manage_staff',
+        'competitions_manage_staff',
+        'seasons_manage_staff',
+        'teams_manage_staff',
+        'team_logos_manage_staff',
+        'news_manage_staff',
+        'settings_manage_superadmin',
+        'settings_select_public',
+        'audit_logs_read_superadmin',
+        'notifications_manage_staff',
+        'notifications_select_recipient_or_broadcast'
+      )
+  ) loop
+    execute format('drop policy if exists %I on %I.%I;', r.policyname, r.schemaname, r.tablename);
+  end loop;
+end $$;
+
+-- Limpieza explícita e idempotente de políticas en app_settings
 drop policy if exists "Public manage settings" on public.app_settings;
 drop policy if exists "Superadmin manage settings" on public.app_settings;
 drop policy if exists "settings_manage_superadmin" on public.app_settings;
-
--- Solo lectura pública de configuraciones no sensibles
--- (La política "Public read app_settings" de la migración inicial se mantiene o se refirma)
 drop policy if exists "Public read app_settings" on public.app_settings;
+drop policy if exists "settings_select_public" on public.app_settings;
+
 create policy "settings_select_public"
 on public.app_settings
 for select
