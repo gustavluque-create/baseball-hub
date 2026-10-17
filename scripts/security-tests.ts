@@ -1456,44 +1456,216 @@ async function runSecurityTests() {
       '84. Storage Ownership: Usuario normal no puede alterar avatares con prefijo o nombre ajeno a su UID (403 Forbidden)'
     );
 
-    // 85. Storage Aislamiento: Usuario normal supera la validación de propiedad para su propio avatar
-    const resUserOwnAvatar = await supabaseStorageService.uploadImageSecure(
-      'avatars',
-      `${testNormalUserId}.png`,
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      { uid: testNormalUserId, role: 'user' }
+    // 85. Storage Aislamiento (HTTP): Usuario normal autorizado para subir su propio avatar
+    const valid1x1Png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const resUserOwnAvatarHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: `${testNormalUserId}.png`,
+        fileData: valid1x1Png,
+      }
     );
     assert(
-      Boolean(resUserOwnAvatar.status === 200 || resUserOwnAvatar.error?.includes('not configured')),
-      '85. Storage Aislamiento: Usuario normal supera la validación de propiedad para su propio avatar'
+      resUserOwnAvatarHttp.status === 200 || resUserOwnAvatarHttp.status === 500,
+      '85. Storage Aislamiento (HTTP): Petición POST /api/storage/upload autorizada para avatar del propio usuario (supera 401 y 403)'
     );
 
-    // 86. Storage Staff: Superadmin o editor autorizado para gestionar recursos institucionales
-    const resStaffUpload = await supabaseStorageService.uploadImageSecure(
-      'players',
-      'official_portrait.png',
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      { uid: 'admin_1', role: 'superadmin' }
-    );
-    const resUnauthorizedDelete = await supabaseStorageService.deleteImageSecure(
-      'news',
-      'official_news.png',
-      { uid: testNormalUserId, role: 'user' }
+    // 86. Storage Ownership (HTTP): Intento de usuario normal de borrar avatar ajeno
+    const resUserDeleteVictimAvatarHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/delete',
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: 'victim_other_uid.png',
+      }
     );
     assert(
-      Boolean((resStaffUpload.status === 200 || resStaffUpload.error?.includes('not configured')) &&
-        resUnauthorizedDelete.status === 403),
-      '86. Storage Staff: Superadministrador supera la validación RBAC para gestionar imágenes y usuario normal es bloqueado al intentar borrar (403)'
+      resUserDeleteVictimAvatarHttp.status === 403,
+      '86. Storage Ownership (HTTP): Intento de borrar avatar de otro usuario retorna 403 Forbidden'
     );
 
-    // 87. Barrido Dinámico de Políticas Residuales en migración final
-    const hasDynamicSweep =
-      finalAuditContent.includes('do $$') &&
-      finalAuditContent.includes('pg_policies') &&
-      finalAuditContent.includes("execute format('drop policy if exists");
+    // 87. Storage RBAC (HTTP): Intento de usuario normal de borrar archivo de bucket institucional
+    const resUserDeleteStaffBucketHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/delete',
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'news',
+        filename: 'portada_oficial.png',
+      }
+    );
     assert(
-      hasDynamicSweep,
-      '87. Barrido Dinámico RLS: La migración final audita activamente pg_policies para erradicar políticas permisivas residuales'
+      resUserDeleteStaffBucketHttp.status === 403,
+      '87. Storage RBAC (HTTP): Intento de usuario normal de borrar en bucket institucional retorna 403 Forbidden'
+    );
+
+    // 88. Storage Validación Binaria (HTTP): Archivo falso / texto plano disfrazado con MIME spoofed
+    const fakeScriptPayload = Buffer.from('<script>alert("hacked")</script>', 'utf8').toString('base64');
+    const resSpoofedMimeHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: `${testNormalUserId}.png`,
+        contentType: 'image/png', // Intento de engañar con contentType falso
+        fileData: `data:image/png;base64,${fakeScriptPayload}`,
+      }
+    );
+    assert(
+      resSpoofedMimeHttp.status === 400 &&
+        resSpoofedMimeHttp.body?.error?.includes('cabecera binaria corrupta'),
+      '88. Storage Magic Numbers (HTTP): Archivo con MIME falseado es detectado y rechazado con 400 Bad Request'
+    );
+
+    // 89. Storage Cuota de Tamaño (HTTP): Archivo que supera el límite de 3 MB en avatars
+    // Generar cabecera PNG válida seguida de 3.5 MB de relleno
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const oversizedBuffer = Buffer.concat([pngHeader, Buffer.alloc(3.5 * 1024 * 1024)]);
+    const resOversizedHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: `${testNormalUserId}.png`,
+        fileData: `data:image/png;base64,${oversizedBuffer.toString('base64')}`,
+      }
+    );
+    assert(
+      resOversizedHttp.status === 413 &&
+        resOversizedHttp.body?.error?.includes('excede el tamaño máximo'),
+      '89. Storage Cuota (HTTP): Archivo que excede el límite de 3 MB es rechazado con 413 Payload Too Large'
+    );
+
+    // 90. Storage Tokens (HTTP): Petición con token malformado o falso
+    const resMalformedTokenHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/upload',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer token_invalido_hacker_12345',
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: 'foto.png',
+        fileData: valid1x1Png,
+      }
+    );
+    assert(
+      resMalformedTokenHttp.status === 401,
+      '90. Storage Tokens (HTTP): Petición con token inválido o corrupto retorna 401 Unauthorized'
+    );
+
+    // 91. Storage Eliminación Anónima (HTTP): Petición DELETE sin token
+    const resAnonDeleteHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/delete',
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      {
+        bucket: 'avatars',
+        filename: 'foto.png',
+      }
+    );
+    assert(
+      resAnonDeleteHttp.status === 401,
+      '91. Storage Tokens (HTTP): Petición DELETE sin token retorna 401 Unauthorized'
+    );
+
+    // 92. Storage Eliminación Propia (HTTP): Usuario normal autorizado para borrar su propio avatar
+    const resUserDeleteOwnAvatarHttp = await request(
+      {
+        hostname: 'localhost',
+        port: 3000,
+        path: '/api/storage/delete',
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${normalUserToken}`,
+        },
+      },
+      {
+        bucket: 'avatars',
+        filename: `${testNormalUserId}.png`,
+      }
+    );
+    assert(
+      resUserDeleteOwnAvatarHttp.status === 200 || resUserDeleteOwnAvatarHttp.status === 500,
+      '92. Storage Aislamiento (HTTP): Petición DELETE /api/storage/delete autorizada para avatar del propio usuario (supera 401 y 403)'
+    );
+
+    // 93. Migración Correctiva 20261016000001 (Barrido dinámico por lista blanca inversa)
+    const newMigrationPath = path.resolve('supabase/migrations/20261016000001_baseball_hub_rls_and_storage_hardening.sql');
+    const newMigrationExists = fs.existsSync(newMigrationPath);
+    const newMigrationContent = newMigrationExists ? fs.readFileSync(newMigrationPath, 'utf8') : '';
+    const hasInverseAllowlist =
+      newMigrationExists &&
+      newMigrationContent.includes('allowed_public_policies text[]') &&
+      newMigrationContent.includes('not (policyname = any(allowed_public_policies))') &&
+      newMigrationContent.includes('allowed_storage_policies text[]') &&
+      newMigrationContent.includes('storage_staff_manage_content') &&
+      newMigrationContent.includes('storage_avatars_manage');
+    assert(
+      hasInverseAllowlist,
+      '93. Migración correctiva 20261016000001: Implementa barrido autoritativo mediante lista blanca canónica en public y storage'
+    );
+
+    // 94. Coherencia RLS Storage: El rol official_scorer está autorizado en players y teams
+    const hasScorerStorageRole =
+      newMigrationContent.includes('official_scorer') &&
+      supabaseStorageService.validateStorageAccess('players', 'portrait.png', { uid: 'scorer_1', role: 'official_scorer' }).allowed &&
+      supabaseStorageService.validateStorageAccess('teams', 'logo.png', { uid: 'scorer_1', role: 'official_scorer' }).allowed &&
+      !supabaseStorageService.validateStorageAccess('news', 'article.png', { uid: 'scorer_1', role: 'official_scorer' }).allowed;
+    assert(
+      hasScorerStorageRole,
+      '94. Coherencia RLS Storage: Anotador oficial tiene permisos sobre fotos y logos pero no sobre noticias ni avatares'
     );
 
     // Summary

@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "initialized": true,
-  "lastUpdated": "2026-10-16T16:44:02.907Z",
+  "lastUpdated": "2026-10-17T09:46:53.899Z",
   "competitions": [
     {
       "id": "snb",
@@ -127,12 +127,12 @@
   "videos": [],
   "comments": [
     {
-      "id": "comm_1792169042904_xwgp",
+      "id": "comm_1792230413896_toxe",
       "articleSlug": "snb-noticia",
       "authorName": "Autor Legítimo",
-      "userId": "usr_dfdab724c5ca2c20",
+      "userId": "usr_3325af32e4977749",
       "content": "Contenido moderado con texto adecuado y respetuoso.",
-      "createdAt": "2026-10-16T16:44:02.904Z",
+      "createdAt": "2026-10-17T09:46:53.896Z",
       "likes": 1
     }
   ]

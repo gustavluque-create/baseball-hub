@@ -7,6 +7,150 @@ export interface StorageUser {
   role?: string;
 }
 
+export interface ImageValidationResult {
+  valid: boolean;
+  mimeType?: string;
+  error?: string;
+  status: number;
+}
+
+/**
+ * Valida de forma estricta los bytes reales del búfer (magic numbers) y la cuota de tamaño del bucket.
+ * NUNCA confía en la cabecera contentType proporcionada por el cliente.
+ */
+export function detectAndValidateImageBuffer(
+  buffer: Buffer,
+  bucket: StorageBucket
+): ImageValidationResult {
+  const bucketLimits: Record<StorageBucket, { maxBytes: number; allowedMimes: string[] }> = {
+    players: {
+      maxBytes: 5 * 1024 * 1024, // 5 MB
+      allowedMimes: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+    },
+    teams: {
+      maxBytes: 5 * 1024 * 1024, // 5 MB
+      allowedMimes: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+    },
+    news: {
+      maxBytes: 10 * 1024 * 1024, // 10 MB
+      allowedMimes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    },
+    avatars: {
+      maxBytes: 3 * 1024 * 1024, // 3 MB
+      allowedMimes: ['image/png', 'image/jpeg', 'image/webp'],
+    },
+  };
+
+  const config = bucketLimits[bucket];
+  if (!config) {
+    return { valid: false, error: `Bucket '${bucket}' no reconocido.`, status: 400 };
+  }
+
+  // 1. Archivo vacío o corrupto
+  if (!buffer || buffer.length < 16) {
+    return { valid: false, error: 'Archivo vacío o corrupto (mínimo 16 bytes).', status: 400 };
+  }
+
+  // 2. Comprobación de tamaño máximo
+  if (buffer.length > config.maxBytes) {
+    const maxMb = config.maxBytes / (1024 * 1024);
+    return {
+      valid: false,
+      error: `El archivo excede el tamaño máximo permitido de ${maxMb} MB para el bucket '${bucket}'.`,
+      status: 413,
+    };
+  }
+
+  // 3. Inspección rigurosa de magic numbers en binario
+  let detectedMime: string | null = null;
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    detectedMime = 'image/png';
+  }
+  // JPEG / JPG: FF D8 FF
+  else if (
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    detectedMime = 'image/jpeg';
+  }
+  // GIF: GIF87a o GIF89a
+  else if (
+    buffer.length >= 6 &&
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38 &&
+    (buffer[4] === 0x37 || buffer[4] === 0x39) &&
+    buffer[5] === 0x61
+  ) {
+    detectedMime = 'image/gif';
+  }
+  // WEBP: 'RIFF'....'WEBP'
+  else if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    detectedMime = 'image/webp';
+  }
+  // SVG: solo permitido en players y teams
+  else if (config.allowedMimes.includes('image/svg+xml')) {
+    const headerStr = buffer.subarray(0, Math.min(buffer.length, 1024)).toString('utf8').trim().toLowerCase();
+    if (headerStr.includes('<svg') || (headerStr.startsWith('<?xml') && headerStr.includes('<svg'))) {
+      const fullText = buffer.toString('utf8').toLowerCase();
+      // Protección Anti-XSS en SVG
+      if (
+        fullText.includes('<script') ||
+        fullText.includes('javascript:') ||
+        fullText.includes('onload=') ||
+        fullText.includes('onerror=') ||
+        fullText.includes('<iframe')
+      ) {
+        return {
+          valid: false,
+          error: 'Archivo SVG rechazado: contiene scripts o atributos potencialmente peligrosos.',
+          status: 400,
+        };
+      }
+      detectedMime = 'image/svg+xml';
+    }
+  }
+
+  // Si no coincidió con ninguna firma binaria válida
+  if (!detectedMime) {
+    return {
+      valid: false,
+      error: 'Formato de imagen inválido o cabecera binaria corrupta. El archivo no corresponde a una imagen reconocida.',
+      status: 400,
+    };
+  }
+
+  // Verificar que el formato detectado esté en la lista permitida para el bucket
+  if (!config.allowedMimes.includes(detectedMime)) {
+    return {
+      valid: false,
+      error: `El formato detectado '${detectedMime}' no está permitido en el bucket '${bucket}'. Formatos permitidos: ${config.allowedMimes.join(', ')}.`,
+      status: 400,
+    };
+  }
+
+  return { valid: true, mimeType: detectedMime, status: 200 };
+}
+
 export class SupabaseStorageService {
   private static instance: SupabaseStorageService;
 
@@ -53,12 +197,10 @@ export class SupabaseStorageService {
 
     // 2. Bucket de avatares (avatars)
     if (bucket === 'avatars') {
-      // Superadministradores y administradores pueden gestionar cualquier avatar
       if (['superadmin', 'admin'].includes(userRole)) {
         return { allowed: true, status: 200 };
       }
 
-      // Usuarios normales solo pueden subir/borrar archivos asociados estrictamente a su propio UID
       const uidPrefix = user.uid.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
       const isOwnedByUser =
         cleanFilename === uidPrefix ||
@@ -91,14 +233,39 @@ export class SupabaseStorageService {
     filename: string,
     fileData: Buffer | string,
     user?: StorageUser | null,
-    contentType: string = 'image/png'
+    clientContentType?: string
   ): Promise<{ success: boolean; url?: string; error?: string; status: number }> {
+    // 1. Validación estricta de autorización y propiedad
     const authCheck = this.validateStorageAccess(bucket, filename, user, 'upload');
     if (!authCheck.allowed) {
       return { success: false, error: authCheck.error, status: authCheck.status };
     }
 
-    const uploadRes = await this.uploadImage(bucket, filename, fileData, contentType);
+    // 2. Extracción de búfer
+    let buffer: Buffer;
+    try {
+      if (typeof fileData === 'string') {
+        if (fileData.startsWith('data:')) {
+          const parts = fileData.split(',');
+          buffer = Buffer.from(parts[1] || '', 'base64');
+        } else {
+          buffer = Buffer.from(fileData, 'base64');
+        }
+      } else {
+        buffer = fileData;
+      }
+    } catch {
+      return { success: false, error: 'Datos de archivo corruptos o codificación base64 inválida.', status: 400 };
+    }
+
+    // 3. Validación de contenido binario real y límites de tamaño (cero confianza en clientContentType)
+    const validation = detectAndValidateImageBuffer(buffer, bucket);
+    if (!validation.valid || !validation.mimeType) {
+      return { success: false, error: validation.error, status: validation.status };
+    }
+
+    // 4. Llamada al servicio con el MIME verificado por magic bytes
+    const uploadRes = await this.uploadImage(bucket, filename, buffer, validation.mimeType);
     return {
       success: uploadRes.success,
       url: uploadRes.url,
@@ -139,7 +306,7 @@ export class SupabaseStorageService {
   ): Promise<{ success: boolean; url?: string; error?: string }> {
     const supabase = getSupabaseServerClient();
     if (!supabase) {
-      // Supabase storage not configured; return as is or local reference
+      // Supabase storage no configurado en entorno local; responder coherentemente
       return { success: false, error: 'Supabase storage is not configured.' };
     }
 
@@ -148,9 +315,7 @@ export class SupabaseStorageService {
       if (typeof fileData === 'string') {
         if (fileData.startsWith('data:')) {
           const parts = fileData.split(',');
-          const mimeMatch = parts[0].match(/:(.*?);/);
-          if (mimeMatch) contentType = mimeMatch[1];
-          buffer = Buffer.from(parts[1], 'base64');
+          buffer = Buffer.from(parts[1] || '', 'base64');
         } else {
           buffer = Buffer.from(fileData, 'base64');
         }
@@ -158,13 +323,19 @@ export class SupabaseStorageService {
         buffer = fileData;
       }
 
-      // Safe clean path
+      // Validación de magic numbers para llamadas internas
+      const validation = detectAndValidateImageBuffer(buffer, bucket);
+      if (!validation.valid || !validation.mimeType) {
+        return { success: false, error: validation.error };
+      }
+
+      const finalContentType = validation.mimeType;
       const cleanPath = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
 
       const { data, error } = await supabase.storage
         .from(bucket)
         .upload(cleanPath, buffer, {
-          contentType,
+          contentType: finalContentType,
           upsert: true,
         });
 
@@ -172,7 +343,6 @@ export class SupabaseStorageService {
         return { success: false, error: error.message };
       }
 
-      // Get public URL
       const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(cleanPath);
       return {
         success: true,

@@ -67,6 +67,9 @@ supabase/migrations/20261015000000_baseball_hub_rls_hardening_v3.sql
 
 # 5. Auditoría Final y Storage RLS (Fase 2.5 y Fase 2.6)
 supabase/migrations/20261016000000_baseball_hub_rls_final_audit.sql
+
+# 6. Barrido por Lista Blanca Inversa y Endurecimiento de Storage
+supabase/migrations/20261016000001_baseball_hub_rls_and_storage_hardening.sql
 ```
 
 > **Nota:** Todos los scripts han sido diseñados con directivas `IF NOT EXISTS`, `OR REPLACE` y bloques `DROP POLICY IF EXISTS`, garantizando ejecución idempotente sin pérdida de datos.
